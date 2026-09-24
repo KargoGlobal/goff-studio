@@ -1,0 +1,184 @@
+GO Feature Flag Studio
+
+Licensed under the MIT License, matching the go-feature-flag/studio repository
+this contribution targets. The full licence text is in the LICENSE file at the
+root of this repository.
+
+This file records third-party attributions and trademark notices. It is not a
+substitute for the LICENSE.
+
+
+-------------------------------------------------------------------------------
+PROJECT AFFILIATION
+-------------------------------------------------------------------------------
+
+GO Feature Flag Studio is an independent community project. At the time of
+writing it is NOT affiliated with, endorsed by, sponsored by, or maintained by
+the GO Feature Flag project or its maintainers.
+
+The project is developed with the intention of being donated to the
+go-feature-flag organisation (https://github.com/go-feature-flag), and its Go
+module path is github.com/go-feature-flag/studio in anticipation of that. That
+donation has not taken place. Until it does, do not represent this software as
+an official GO Feature Flag product.
+
+
+-------------------------------------------------------------------------------
+TRADEMARKS
+-------------------------------------------------------------------------------
+
+"GO Feature Flag" and the GO Feature Flag name and logo are trademarks of the
+GO Feature Flag project and/or its maintainers. "Okta" is a trademark of Okta,
+Inc. "GitHub" is a trademark of GitHub, Inc. All other trademarks are the
+property of their respective owners.
+
+Use of these names in this project is nominative: it describes what this
+software interoperates with. It does not imply any endorsement, affiliation, or
+sponsorship by the trademark holders.
+
+The GO Feature Flag logo (web/public/gff-logo.png) is used with permission from
+the GO Feature Flag maintainers (see web/src/components/Logo.tsx). This
+permission covers use of the mark in this project's interface; it is not a
+transfer of trademark rights and does not itself constitute the donation or
+endorsement described above.
+
+A software licence grants copyright permissions, not trademark rights. Nothing in
+the LICENSE file should be read as permission to use the GO Feature Flag name or
+logo beyond the nominative and permitted uses described above.
+
+
+-------------------------------------------------------------------------------
+THIRD-PARTY SOFTWARE
+-------------------------------------------------------------------------------
+
+This product depends on, and in some cases redistributes in compiled form, the
+following third-party software. Each remains under its own licence.
+
+=== Rule builder UI ===
+
+react-querybuilder
+  https://github.com/react-querybuilder/react-querybuilder
+  Copyright (c) 2018 Jake Boone
+  MIT License
+
+  Studio's visual targeting rule builder (web/src/components/RuleBuilder.tsx) is
+  built on react-querybuilder, with custom control elements and a custom
+  serialiser that emits GO Feature Flag's query syntax.
+
+@react-querybuilder/dnd
+  https://github.com/react-querybuilder/react-querybuilder
+  MIT License
+
+=== Inspiration and attribution ===
+
+The design of Studio's flag editing and rule building UI takes inspiration from
+the flag editor published by the GO Feature Flag project, which lives in the
+website/ directory of the GO Feature Flag repository:
+
+  go-feature-flag
+  https://github.com/thomaspoignant/go-feature-flag
+  Copyright (c) 2020 Thomas Poignant
+  MIT License
+
+Specifically, the approach of driving a react-querybuilder tree and serialising
+it to GO Feature Flag's query string format follows the pattern established in
+that project's website/src/components/editor/ sources. Studio's implementation
+was written independently and does not copy that code verbatim.
+
+=== Go dependencies ===
+
+go-feature-flag
+  https://github.com/thomaspoignant/go-feature-flag
+  Copyright (c) 2020 Thomas Poignant
+  MIT License
+
+  Used as a library for flag parsing, validation, and evaluation. Studio
+  validates files with the same code path as GO Feature Flag's own linter, and
+  previews changes with the real evaluation engine.
+
+go-feature-flag/modules/core
+  https://github.com/thomaspoignant/go-feature-flag
+  MIT License
+
+nikunjy/rules
+  https://github.com/nikunjy/rules
+  Copyright (c) 2019 Nikunj Yadav
+  MIT License
+
+  The targeting query language that Studio parses and generates.
+
+OpenFeature Go SDK
+  https://github.com/open-feature/go-sdk
+  Apache License 2.0
+
+OpenFeature Go SDK Contrib - go-feature-flag-in-process provider
+  https://github.com/open-feature/go-sdk-contrib
+  Apache License 2.0
+
+  Used by the example consumer application in examples/go-app.
+
+coreos/go-oidc
+  https://github.com/coreos/go-oidc
+  Apache License 2.0
+
+golang.org/x/oauth2
+  https://cs.opensource.google/go/x/oauth2
+  Copyright 2009 The Go Authors
+  BSD 3-Clause License
+
+gopkg.in/yaml.v3
+  https://github.com/go-yaml/yaml
+  Copyright (c) 2006-2011 Kirill Simonov
+  Copyright (c) 2011-2019 Canonical Ltd
+  MIT License and Apache License 2.0
+
+Additional transitive Go dependencies and their licences are recorded in go.mod
+and go.sum.
+
+=== Frontend dependencies ===
+
+React, React DOM
+  https://github.com/facebook/react
+  Copyright (c) Meta Platforms, Inc. and affiliates
+  MIT License
+
+TanStack Query
+  https://github.com/TanStack/query
+  Copyright (c) 2021-present Tanner Linsley
+  MIT License
+
+React Router
+  https://github.com/remix-run/react-router
+  MIT License
+
+react-dnd, react-dnd-html5-backend
+  https://github.com/react-dnd/react-dnd
+  MIT License
+
+Tailwind CSS
+  https://github.com/tailwindlabs/tailwindcss
+  Copyright (c) Tailwind Labs, Inc.
+  MIT License
+
+lucide-react
+  https://github.com/lucide-icons/lucide
+  ISC License
+
+class-variance-authority
+  https://github.com/joe-bell/cva
+  Apache License 2.0
+
+clsx
+  https://github.com/lukeed/clsx
+  MIT License
+
+tailwind-merge
+  https://github.com/dcastil/tailwind-merge
+  MIT License
+
+Vite
+  https://github.com/vitejs/vite
+  MIT License
+
+Additional transitive frontend dependencies and their licences are recorded in
+web/package.json and web/package-lock.json.

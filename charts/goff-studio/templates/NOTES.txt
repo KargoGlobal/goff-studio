@@ -1,0 +1,43 @@
+{{ include "goff-studio.fullname" . }} has been deployed ({{ .Values.replicaCount }} replica(s)).
+
+Reach it:
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+{{- end }}
+{{- else }}
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "goff-studio.fullname" . }} 8080:{{ .Values.service.port }}
+  # then: curl http://localhost:8080/healthz
+{{- end }}
+
+Config source: {{ if .Values.existingConfigMap }}existing ConfigMap {{ .Values.existingConfigMap }}{{ else if .Values.configOverride }}configOverride (verbatim){{ else }}ConfigMap {{ include "goff-studio.fullname" . }} rendered from .Values.config{{ end }}
+Secret source: {{ if .Values.secrets.existingSecret }}existing Secret {{ .Values.secrets.existingSecret }}{{ else if .Values.secrets.create }}Secret {{ include "goff-studio.fullname" . }} rendered by this chart{{ else }}Secret {{ include "goff-studio.fullname" . }} (expected to exist already){{ end }}
+
+The Secret must carry these keys:
+  {{ .Values.secrets.sessionSecretKey }}       - >= 16 chars, else the process exits at startup
+  {{ .Values.secrets.privateKeyKey }}  - GitHub App PEM, mounted at {{ .Values.githubAppPrivateKeyPath }}
+  {{ .Values.secrets.oidcClientSecretKey }}    - optional, injected as GOFF_STUDIO_OIDC_CLIENT_SECRET
+
+{{- if and (not .Values.secrets.create) (not .Values.secrets.existingSecret) }}
+
+NOTE: secrets.create=false and no existingSecret, so this chart rendered no
+Secret. Create it before the pods will start, e.g.:
+
+  kubectl --namespace {{ .Release.Namespace }} create secret generic {{ include "goff-studio.fullname" . }} \
+    --from-literal={{ .Values.secrets.sessionSecretKey }}="$(openssl rand -hex 32)" \
+    --from-file={{ .Values.secrets.privateKeyKey }}=./github-app.pem
+{{- end }}
+
+{{- if not .Values.configOverride }}
+{{- if not .Values.existingConfigMap }}
+{{- if or (not .Values.config.oidc.issuerURL) (not .Values.config.oidc.clientID) }}
+
+WARNING: oidc.issuerURL / oidc.clientID are empty. The binary performs OIDC
+discovery during startup and exits if it fails, so pods will crashloop.
+{{- end }}
+{{- if or (not .Values.config.github.owner) (not .Values.config.github.repo) }}
+
+WARNING: github.owner / github.repo are empty. Startup validation rejects this.
+{{- end }}
+{{- end }}
+{{- end }}

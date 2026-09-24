@@ -1,0 +1,212 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # //go:embed all:dist does not compile when the directory is empty.
+      - name: Ensure embed target exists
+        run: |
+          mkdir -p cmd/goff-studio/dist
+          [ -f cmd/goff-studio/dist/index.html ] || echo '<!doctype html><title>placeholder</title>' > cmd/goff-studio/dist/index.html
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: |
+          for mod in . backends/s3 e2e/harness; do
+            (cd "$mod" && go vet ./...) || exit 1
+          done
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+
+      - name: go test
+        run: |
+          for mod in . backends/s3; do
+            (cd "$mod" && go test -race -count=1 ./...) || exit 1
+          done
+
+  web:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc -b
+
+      - name: Unit tests
+        run: npx vitest run
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+  e2e:
+    name: End-to-end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Install e2e deps
+        working-directory: e2e
+        run: npm ci
+
+      - name: Install browsers
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Run the suite
+        working-directory: e2e
+        run: npm test
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results
+          path: e2e/.test-results/
+          retention-days: 7
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: goff-studio:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test the image with a mounted config
+        run: |
+          mkdir -p ci-flags-file/dev
+          cat > studio.ci.yaml <<'EOF'
+          server:
+            addr: ":8080"
+            baseURL: http://localhost:8080
+          storage:
+            backend: file
+            path: /flags
+          environments:
+            - name: dev
+          permissions:
+            - group: ci-admins
+              allow: ["*"]
+          EOF
+          docker run -d --name goff-ci -p 8080:8080 \
+            -e GOFF_STUDIO_SESSION_SECRET=0123456789abcdef0123456789abcdef \
+            -e GOFF_STUDIO_OIDC_ISSUER_URL=https://accounts.google.com \
+            -e GOFF_STUDIO_OIDC_CLIENT_ID=ci-placeholder-client \
+            -e GOFF_STUDIO_OIDC_CLIENT_SECRET=ci-placeholder-secret \
+            -v "$PWD/ci-flags-file:/flags" \
+            -v "$PWD/studio.ci.yaml:/etc/goff-studio/studio.yaml:ro" \
+            goff-studio:ci
+          ./.github/wait-healthy.sh goff-ci 8080
+
+      - name: Smoke test the image with env vars only
+        run: |
+          mkdir -p ci-flags/dev
+          docker run -d --name goff-ci-env -p 8081:8080 \
+            -e GOFF_STUDIO_SESSION_SECRET=0123456789abcdef0123456789abcdef \
+            -e GOFF_STUDIO_OIDC_ISSUER_URL=https://accounts.google.com \
+            -e GOFF_STUDIO_OIDC_CLIENT_ID=ci-placeholder-client \
+            -e GOFF_STUDIO_OIDC_CLIENT_SECRET=ci-placeholder-secret \
+            -e GOFF_STUDIO_STORAGE=file \
+            -e GOFF_STUDIO_STORAGE_PATH=/flags \
+            -e GOFF_STUDIO_ENVIRONMENTS=dev,production \
+            -e 'GOFF_STUDIO_PERMISSIONS=[{group: ci-admins, allow: ["*"]}]' \
+            -v "$PWD/ci-flags:/flags" \
+            goff-studio:ci
+          ./.github/wait-healthy.sh goff-ci-env 8081
+
+  helm:
+    name: Helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: azure/setup-helm@v4
+
+      - name: helm lint
+        run: helm lint charts/goff-studio
+
+      - name: helm template renders with required values
+        run: |
+          helm template ci charts/goff-studio \
+            --set config.oidc.issuerURL=https://example.okta.com \
+            --set config.oidc.clientID=abc \
+            --set config.github.owner=acme \
+            --set config.github.repo=flags \
+            --set config.github.appID=123 \
+            --set config.github.installationID=456 \
+            --set secrets.create=true \
+            --set secrets.sessionSecret=0123456789abcdef \
+            > /dev/null
+
+      - name: helm template works with replicaCount > 1
+        run: |
+          helm template ci charts/goff-studio --set replicaCount=3 \
+            | grep -q 'replicas: 3'

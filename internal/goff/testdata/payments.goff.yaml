@@ -1,0 +1,50 @@
+# Payment flags, owned by @acme/payments
+# Do not edit scheduled rollouts by hand.
+
+new-checkout:
+  variations:
+    on: true
+    off: false
+  targeting:
+    - name: gold-cohort
+      query: (tier eq "gold") or (account_id eq "42")
+      percentage:
+        on: 20
+        off: 80
+  defaultRule:
+    variation: "off"
+  version: "3.1.0"
+  trackEvents: true
+  metadata:
+    owner: payments
+    jira: PAY-100
+
+# This one ramps over time; Studio must not touch it.
+legacy-ramp:
+  variations:
+    on: true
+    off: false
+  targeting:
+    - name: ramp
+      query: (region eq "us")
+      progressiveRollout:
+        initial:
+          variation: "off"
+          percentage: 0
+          date: 2026-10-01T00:00:00Z
+        end:
+          variation: "on"
+          percentage: 100
+          date: 2026-11-01T00:00:00Z
+  defaultRule:
+    variation: "off"
+  scheduledRollout:
+    - date: 2026-12-01T00:00:00Z
+      disable: true
+
+model-choice:
+  variations:
+    control: model-v1
+    treatment: model-v2
+  defaultRule:
+    variation: control

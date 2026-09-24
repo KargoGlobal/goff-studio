@@ -1,0 +1,17 @@
+/goff-studio
+/go-app
+/examples/go-app/go-app
+/cmd/goff-studio/dist/*
+!/cmd/goff-studio/dist/.gitkeep
+/backends/s3/cmd/goff-studio-s3/dist/*
+!/backends/s3/cmd/goff-studio-s3/dist/.gitkeep
+node_modules/
+*.pem
+studio.yaml
+e2e/.bin/
+e2e/.test-results/
+e2e/node_modules/
+web/node_modules/
+web/dist/
+web/*.tsbuildinfo
+.DS_Store

@@ -1,0 +1,17 @@
+{
+  "name": "goff-studio-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "node scripts/build.mjs && playwright test",
+    "test:only": "playwright test",
+    "test:headed": "node scripts/build.mjs && playwright test --headed",
+    "build": "node scripts/build.mjs",
+    "report": "playwright show-report",
+    "install:browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

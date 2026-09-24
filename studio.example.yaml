@@ -1,0 +1,84 @@
+# Copy to studio.yaml. Any key can be overridden with a GOFF_STUDIO_* env var; see README.md.
+server:
+  addr: ":8080"
+  # Public URL for Studio; the OIDC redirect is <baseURL>/auth/callback and must match your provider exactly.
+  baseURL: https://studio.internal.example.com
+  # Min 16 chars, via GOFF_STUDIO_SESSION_SECRET in production; generate with: openssl rand -hex 32
+  sessionSecret: generate-with-openssl-rand-hex-32
+  # Set true whenever Studio is served over HTTPS.
+  secureCookies: true
+
+oidc:
+  # Studio runs OIDC discovery against this at startup and fails fast if unreachable.
+  issuerURL: https://your-org.okta.com/oauth2/default
+  clientID: 0oa1example
+  # Supply via GOFF_STUDIO_OIDC_CLIENT_SECRET rather than committing it.
+  clientSecret: from-your-provider
+  # ID token claim holding group names, matched against permissions[].group below.
+  groupsClaim: groups
+
+# Where flags are stored. github is the default and the only backend that can
+# offer history, attribution and review. Override with GOFF_STUDIO_STORAGE.
+storage:
+  backend: github
+
+# For local development with no credentials at all:
+# storage:
+#   backend: file
+#   path: ./flags
+#
+# S3, which needs the goff-studio-s3 image; see backends/s3/README.md.
+# No attribution and no review, so Studio's permissions are the only control.
+# storage:
+#   backend: s3
+#   bucket: my-flags-bucket
+#   region: us-east-1
+
+github:
+  owner: your-org
+  # Studio only ever reads and writes this one repository.
+  repo: flags-repo
+  # MUST be branch-protected so only Studio's App can push, or permissions below are bypassable.
+  branch: main
+  # Quoted because these are strings, not numbers.
+  appID: "123456"
+  installationID: "7890123"
+  # RSA PEM from the GitHub App (PKCS#1 or PKCS#8), mode 0600.
+  privateKeyPath: /etc/goff-studio/github-app.pem
+  # Set github.devToken instead of the three keys above for local dev only.
+
+# Only feeds the "live in apps within about N seconds" message; match your apps' polling interval.
+expectedPollSeconds: 30
+
+# Treat every top-level directory in the flags repo as an environment.
+# Entries below then only override display name, order, and protected.
+discoverEnvironments: true
+
+# Top-level directory names in the flags repo; at least one is required.
+environments:
+  - name: dev
+    order: 1
+  - name: staging
+    order: 2
+  - name: production
+    display: Production
+    # Forces a diff plus typed confirmation before any change is saved.
+    protected: true
+    order: 3
+
+# Default deny: no matching rule means no access. Actions and patterns documented in README.md.
+permissions:
+  # Full access everywhere.
+  - group: flags-admins
+    allow: ["*"]
+
+  # A team owning one file across all environments; omitting "actions" grants all of them.
+  - group: payments-team
+    allow: ["payments"]
+    environments: [dev, staging, production]
+
+  # Business users who may flip and ramp, but not change targeting or variations.
+  - group: marketing
+    allow: ["growth"]
+    environments: [production]
+    actions: [toggle, rollout]

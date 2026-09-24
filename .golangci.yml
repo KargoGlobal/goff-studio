@@ -1,0 +1,94 @@
+version: "2"
+
+# Mirrors go-feature-flag's own linter set, so this code is already compliant if donated.
+linters:
+  enable:
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - copyloopvar
+    - decorder
+    - dogsled
+    - durationcheck
+    - errname
+    - exptostd
+    - fatcontext
+    - ginkgolinter
+    - gocheckcompilerdirectives
+    - gochecknoinits
+    - gochecksumtype
+    - gocritic
+    - goprintffuncname
+    - gosec
+    - gosmopolitan
+    - grouper
+    - importas
+    - inamedparam
+    - interfacebloat
+    - intrange
+    - loggercheck
+    - makezero
+    - mirror
+    - misspell
+    - musttag
+    - nakedret
+    - nilerr
+    - nilnesserr
+    - noctx
+    - predeclared
+    - protogetter
+    - reassign
+    - recvcheck
+    - rowserrcheck
+    - sloglint
+    - spancheck
+    - sqlclosecheck
+    - testableexamples
+    - testifylint
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - usetesting
+    - wastedassign
+    - whitespace
+    - zerologlint
+
+  settings:
+    gosec:
+      excludes:
+        # G124: every cookie sets HttpOnly, SameSite and a configured Secure flag.
+        - G124
+        # G101: the "credentials" are config key and env var names, not secrets.
+        - G101
+        # G203: internal/goff/highlight.go escapes every branch with html.EscapeString.
+        - G203
+        # G304: the only variable paths are the operator's own config and key files.
+        - G304
+
+  exclusions:
+    presets:
+      - comments
+      - std-error-handling
+    rules:
+      # Long lines here are user-facing validation messages, worse when wrapped.
+      - path: internal/(config|server|app)/
+        linters:
+          - lll
+      # The backend registry is deliberately wired up by init, like database/sql drivers.
+      - path: internal/storage/(file|github)\.go
+        linters:
+          - gochecknoinits
+      - path: _test\.go$
+        linters:
+          - unparam
+          - gocritic
+          - predeclared
+          - gosec
+          - noctx
+          - intrange
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

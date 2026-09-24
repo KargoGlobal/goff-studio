@@ -1,0 +1,11 @@
+{{- if not .Values.existingConfigMap }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "goff-studio.fullname" . }}
+  labels:
+    {{- include "goff-studio.labels" . | nindent 4 }}
+data:
+  studio.yaml: |
+    {{- include "goff-studio.configYaml" . | nindent 4 }}
+{{- end }}

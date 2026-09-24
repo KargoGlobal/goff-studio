@@ -1,0 +1,29 @@
+server:
+  addr: "127.0.0.1:9400"
+  baseURL: http://127.0.0.1:9400
+  sessionSecret: e2e-secret-long-enough-for-tests
+  secureCookies: false
+
+oidc:
+  issuerURL: http://127.0.0.1:9401
+  clientID: studio-e2e
+  clientSecret: e2e-secret
+
+github:
+  owner: acme
+  repo: flags
+  branch: main
+  devToken: fake-token
+
+expectedPollSeconds: 30
+discoverEnvironments: true
+
+environments:
+  - name: production
+    display: Production
+    protected: true
+    order: 1
+
+permissions:
+  - group: flags-admins
+    allow: ["*"]

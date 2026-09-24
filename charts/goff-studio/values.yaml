@@ -1,0 +1,163 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/go-feature-flag/studio
+  pullPolicy: IfNotPresent
+  # Defaults to Chart.appVersion when empty.
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+service:
+  type: ClusterIP
+  port: 8080
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: studio.internal.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    memory: 256Mi
+
+# GET /healthz is served before auth and needs no session.
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 20
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 3
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Startup is gated on OIDC discovery, which exits the process on failure.
+startupProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  periodSeconds: 5
+  failureThreshold: 30
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 80
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+
+# Rendered to a ConfigMap at /etc/goff-studio/studio.yaml; secrets come from `secrets` below.
+config:
+  server:
+    addr: ":8080"
+    baseURL: https://studio.internal.example.com
+    secureCookies: true
+
+  oidc:
+    issuerURL: ""
+    clientID: ""
+    groupsClaim: groups
+
+  github:
+    owner: ""
+    repo: ""
+    branch: main
+    appID: ""
+    installationID: ""
+
+  expectedPollSeconds: 30
+
+  environments:
+    - name: dev
+      order: 1
+    - name: staging
+      order: 2
+    - name: production
+      display: Production
+      protected: true
+      order: 3
+
+  permissions: []
+
+# Verbatim config file contents; replaces anything rendered from `config`.
+configOverride: ""
+
+# Use a ConfigMap this chart does not manage; `config` is then ignored.
+existingConfigMap: ""
+
+# Prefer existingSecret in production; create=true puts values in release history.
+secrets:
+  create: false
+
+  existingSecret: ""
+
+  sessionSecretKey: sessionSecret
+  privateKeyKey: githubAppPrivateKey
+  oidcClientSecretKey: oidcClientSecret
+
+  # Only consumed when create=true.
+  sessionSecret: ""
+  githubAppPrivateKey: ""
+  oidcClientSecret: ""
+
+# Mount path for the GitHub App PEM; wired to github.privateKeyPath automatically.
+githubAppPrivateKeyPath: /etc/goff-studio/secrets/github-app.pem
+
+# Extra env vars, e.g. GOFF_STUDIO_GITHUB_API_BASE for GitHub Enterprise.
+extraEnv: []
+extraEnvFrom: []
+
+extraVolumes: []
+extraVolumeMounts: []

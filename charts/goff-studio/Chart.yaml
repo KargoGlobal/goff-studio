@@ -1,0 +1,16 @@
+apiVersion: v2
+name: goff-studio
+description: Git-backed admin UI for GO Feature Flag
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/go-feature-flag/studio
+sources:
+  - https://github.com/go-feature-flag/studio
+keywords:
+  - feature-flags
+  - go-feature-flag
+  - openfeature
+maintainers:
+  - name: go-feature-flag
+    url: https://github.com/go-feature-flag
