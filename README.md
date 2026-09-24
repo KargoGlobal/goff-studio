@@ -1,11 +1,8 @@
 # GO Feature Flag Studio
 
-A Git-backed admin UI for [GO Feature Flag](https://gofeatureflag.org). Business
-users and engineers manage flags in a web UI, sign in with your identity
-provider, and every change
-becomes a commit in a GitHub repo.
-
-No database. Git is the only storage, and the server is stateless.
+An admin UI for [GO Feature Flag](https://gofeatureflag.org). Business users and
+engineers read and edit flag files in a web UI, signing in through your identity
+provider.
 
 > **Independent community project.** Studio is not (yet) affiliated with,
 > endorsed by, or maintained by the GO Feature Flag project. It is built in the
@@ -13,23 +10,12 @@ No database. Git is the only storage, and the server is stateless.
 > already `github.com/go-feature-flag/studio` in anticipation. Until that
 > handover actually happens, treat this as a third-party tool.
 
-Apache 2.0. No paid tier, no gated features.
-
 ## What it is
 
-- A web UI for reading and editing GO Feature Flag YAML files in a GitHub repo.
-- An OIDC front door, so flag editors never need GitHub accounts.
+- A web UI for reading and editing GO Feature Flag YAML files.
+- An OIDC front door.
 - A permission layer mapping OIDC groups to files, environments, and actions.
-- A commit writer that produces minimal, reviewable diffs.
-
-## What it is not
-
-- **Not an evaluation engine.** Apps evaluate flags in-process with GO Feature
-  Flag via the OpenFeature Go SDK, reading the same YAML files. If Studio is
-  down, apps keep working from the last committed flags.
-- **Not a relay/proxy.** It never sits in the evaluation path.
-- **Not a GitHub client for your users.** Studio holds the only GitHub
-  credential; users authenticate to Studio, not to GitHub.
+- A writer that produces minimal, reviewable diffs.
 
 ## Quickstart
 
