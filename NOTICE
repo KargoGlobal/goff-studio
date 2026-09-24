@@ -107,16 +107,6 @@ nikunjy/rules
 
   The targeting query language that Studio parses and generates.
 
-OpenFeature Go SDK
-  https://github.com/open-feature/go-sdk
-  Apache License 2.0
-
-OpenFeature Go SDK Contrib - go-feature-flag-in-process provider
-  https://github.com/open-feature/go-sdk-contrib
-  Apache License 2.0
-
-  Used by the example consumer application in examples/go-app.
-
 coreos/go-oidc
   https://github.com/coreos/go-oidc
   Apache License 2.0

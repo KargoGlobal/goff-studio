@@ -15,7 +15,6 @@ backends/s3/cmd/goff-studio-s3/dist
 
 # Locally built binaries
 /goff-studio
-/go-app
 
 # Local config and secrets
 studio.yaml

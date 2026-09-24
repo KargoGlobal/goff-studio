@@ -10,6 +10,7 @@ build: web
 
 web:
 	cd web && npm install --silent && npm run build
+	@touch cmd/goff-studio/dist/.gitkeep
 
 test:
 	@for mod in $(GO_MODULES); do \

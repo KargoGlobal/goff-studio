@@ -1,6 +1,4 @@
 /goff-studio
-/go-app
-/examples/go-app/go-app
 /cmd/goff-studio/dist/*
 !/cmd/goff-studio/dist/.gitkeep
 /backends/s3/cmd/goff-studio-s3/dist/*

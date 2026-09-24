@@ -112,7 +112,7 @@ backend with history, attribution and review.
 | --- | --- | --- |
 | `github.owner` | `GOFF_STUDIO_GITHUB_OWNER` | **required** |
 | `github.repo` | `GOFF_STUDIO_GITHUB_REPO` | **required** |
-| `github.branch` | `GOFF_STUDIO_GITHUB_BRANCH` | default `main`; must be branch-protected, see below |
+| `github.branch` | `GOFF_STUDIO_GITHUB_BRANCH` | default `main` |
 | `github.appID` | `GOFF_STUDIO_GITHUB_APP_ID` | with `installationID` + `privateKeyPath` |
 | `github.installationID` | `GOFF_STUDIO_GITHUB_INSTALLATION_ID` | |
 | `github.privateKeyPath` | `GOFF_STUDIO_GITHUB_PRIVATE_KEY_PATH` | PEM, RSA (PKCS#1 or PKCS#8) |
@@ -221,35 +221,6 @@ Rules:
 
 There are no pull requests; commits go directly to the branch.
 
-## Security requirement: branch protection
-
-Users authenticate only with your identity provider and never touch GitHub.
-Studio commits as a GitHub App. That means **Studio's own permission config is
-the security boundary** — not GitHub's.
-
-> **`main` MUST be branch-protected so that only the Studio GitHub App can
-> push.** Without this, anyone with write access to the flags repo bypasses
-> Studio's permission model entirely by pushing directly.
-
-Other limits worth knowing before you deploy this, all deliberate rather than
-oversights:
-
-- **Sessions last 12 hours and cannot be revoked.** There is no server-side
-  session store, so a sealed cookie stays valid until it expires. Removing
-  someone from a group in your IdP takes effect at their next login, not
-  immediately.
-- **Flag metadata is not secret.** `metadata` is passed through to GO Feature
-  Flag and is visible to your applications in evaluation details.
-- **The `file` and `s3` backends have no review or attribution.** Studio's
-  permission config is then the only control over who changes a flag. Both
-  report reduced capabilities at startup and the UI hides what they cannot do.
-
-If you are auditing this, the parts that matter are the group-to-file-to-action
-matching in `internal/permissions` (including derived paths, such as the team a
-new flag is created in), the OIDC and sealed-cookie handling in `internal/auth`,
-and anything that could log or return the GitHub App private key, an installation
-token, the session secret, or the OIDC client secret.
-
 ## Concurrency
 
 Before writing, Studio re-reads the file.
@@ -303,25 +274,11 @@ touches only that flag. Comments, key order, and quoting all survive.
   correctness, then splices only the changed flag's lines back into the original
   text. That is what makes the byte-identical test pass.
 
-## Example app
-
-`examples/go-app` uses the OpenFeature Go SDK with GO Feature Flag's in-process
-provider and GitHub retrievers, reading exactly the files Studio writes.
-
-```sh
-FLAGS_REPO=your-org/flags-repo FLAGS_ENV=production GITHUB_TOKEN=... \
-  go run ./examples/go-app
-```
-
-It sets `PersistentFlagConfigurationFile` and `StartWithRetrieverError`, so it
-starts and keeps serving from the last good configuration if GitHub is
-unreachable.
-
 ## Development
 
 ```sh
-make test      # go test ./... plus a frontend typecheck
-make lint      # gofmt -l . and go vet ./...
+make test      # go test -race across all modules, then typecheck and frontend tests
+make lint      # gofmt, go vet, golangci-lint, then eslint
 make build     # frontend build, then the Go binary
 ```
 

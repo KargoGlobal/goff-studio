@@ -97,10 +97,10 @@ internal/config/      YAML config + GOFF_STUDIO_* env overrides, validation
 internal/auth/        OIDC (PKCE) + AES-GCM sealed cookie sessions, no server store
 internal/permissions/ group -> file/environment/action matching, default deny
 internal/githubapp/   installation tokens, reads, commits, history
+internal/storage/     the backend interface and registry, github and file backends
 internal/goff/         the GO Feature Flag adapter
 internal/server/      HTTP handlers, the service layer, diffs, plain-English summaries
 web/                  React 19 + TypeScript + Vite + Tailwind 4 frontend
-examples/go-app/      example consumer using the OpenFeature Go SDK
 e2e/                  Playwright suite (separate npm project + Go module)
 charts/goff-studio/   Helm chart
 backends/s3/          S3 backend, its own Go module and binary

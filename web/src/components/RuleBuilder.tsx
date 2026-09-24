@@ -18,10 +18,8 @@ export function RuleBuilder({
   attributes: string[]
   disabled?: boolean
 }) {
-  const fields: Field[] = useMemo(
-    () => (attributes.length > 0 ? fieldsFrom(attributes) : fieldsFrom([''])),
-    [attributes],
-  )
+  // A blank first field keeps a new condition empty but still renders every control.
+  const fields: Field[] = useMemo(() => fieldsFrom(['', ...attributes]), [attributes])
   const description = describeGroup(value)
   const query = queryFromGroup(value)
 
@@ -30,7 +28,7 @@ export function RuleBuilder({
       <div className="studio-qb">
         <QueryBuilder
           fields={fields}
-          autoSelectField={false}
+          autoSelectField
           operators={operators}
           query={value}
           onQueryChange={onChange}
@@ -169,9 +167,11 @@ function AttributeInput({ value, handleOnChange, options, disabled }: any) {
         className="h-8 w-40 rounded-md border bg-surface px-2 font-mono text-[12.5px] text-ink focus:border-brand focus:outline-none"
       />
       <datalist id={listId}>
-        {(options ?? []).map((o: { name?: string }) => (
-          <option key={o.name} value={o.name} />
-        ))}
+        {(options ?? [])
+          .filter((o: { name?: string }) => o.name)
+          .map((o: { name?: string }) => (
+            <option key={o.name} value={o.name} />
+          ))}
       </datalist>
     </>
   )
