@@ -353,9 +353,9 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
     <div className="space-y-5">
       <Link
         to={`/env/${env}`}
-        className="inline-flex items-center gap-1.5 text-[13px] text-ink-muted hover:text-ink"
+        className="inline-flex items-center gap-2 text-base font-medium text-ink-muted hover:text-ink"
       >
-        <ArrowLeft className="h-3.5 w-3.5" />
+        <ArrowLeft className="h-5 w-5" />
         All flags
       </Link>
 
@@ -479,7 +479,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                   {(flag.variations ?? []).map((v) => (
                     <div
                       key={v.name}
-                      className="flex items-center justify-between rounded-md bg-canvas px-3 py-2"
+                      className="flex items-center justify-between rounded-md border border-[color:var(--color-brand)] bg-surface px-3 py-2"
                     >
                       <span className="flex items-center gap-2">
                         <Code className="bg-transparent px-0 text-ink">{v.name}</Code>
@@ -877,7 +877,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
             </Button>
 
             {preview && (
-              <div className="mt-3 rounded-lg bg-canvas p-3">
+              <div className="mt-3 rounded-lg border border-[color:var(--color-brand)] bg-surface p-3">
                 {preview.error ? (
                   <p className="text-[12.5px] text-danger">{preview.error}</p>
                 ) : (

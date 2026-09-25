@@ -88,7 +88,7 @@ export function ReviewDialog({
                 {showDiff ? 'Hide' : 'Show'} file changes
               </button>
               {showDiff && (
-                <pre className="mt-2 max-h-56 overflow-auto rounded-lg border bg-canvas p-3 font-mono text-[12px] leading-relaxed">
+                <pre className="mt-2 max-h-56 overflow-auto rounded-lg border border-[color:var(--color-brand)] bg-surface p-3 font-mono text-[12px] leading-relaxed">
                   {diff.diff.split('\n').map((line, i) => (
                     <div
                       key={i}

@@ -39,7 +39,7 @@ export function RuleBuilder({
           showNotToggle
           controlClassnames={{
             queryBuilder: 'space-y-2',
-            ruleGroup: 'rounded-lg border bg-canvas p-2.5 space-y-2',
+            ruleGroup: 'rounded-lg border border-[color:var(--color-brand)] bg-surface p-2.5 space-y-2',
             header: 'flex items-center gap-2 flex-wrap',
             body: 'space-y-2',
             rule: 'flex items-center gap-2 flex-wrap',

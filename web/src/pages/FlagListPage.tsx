@@ -1,11 +1,9 @@
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { AlertTriangle, Plus, Search } from 'lucide-react'
-import { api, ApiError, type DiffResult, type Environment, type Flag } from '@/lib/api'
-import { useFlags, useSetState } from '@/hooks/useFlags'
-import { Badge, Button, Card, Code, Input, Spinner, Toggle } from '@/components/ui/primitives'
-import { ReviewDialog } from '@/components/ReviewDialog'
-import { useToast } from '@/components/ui/Toast'
+import { AlertTriangle, ChevronDown, ChevronsUpDown, ChevronUp, ExternalLink, Plus, Search } from 'lucide-react'
+import { type Environment } from '@/lib/api'
+import { useFlags } from '@/hooks/useFlags'
+import { Badge, Button, Card, Code, Input, Spinner } from '@/components/ui/primitives'
 import { ScheduleBadge } from '@/components/ScheduleBadge'
 
 function fileLabel(path: string) {
@@ -13,80 +11,73 @@ function fileLabel(path: string) {
   return base.replace(/\.goff\.ya?ml$/, '').replace(/\.ya?ml$/, '')
 }
 
-const ALL = 'all'
-const UNASSIGNED = 'unassigned'
-
-function teamFilter(value: string) {
-  return value === ALL || value === UNASSIGNED ? value : `team:${value}`
+// Stable pseudo-random dummy timestamps derived from the flag key.
+// Same key always returns the same dates across reloads. Replace with real
+// data when the API exposes createdAt/updatedAt.
+function dummyDates(key: string): { created: Date; updated: Date } {
+  let h = 2166136261
+  for (const c of key) {
+    h ^= c.charCodeAt(0)
+    h = Math.imul(h, 16777619)
+  }
+  const now = Date.now()
+  const daysSinceCreated = 30 + (Math.abs(h) % 300) // 30–330 days ago
+  const daysSinceUpdated = Math.abs(h >> 8) % Math.max(1, daysSinceCreated) // between now and created
+  return {
+    created: new Date(now - daysSinceCreated * 86400000),
+    updated: new Date(now - daysSinceUpdated * 86400000),
+  }
 }
 
-export function FlagListPage({ environments }: { environments: Environment[] }) {
+function relativeTime(d: Date): string {
+  const diffMs = Date.now() - d.getTime()
+  const days = Math.floor(diffMs / 86400000)
+  if (days < 1) return 'today'
+  if (days < 7) return `${days}d ago`
+  if (days < 30) return `${Math.floor(days / 7)}w ago`
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`
+  return `${Math.floor(days / 365)}y ago`
+}
+
+export function FlagListPage({ environments: _environments }: { environments: Environment[] }) {
   const { env = '' } = useParams()
-  const environment = environments.find((e) => e.name === env)
   const { data, isLoading, error } = useFlags(env)
-  const setState = useSetState(env)
-  const toast = useToast()
 
   const [search, setSearch] = useState('')
-  const [team, setTeam] = useState(ALL)
-  const [pending, setPending] = useState<{ flag: Flag; enabled: boolean } | null>(null)
-  const [diff, setDiff] = useState<DiffResult | undefined>()
-  const [loadingDiff, setLoadingDiff] = useState(false)
+  const [sort, setSort] = useState<{
+    col: 'key' | 'team' | 'enabled' | 'created' | 'updated'
+    dir: 'asc' | 'desc'
+  } | null>(null)
 
-  // Built from labels on the flags, not the destination list, so an odd label still filters.
-  const options = useMemo(() => {
-    const flags = data?.flags ?? []
-    const labels = [...new Set(flags.map((f) => f.team).filter(Boolean))].sort()
-    const unassigned = flags.some((f) => !f.team)
-    return [
-      { value: ALL, label: 'All teams' },
-      ...labels.map((t) => ({ value: teamFilter(t), label: t })),
-      ...(unassigned ? [{ value: UNASSIGNED, label: 'No team' }] : []),
-    ]
-  }, [data])
+  const toggleSort = (col: 'key' | 'team' | 'enabled' | 'created' | 'updated') =>
+    setSort((s) =>
+      s?.col !== col ? { col, dir: 'asc' } : s.dir === 'asc' ? { col, dir: 'desc' } : null,
+    )
 
   const flags = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return (data?.flags ?? []).filter((f) => {
-      if (team === UNASSIGNED && f.team) return false
-      if (team !== ALL && team !== UNASSIGNED && teamFilter(f.team) !== team) return false
+    const filtered = (data?.flags ?? []).filter((f) => {
       if (!q) return true
-      return f.key.toLowerCase().includes(q) || f.summary.toLowerCase().includes(q)
+      return (
+        f.key.toLowerCase().includes(q) ||
+        f.summary.toLowerCase().includes(q) ||
+        (f.team ?? '').toLowerCase().includes(q)
+      )
     })
-  }, [data, search, team])
-
-  async function requestToggle(flag: Flag, enabled: boolean) {
-    if (!environment?.protected) {
-      void commit(flag, enabled)
-      return
-    }
-    setPending({ flag, enabled })
-    setLoadingDiff(true)
-    setDiff(undefined)
-    try {
-      setDiff(await api.diffState(env, flag.key, enabled))
-    } catch (e) {
-      toast(e instanceof Error ? e.message : 'Could not prepare the change', 'error')
-      setPending(null)
-    } finally {
-      setLoadingDiff(false)
-    }
-  }
-
-  async function commit(flag: Flag, enabled: boolean) {
-    try {
-      const result = await setState.mutateAsync({ flag, enabled })
-      toast(result.message)
-    } catch (e) {
-      if (e instanceof ApiError && e.isConflict) {
-        toast(e.message, 'error')
-      } else {
-        toast(e instanceof Error ? e.message : 'Could not save', 'error')
+    if (!sort) return filtered
+    const dir = sort.dir === 'asc' ? 1 : -1
+    return [...filtered].sort((a, b) => {
+      if (sort.col === 'enabled') return (Number(a.enabled) - Number(b.enabled)) * dir
+      if (sort.col === 'created' || sort.col === 'updated') {
+        const ta = dummyDates(a.key)[sort.col].getTime()
+        const tb = dummyDates(b.key)[sort.col].getTime()
+        return (ta - tb) * dir
       }
-    } finally {
-      setPending(null)
-    }
-  }
+      const va = String(a[sort.col] ?? '').toLowerCase()
+      const vb = String(b[sort.col] ?? '').toLowerCase()
+      return va === vb ? 0 : va < vb ? -1 * dir : 1 * dir
+    })
+  }, [data, search, sort])
 
   if (isLoading) {
     return (
@@ -107,22 +98,7 @@ export function FlagListPage({ environments }: { environments: Environment[] }) 
 
   return (
     <div className="space-y-5">
-      <div className="flex items-baseline justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Feature flags</h1>
-          <p className="mt-0.5 text-[13px] text-ink-muted">
-            {data?.flags.length ?? 0} flags in {environment?.display ?? env}
-          </p>
-        </div>
-        {(data?.teams ?? []).length > 0 && (
-          <Link to={`/env/${env}/flags/new`}>
-            <Button size="sm">
-              <Plus className="h-3.5 w-3.5" />
-              Create flag
-            </Button>
-          </Link>
-        )}
-      </div>
+      <h1 className="text-4xl font-bold tracking-tight">Feature flags</h1>
 
       {data?.broken && data.broken.length > 0 && (
         <Card className="border-warn bg-warn-soft p-4">
@@ -140,111 +116,194 @@ export function FlagListPage({ environments }: { environments: Environment[] }) 
         </Card>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-3">
         <div className="relative w-72">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search flags"
-            className="pl-8"
+            placeholder="Search flags, teams…"
+            className="h-9 pl-9 text-sm"
             aria-label="Search flags"
           />
         </div>
-        <select
-          value={team}
-          onChange={(e) => setTeam(e.target.value)}
-          aria-label="Filter by team"
-          className="h-9 rounded-md border bg-surface px-2.5 text-sm text-ink focus:border-brand focus:outline-none"
-        >
-          {options.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <span className="ml-auto text-[13px] text-ink-muted">
-          {flags.length} shown
-        </span>
+        <div className="ml-auto">
+          {(data?.teams ?? []).length > 0 && (
+            <Link to={`/env/${env}/flags/new`}>
+              <Button size="sm">
+                <Plus className="h-3.5 w-3.5" />
+                Create flag
+              </Button>
+            </Link>
+          )}
+        </div>
       </div>
 
-      <Card className="overflow-hidden">
+      <div className="w-full">
         <table className="w-full">
-          <thead className="bg-canvas">
-            <tr className="border-b text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted">
-              <th className="px-4 py-2.5">Flag</th>
-              <th className="px-4 py-2.5">Team</th>
-              <th className="w-20 px-4 py-2.5 text-right">On</th>
+          <thead>
+            <tr className="border-b border-[color:var(--color-line)] text-xl font-semibold tracking-tight text-ink">
+              <SortableHeader
+                label="Flag"
+                col="key"
+                sort={sort}
+                onClick={() => toggleSort('key')}
+                className="px-4 pb-3 pt-4 text-left"
+              />
+              <SortableHeader
+                label="Team"
+                col="team"
+                sort={sort}
+                onClick={() => toggleSort('team')}
+                className="px-4 pb-3 pt-4 text-left"
+              />
+              <SortableHeader
+                label="Created"
+                col="created"
+                sort={sort}
+                onClick={() => toggleSort('created')}
+                className="w-32 px-4 pb-3 pt-4 text-center"
+                justify="center"
+              />
+              <SortableHeader
+                label="Updated"
+                col="updated"
+                sort={sort}
+                onClick={() => toggleSort('updated')}
+                className="w-32 px-4 pb-3 pt-4 text-center"
+                justify="center"
+              />
+              <SortableHeader
+                label="Serving"
+                col="enabled"
+                sort={sort}
+                onClick={() => toggleSort('enabled')}
+                className="w-24 px-4 pb-3 pt-4 text-center"
+                justify="center"
+              />
+              <th className="w-10 px-2 pb-3 pt-4" aria-hidden />
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-[color:var(--color-line)]">
             {flags.map((flag) => {
-              const canToggle = flag.actions.includes('toggle')
-              const busy = setState.isPending && setState.variables?.flag.key === flag.key
               return (
-                <tr key={flag.key} className="border-b last:border-0 hover:bg-canvas/60">
+                <tr key={flag.key} className="transition-colors hover:bg-canvas/40">
                   <td className="px-4 py-3 align-top">
-                    <Link
-                      to={`/env/${env}/flags/${encodeURIComponent(flag.key)}`}
-                      className="font-mono text-[13px] font-medium text-brand hover:underline"
-                    >
-                      {flag.key}
-                    </Link>
-                    {(flag.preserved?.length ?? 0) > 0 && (
-                      <Badge tone="neutral" className="ml-2">
-                        advanced fields
-                      </Badge>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[15px] font-medium text-ink">
+                        {flag.key}
+                      </span>
+                      {(flag.preserved?.length ?? 0) > 0 && (
+                        <Badge tone="neutral">advanced fields</Badge>
+                      )}
+                      <ScheduleBadge flag={flag} />
+                    </div>
+                    {flag.summary && (
+                      <p className="mt-1 text-[12.5px] text-ink-muted">{flag.summary}</p>
                     )}
-                    <ScheduleBadge flag={flag} className="ml-2" />
                   </td>
                   <td className="px-4 py-3 align-top">
                     {flag.team ? (
-                      <Badge tone="neutral" title={flag.file}>
+                      <span className="text-sm text-ink" title={flag.file}>
                         {flag.team}
-                      </Badge>
+                      </span>
                     ) : (
-                      <span className="text-[13px] text-ink-muted" title={flag.file}>
+                      <span className="text-sm text-ink-muted" title={flag.file}>
                         —
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-right align-top">
-                    <div className="flex items-center justify-end gap-2">
-                      {busy && <Spinner />}
-                      <Toggle
-                        checked={flag.enabled}
-                        disabled={!canToggle}
-                        busy={busy}
-                        label={`Turn ${flag.key} ${flag.enabled ? 'off' : 'on'}`}
-                        onChange={(next) => void requestToggle(flag, next)}
-                      />
-                    </div>
+                  <td className="w-32 px-4 py-3 text-center align-top">
+                    <span
+                      className="font-mono text-sm text-ink"
+                      title={dummyDates(flag.key).created.toLocaleString()}
+                    >
+                      {relativeTime(dummyDates(flag.key).created)}
+                    </span>
+                  </td>
+                  <td className="w-32 px-4 py-3 text-center align-top">
+                    <span
+                      className="font-mono text-sm text-ink"
+                      title={dummyDates(flag.key).updated.toLocaleString()}
+                    >
+                      {relativeTime(dummyDates(flag.key).updated)}
+                    </span>
+                  </td>
+                  <td className="w-24 px-4 py-3 text-center align-top">
+                    <span
+                      className={`font-mono text-base font-semibold ${
+                        flag.enabled ? 'text-brand' : 'text-ink-muted'
+                      }`}
+                    >
+                      {flag.enabled ? 'true' : 'false'}
+                    </span>
+                  </td>
+                  <td className="w-10 px-2 py-3 text-right align-top">
+                    <Link
+                      to={`/env/${env}/flags/${encodeURIComponent(flag.key)}`}
+                      aria-label={`Open ${flag.key}`}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-canvas hover:text-brand"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </Link>
                   </td>
                 </tr>
               )
             })}
             {flags.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-12 text-center text-[13px] text-ink-muted">
+                <td colSpan={6} className="px-4 py-12 text-center text-[13px] text-ink-muted">
                   No flags match
                 </td>
               </tr>
             )}
           </tbody>
         </table>
-      </Card>
 
-      <ReviewDialog
-        open={Boolean(pending)}
-        onClose={() => setPending(null)}
-        onConfirm={() => pending && void commit(pending.flag, pending.enabled)}
-        title="Review this change"
-        diff={diff}
-        loading={loadingDiff}
-        saving={setState.isPending}
-        protectedEnv={Boolean(environment?.protected)}
-        envName={environment?.name ?? env}
-      />
+        {flags.length > 0 && (
+          <div className="mt-1 flex items-center justify-between px-4 py-3 text-[13px] text-ink-muted">
+            <span>
+              {flags.length} of {data?.flags.length ?? 0} item{(data?.flags.length ?? 0) === 1 ? '' : 's'}
+            </span>
+            <span>1 of 1 pages</span>
+          </div>
+        )}
+      </div>
     </div>
+  )
+}
+
+type SortState = { col: 'key' | 'team' | 'enabled' | 'created' | 'updated'; dir: 'asc' | 'desc' } | null
+
+function SortableHeader({
+  label,
+  col,
+  sort,
+  onClick,
+  className,
+  justify = 'start',
+}: {
+  label: string
+  col: 'key' | 'team' | 'enabled' | 'created' | 'updated'
+  sort: SortState
+  onClick: () => void
+  className?: string
+  justify?: 'start' | 'end' | 'center'
+}) {
+  const active = sort?.col === col
+  const Icon = !active ? ChevronsUpDown : sort!.dir === 'asc' ? ChevronUp : ChevronDown
+  const justifyClass =
+    justify === 'end' ? 'justify-end' : justify === 'center' ? 'justify-center w-full' : 'justify-start'
+  return (
+    <th className={className}>
+      <button
+        type="button"
+        onClick={onClick}
+        className={`inline-flex items-center gap-1.5 rounded-sm font-semibold tracking-tight transition-colors hover:text-brand ${justifyClass} ${active ? 'text-brand' : ''}`}
+      >
+        <span>{label}</span>
+        <Icon className={`h-4 w-4 ${active ? 'opacity-100' : 'opacity-40'}`} />
+      </button>
+    </th>
   )
 }
