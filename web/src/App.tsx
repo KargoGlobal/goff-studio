@@ -5,6 +5,7 @@ import { ApiError } from '@/lib/api'
 import { AppShell } from '@/components/AppShell'
 import { FlagListPage } from '@/pages/FlagListPage'
 import { FlagDetailPage } from '@/pages/FlagDetailPage'
+import { ComparePage } from '@/pages/ComparePage'
 import { CreateFlagPage } from '@/pages/CreateFlagPage'
 import { Button, Card, Spinner } from '@/components/ui/primitives'
 
@@ -49,6 +50,7 @@ function Shell() {
         <Route path="" element={<FlagListPage environments={me.environments} />} />
         <Route path="flags/new" element={<CreateFlagPage environments={me.environments} />} />
         <Route path="flags/:key" element={<FlagDetailPage environments={me.environments} />} />
+        <Route path="flags/:key/compare" element={<ComparePage environments={me.environments} />} />
       </Routes>
     </AppShell>
   )

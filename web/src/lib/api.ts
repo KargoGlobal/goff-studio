@@ -59,6 +59,36 @@ export interface ProgressiveRollout {
   end: RolloutStep
 }
 
+export interface CompareSide {
+  environment: string
+  display: string
+  present: boolean
+  enabled: boolean
+  summary: string
+  file?: string
+  fileSha?: string
+  team?: string
+  writable: boolean
+  flag?: Flag
+}
+
+export interface CompareResult {
+  key: string
+  from: CompareSide
+  to: CompareSide
+  differs: string[]
+  blockers: string[]
+  diff: string
+}
+
+export interface PromotePayload {
+  from: string
+  to: string
+  fields: string[]
+  team?: string
+  fileSha?: string
+}
+
 export interface Experimentation {
   start?: string
   end?: string
@@ -299,6 +329,23 @@ export const api = {
       `/api/environments/${env}/flags/${encodeURIComponent(key)}/experimentation`,
       { method: 'POST', body: JSON.stringify(payload) },
     ),
+
+  compare: (key: string, from: string, to: string) =>
+    request<CompareResult>(
+      `/api/flags/${encodeURIComponent(key)}/compare?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+    ),
+
+  promoteDiff: (key: string, payload: PromotePayload) =>
+    request<DiffResult>(`/api/flags/${encodeURIComponent(key)}/promote/diff`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  promote: (key: string, payload: PromotePayload) =>
+    request<SaveResult>(`/api/flags/${encodeURIComponent(key)}/promote`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 
   renameFlag: (env: string, key: string, newKey: string, fileSha: string) =>
     request<SaveResult>(`/api/environments/${env}/flags/${encodeURIComponent(key)}/key`, {

@@ -201,6 +201,28 @@ Rules:
   `production/billing.goff.yaml` can neither create a flag in team `billing` nor
   create the team itself. The team dropdown only offers what you may create in.
 
+### Input validation
+
+Every value that becomes part of a file path or is written into YAML is validated
+server-side, in `internal/server/validate.go`:
+
+- **Path segments** (environment and team names) reject path separators, `..`,
+  leading dots and whitespace, so nothing the client sends can escape the
+  environment directory it belongs to. Studio owns the file extension: whatever
+  you type is normalised to a single `<team>.goff.yaml`.
+- **Anything embedded in a YAML seed** rejects line breaks and control characters,
+  including U+2028 and U+2029, which a YAML parser treats as line breaks even
+  though Go does not consider them control runes. Without this a team name could
+  inject a top-level flag key and bypass key validation entirely.
+- **Percentages** are bounded to 0–100 individually and must not all be zero;
+  GOFF's own validator accepts negative and >100 shares.
+- **Names and queries** have length limits, and a client-supplied history limit is
+  clamped before it reaches a backend that would overflow it.
+- **Request bodies** are capped at 1 MiB.
+- Existence checks for rules and variations run *after* the permission check, so a
+  caller who may not edit a flag learns nothing about its contents from an error
+  message.
+
 ## How a change reaches production
 
 1. A user signs in via OIDC. Studio reads groups from the `groups` claim.
@@ -268,6 +290,15 @@ touches only that flag. Comments, key order, and quoting all survive.
   falling through to the next rule. Once a rule's query matches, evaluation stops
   there. To let users miss a rule entirely, put a control variation in the split.
   Measured against v1.55.3 with 2000 targeting keys per case.
+- **Promotion never turns a flag on by itself.** Copying settings between
+  environments leaves the target's own on/off state alone, and a flag that does not
+  exist in the target yet is created disabled. The state is copyable, but only when
+  it is ticked explicitly. A progressive rollout is frozen into the percentage split
+  it has reached *at the moment you promote*, interpolated between its two steps,
+  because the source environment's ramp dates mean nothing in the target. Freezing
+  at the end allocation instead would silently fast-forward a half-finished rollout
+  to 100% in production. Promoting rules that serve a
+  variation the target lacks is refused before anything is written.
 - **`experimentation` is a scheduled kill switch, not a targeting rule.** GOFF
   evaluates `IsDisable() || isExperimentationOver(date)` in one condition
   (`flag/internal_flag.go`), and both return `ReasonDisabled`. Outside the window
@@ -330,6 +361,9 @@ All `/api` routes require a session cookie and return `401` without one.
 | `POST` | `/api/environments/{env}/flags/{key}/rollout` | set percentages |
 | `POST` | `/api/environments/{env}/flags/{key}/progressive` | set or clear a progressive rollout |
 | `POST` | `/api/environments/{env}/flags/{key}/experimentation` | set or clear the experimentation window |
+| `GET` | `/api/flags/{key}/compare?from=&to=` | compare one flag across two environments |
+| `POST` | `/api/flags/{key}/promote/diff` | preview a promotion |
+| `POST` | `/api/flags/{key}/promote` | copy selected settings between environments |
 | `POST` | `/api/environments/{env}/flags/{key}/rule` | set a rule's targeting query |
 | `POST` | `/api/environments/{env}/flags/{key}/rules` | add a rule |
 | `DELETE` | `/api/environments/{env}/flags/{key}/rules/{rule}` | delete a rule |
@@ -351,12 +385,13 @@ path across all three storage backends. The React UI covers the flag list with
 search, team filter and inline toggles; flag detail with variations, percentage
 sliders and a visual rule builder including negated and nested condition groups;
 creating, renaming and deleting flags and teams; editing progressive rollouts and
-the schedule (`experimentation`); review-before-save with a real file diff; live
-preview; and per-flag history.
+the schedule (`experimentation`); comparing one flag across two environments and
+promoting selected settings between them; review-before-save with a real file
+diff; live preview; and per-flag history.
 Light and dark mode, keyboard accessible, protected environments called out and
 requiring typed confirmation.
 
-437 tests pass: 292 Go tests plus 14 in the S3 module, 78 frontend tests, and 53
+486 tests pass: 337 Go tests plus 14 in the S3 module, 78 frontend tests, and 57
 Playwright tests driving the real binary against fake OIDC and GitHub servers.
 `make lint` runs `gofmt`, `go vet` and `golangci-lint` with the same linter set
 go-feature-flag uses on itself. A `Dockerfile`, a Helm chart under
@@ -369,8 +404,6 @@ Known gaps:
   flag overlay, so a partial editor risks dropping fields.
 - **`bucketingKey` is view-only.** It is preserved, but you cannot set it from the
   UI.
-- **No cross-environment view or promote.** You cannot yet compare dev against
-  production side by side, or copy a flag between environments.
 - **Rules reorder with up/down buttons**, not drag and drop.
 - **Sessions expire after 12 hours** and re-prompt; there is no refresh-token
   rotation, and a sealed cookie cannot be revoked early.

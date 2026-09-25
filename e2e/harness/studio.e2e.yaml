@@ -23,6 +23,9 @@ environments:
     display: Production
     protected: true
     order: 1
+  - name: staging
+    display: Staging
+    order: 2
 
 permissions:
   - group: flags-admins

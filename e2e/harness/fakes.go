@@ -58,6 +58,24 @@ const growthFixture = `banner-test:
     variation: "on"
 `
 
+const stagingPaymentsFixture = `# Payment flags, owned by @acme/payments
+new-checkout:
+  variations:
+    on: true
+    off: false
+  targeting:
+    - name: gold-cohort
+      query: (tier eq "gold") or (account_id eq "42")
+      percentage:
+        on: 60
+        off: 40
+  defaultRule:
+    variation: "off"
+  metadata:
+    owner: payments
+    team: payments
+`
+
 const rampFixture = `ramped:
   variations:
     on: true
@@ -111,11 +129,13 @@ func (s *repoState) reset() {
 		"production/payments.goff.yaml": paymentsFixture,
 		"production/growth.goff.yaml":   growthFixture,
 		"production/platform.goff.yaml": rampFixture,
+		"staging/payments.goff.yaml":    stagingPaymentsFixture,
 	}
 	// Generation-scoped so a reset looks like new content to the app's (path, sha) flag cache.
 	s.shas = map[string]string{
 		"production/payments.goff.yaml": fmt.Sprintf("sha-payments-%d-0", s.gen),
 		"production/growth.goff.yaml":   fmt.Sprintf("sha-growth-%d-0", s.gen),
+		"staging/payments.goff.yaml":    fmt.Sprintf("sha-staging-payments-%d-0", s.gen),
 	}
 	s.commits = nil
 }

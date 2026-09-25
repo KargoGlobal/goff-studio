@@ -5,6 +5,7 @@ import {
   type FlagList,
   type NewVariation,
   type Outcome,
+  type PromotePayload,
   type RolloutStep,
 } from '@/lib/api'
 
@@ -131,6 +132,26 @@ function invalidateFlag(qc: ReturnType<typeof useQueryClient>, env: string) {
   void qc.invalidateQueries({ queryKey: ['flags', env] })
   void qc.invalidateQueries({ queryKey: ['flag', env] })
   void qc.invalidateQueries({ queryKey: ['attributes', env] })
+}
+
+export function useCompare(key: string, from: string, to: string) {
+  return useQuery({
+    queryKey: ['compare', key, from, to],
+    queryFn: () => api.compare(key, from, to),
+    enabled: Boolean(key && from && to && from !== to),
+    retry: false,
+  })
+}
+
+export function usePromote(key: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: PromotePayload) => api.promote(key, payload),
+    onSettled: (_data, _err, payload) => {
+      invalidateFlag(qc, payload.to)
+      void qc.invalidateQueries({ queryKey: ['compare', key] })
+    },
+  })
 }
 
 export function useCreateFlag(env: string) {
