@@ -185,7 +185,7 @@ export function ComparePage({ environments }: { environments: Environment[] }) {
                 <summary className="cursor-pointer text-[12.5px] text-ink-muted hover:text-ink">
                   Show the difference
                 </summary>
-                <pre className="mt-2 overflow-x-auto rounded-md bg-canvas p-2.5 text-[12px] leading-relaxed">
+                <pre className="mt-2 overflow-x-auto rounded-md border border-[color:var(--color-brand)] bg-surface p-2.5 text-[12px] leading-relaxed">
                   {data.diff}
                 </pre>
               </details>

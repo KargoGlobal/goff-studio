@@ -52,8 +52,8 @@ export function Badge({
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium',
-        tone === 'neutral' && 'bg-canvas text-ink-soft',
+        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+        tone === 'neutral' && 'bg-brand text-white',
         tone === 'ok' && 'bg-ok-soft text-ok',
         tone === 'warn' && 'bg-warn-soft text-warn',
         tone === 'danger' && 'bg-danger-soft text-danger',
@@ -88,7 +88,7 @@ export function Toggle({
       onClick={() => onChange(!checked)}
       className={cn(
         'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
-        checked ? 'bg-brand' : 'bg-line',
+        checked ? 'bg-brand' : 'bg-[color:var(--color-toggle-off)]',
         (disabled || busy) && 'cursor-not-allowed opacity-50',
       )}
     >

@@ -1,21 +1,75 @@
-@import "tailwindcss";
 @import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap");
+@import "tailwindcss";
 
 @theme {
   --font-sans: Poppins, ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
 
+  /* GO Feature Flag palette (from gofeatureflag.org)
+   * Anchored on three exact values from the site:
+   *   sage-mint (sidebar bg)   rgb(135, 168, 167)  = #87a8a7
+   *   near-black (page bg)     rgb(28, 28, 29)     = #1c1c1d
+   *   bright mint (selection)  rgb(115, 198, 182)  = #73c6b6
+   * Support colors also cribbed from the marketing CSS:
+   *   plum accent   #6c46f2
+   *   flare cta     #b93a01
+   *   coral error   #ec7063
+   *   ink slate     #273437
+   */
+
+  /* Content surfaces are pure white so cards, inputs, and dropdowns feel raised
+   * against the eggshell page. */
   --color-surface: #ffffff;
-  --color-canvas: #f6f8f8;
   --color-raised: #ffffff;
-  --color-line: #e2e8e7;
-  --color-ink: #1b1b1d;
+  --color-line: #d9d3c5;
+
+  /* Ink on white surfaces. */
+  --color-ink: #273437;
   --color-ink-soft: #4a5553;
   --color-ink-muted: #7d8a88;
-  --color-brand: #2a9d8a;
-  --color-brand-strong: #1f8071;
-  --color-brand-soft: #e8f5f2;
-  --color-accent: #9fbeb3;
+
+  /* --color-canvas is a subtle mint-tinted inset for hover/stripe effects only.
+   * Elements that need a real visual boundary use a mint border on bg-surface instead. */
+  --color-canvas: #e7f0ec;
+
+  /* --color-page is the outer background the whole app sits on.
+   * White in light mode, deep charcoal in dark mode. */
+  --color-page: #ffffff;
+  --color-page-ink: #273437;
+  --color-page-ink-muted: #7d8a88;
+
+  /* Brand = the bright mint. Buttons, badges, focus rings, active toggles,
+   * "selection" everywhere pull from this. */
+  --color-brand: rgb(115, 198, 182);
+  --color-brand-strong: #4fb098;
+  --color-brand-soft: #e7f6f2;
+  --color-brand-contrast: #0f2320;
+
+  /* Neutral "off" for switches / unselected states. Deliberately not derived
+   * from --color-line so eggshell/tan surfaces don't bleed into toggles. */
+  --color-toggle-off: #9aa5a4;
+
+  /* Row hover / interactive highlight on white surfaces. Distinct from
+   * --color-canvas so we can tune "hover" without touching inset fills. */
+  --color-row-hover: #dff1f4;
+
+  /* Sidebar = the sage-mint from the marketing site.
+   * Active row is a darker shade of the same hue. */
+  --color-sidebar: rgb(135, 168, 167);
+  --color-sidebar-ink: #14201f;
+  --color-sidebar-ink-muted: #33474b;
+  --color-sidebar-line: rgba(20, 32, 31, 0.18);
+  --color-sidebar-hover: rgba(255, 255, 255, 0.22);
+  --color-sidebar-active: rgb(92, 122, 121);
+  --color-sidebar-active-ink: #ffffff;
+
+  /* Support accents (used sparingly, not as primary anywhere). */
+  --color-accent: #73c6b6;
+  --color-accent-soft: #e6f4f0;
+  --color-plum: #6c46f2;
+  --color-plum-soft: #eee9fe;
+  --color-flare: #b93a01;
+  --color-flare-soft: #fdece1;
   --color-danger: #b3261e;
   --color-danger-soft: #fdeceb;
   --color-warn: #8a6116;
@@ -32,16 +86,41 @@
   html.dark {
     color-scheme: dark;
     --color-surface: #242526;
-    --color-canvas: #1b1b1d;
     --color-raised: #2b2c2e;
     --color-line: #34383a;
     --color-ink: #f1f3f2;
     --color-ink-soft: #b4bfbc;
     --color-ink-muted: #8a9693;
-    --color-brand: #73c6b6;
-    --color-brand-strong: #9fd8cb;
+    --color-canvas: #1b1b1d;
+
+    --color-page: #101112;
+    --color-page-ink: #f1f3f2;
+    --color-page-ink-muted: #8a9693;
+
+    --color-brand: #8ad2c1;
+    --color-brand-strong: #b8e2d6;
     --color-brand-soft: #1e3733;
+    --color-brand-contrast: #0f2320;
+
+    --color-toggle-off: #4a5553;
+
+    /* Matches the previous `hover:bg-canvas/40` effect (canvas #1b1b1d @ 40%). */
+    --color-row-hover: rgba(27, 27, 29, 0.4);
+
+    --color-sidebar: #4a5f5e;
+    --color-sidebar-ink: #f1f3f2;
+    --color-sidebar-ink-muted: #b4c5c2;
+    --color-sidebar-line: rgba(255, 255, 255, 0.1);
+    --color-sidebar-hover: rgba(255, 255, 255, 0.08);
+    --color-sidebar-active: #2c3a39;
+    --color-sidebar-active-ink: #ffffff;
+
     --color-accent: #9fbeb3;
+    --color-accent-soft: #1e2f2b;
+    --color-plum: #a591f5;
+    --color-plum-soft: #26203a;
+    --color-flare: #e08150;
+    --color-flare-soft: #3a2418;
     --color-danger: #f4948d;
     --color-danger-soft: #35201f;
     --color-warn: #e3b567;
@@ -56,8 +135,8 @@
 
   body {
     margin: 0;
-    background: var(--color-canvas);
-    color: var(--color-ink);
+    background: var(--color-page);
+    color: var(--color-page-ink);
     font-family: var(--font-sans);
     font-size: 14px;
     -webkit-font-smoothing: antialiased;

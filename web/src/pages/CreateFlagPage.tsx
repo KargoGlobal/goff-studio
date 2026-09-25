@@ -151,9 +151,9 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
     <div className="mx-auto max-w-2xl space-y-5">
       <Link
         to={`/env/${env}`}
-        className="inline-flex items-center gap-1.5 text-[13px] text-ink-muted hover:text-ink"
+        className="inline-flex items-center gap-2 text-base font-medium text-ink-muted hover:text-ink"
       >
-        <ArrowLeft className="h-3.5 w-3.5" />
+        <ArrowLeft className="h-5 w-5" />
         All flags
       </Link>
 
