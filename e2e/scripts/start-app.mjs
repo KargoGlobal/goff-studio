@@ -31,6 +31,8 @@ const child = spawn(
       GOFF_STUDIO_ADDR: `127.0.0.1:${ports.app}`,
       GOFF_STUDIO_BASE_URL: `http://127.0.0.1:${ports.app}`,
       GOFF_STUDIO_OIDC_ISSUER_URL: `http://127.0.0.1:${ports.idp}`,
+      GOFF_STUDIO_ANALYSIS_BASE_URL: `http://127.0.0.1:${ports.analysis}`,
+      GOFF_STUDIO_ANALYSIS_TOKEN: 'e2e-analysis-token',
     },
   },
 )
