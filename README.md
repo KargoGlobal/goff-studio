@@ -162,6 +162,99 @@ comment — Studio never invents a file as a side effect of saving a flag. A fla
 whose `metadata.team` is missing shows as unassigned, which is what you see for
 files written by hand before Studio.
 
+## Experiments
+
+Studio also keeps an experiment registry and a metric catalog next to your flags,
+and shows results computed by an external analysis service. Everything lives in
+the same repository and goes through the same review-and-commit path as flags.
+
+```
+flags-repo/
+  production/
+    bidder.goff.yaml          # the flag the experiment runs on
+  experiments/
+    tmax-exp-us-east-1.yaml   # one registry entry per experiment
+  metrics/
+    dsp_bid_rate.yaml         # one catalog entry per metric
+```
+
+`experiments/` and `metrics/` are reserved: environment discovery skips them and
+you cannot create an environment with either name. See [`examples/`](examples/)
+for a complete, valid set you can point the `file` backend at.
+
+**Registry entry** (`experiments/<key>.yaml`): key, name, owner team, hypothesis,
+optional ticket, the flag and environment, the flag rules it runs in
+(`allocations`), `control` and `variants` (which must be variations of the
+flag), the randomization unit (`request` or `entity`), `start` and a required
+`end`, `status` (`draft`, `running`, `stopped`, `concluded`), primary, secondary
+and guardrail metrics (guardrails carry a `max_drop_pct` tolerance), analysis
+options (`sequential` or `fixed`, `alpha`, `power`, CUPED with a covariate,
+`none`/`holm`/`bh` correction, strata), result segments, and an optional
+recorded decision. An experiment may run for at most 8 weeks unless it is marked
+`extended: true`. Keys Studio does not know about are preserved on save.
+
+**Metric catalog entry** (`metrics/<key>.yaml`): `kind` is `mean` (a numerator
+column) or `ratio` (numerator and denominator columns), with a display `format`
+(`percent`, `currency`, `number`), the `direction` that counts as better, and an
+optional winsorization `cap`.
+
+### Permissions for experiments
+
+No new actions. An experiment is owned by its flag's team file, so the flag's
+rules apply:
+
+| Operation | Checked as |
+| --- | --- |
+| list, read, results | `view` on the flag's file in the experiment's environment |
+| create | `create` on the flag's file |
+| edit (including status and decision) | `edit_rules` on the flag's file, and on the previous flag's file if the flag changed |
+
+If the flag cannot be found, the owner team's file (`<env>/<owner>.goff.yaml`)
+stands in, so an orphaned entry stays default-deny. The metric catalog is
+shared: anyone who can see an environment can read it, and writes are checked as
+`create` or `edit_rules` against `metrics/<key>.yaml` with **no environment**, so
+only rules without an `environments` list (or with `"*"`) grant them, for
+example `{group: analysts, allow: ["metrics/*"], actions: [create, edit_rules]}`.
+
+### Analysis service
+
+| Config key | Env var | Notes |
+| --- | --- | --- |
+| `analysis.baseURL` | `GOFF_STUDIO_ANALYSIS_BASE_URL` | optional; without it Studio serves sample results |
+| `analysis.token` | `GOFF_STUDIO_ANALYSIS_TOKEN` | sent as `Authorization: Bearer <token>` |
+
+Studio calls two endpoints on the service:
+
+- `GET {baseURL}/v1/experiments/{key}/results?segments=true[&as_of=<date>]`
+  returns the results document: `experiment_key`, `as_of`, `status`
+  (`ok`, `insufficient_data`, `error`), `method`, `variants` with units and
+  expected share, `srm` (chi-square, p-value, `flag`), `metrics` with per-variant
+  `value`, `control_value`, relative `lift` and its interval (`ci_low`,
+  `ci_high`), `p_value`, `adjusted_p`, `significant`, optional `cuped`
+  (adjusted lift, interval, `variance_reduction`) and `guardrail`
+  (`max_drop_pct`, `pass`), plus `segments`, a daily cumulative-lift
+  `timeseries`, `diagnostics`, and a `decision` recommendation
+  (`roll_out`, `discuss`, `do_not_roll_out`, `keep_running`).
+- `POST {baseURL}/v1/experiments/power` with the baseline mean, variance, daily
+  units, arms, alpha, power and CUPED variance reduction, returning the MDE and
+  days to reach a target MDE.
+
+Results are cached in memory for 5 minutes per experiment and `as_of`; each call
+times out after 5 seconds. A slow service shows as a 504, a failing one as a 502,
+and "no results yet" as a 404, each with a message meant for the person reading
+the page. The experiments list never calls the service; it summarises whatever
+is cached, and hovering a row prefetches that row's results.
+
+Without `analysis.baseURL`, results are generated deterministically from the
+registry and labelled `"sample": true`, and the UI badges them as sample data.
+The power calculator falls back to a two-sample z-test estimate in Studio.
+
+The decision rule: a significant improvement on the primary metric with every
+guardrail passing is `roll_out`; with a guardrail that cannot rule out a drop
+beyond its tolerance, `discuss`; with a guardrail significantly hurt,
+`do_not_roll_out`. Without a significant improvement it is `keep_running` until
+the planned end, then `do_not_roll_out`.
+
 ## Permission model
 
 Permissions map OIDC groups to file patterns, environments, and actions.
@@ -304,7 +397,9 @@ cd web && npx vitest run
 
 Stack: Go 1.27 standard-library HTTP (`net/http` routing patterns, no web
 framework), React 19 + TypeScript + Vite + Tailwind 4, `react-querybuilder` for
-the rule builder. The built frontend is embedded in the binary with `go:embed`,
+the rule builder. Charts are small inline SVG components, not a charting
+library. Pages other than the flag list are lazy-loaded, and the rule builder's
+libraries sit in their own chunk, so the landing page does not pay for them. The built frontend is embedded in the binary with `go:embed`,
 so deployment is one static binary plus a config file.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for package layout and conventions.
@@ -340,6 +435,17 @@ All `/api` routes require a session cookie and return `401` without one.
 | `GET` | `/api/environments/{env}/attributes` | attribute names seen in existing rules |
 | `POST` | `/api/environments` | create an environment directory |
 | `POST` | `/api/environments/{env}/teams` | create a team file |
+| `GET` | `/api/experiments` | experiments you can view, with timing and a results summary |
+| `POST` | `/api/experiments` | create a registry entry |
+| `GET` | `/api/experiments/{key}` | one registry entry |
+| `PUT` | `/api/experiments/{key}` | update a registry entry (needs `fileSha`) |
+| `POST` | `/api/experiments/{key}/diff` | description + unified diff, no write |
+| `GET` | `/api/experiments/{key}/results` | results from the analysis service, or sample results |
+| `POST` | `/api/experiments/power` | MDE and duration estimate |
+| `GET` | `/api/metrics` | the metric catalog |
+| `POST` | `/api/metrics` | add a metric |
+| `GET` / `PUT` | `/api/metrics/{key}` | read or update a metric (`PUT` needs `fileSha`) |
+| `POST` | `/api/metrics/{key}/diff` | description + unified diff, no write |
 
 Error codes: `403` no permission, `404` unknown flag, `409` stale view or
 concurrent edit on the same flag.
@@ -352,11 +458,14 @@ search, team filter and inline toggles; flag detail with variations, percentage
 sliders and a visual rule builder including negated and nested condition groups;
 creating, renaming and deleting flags and teams; editing progressive rollouts and
 the schedule (`experimentation`); review-before-save with a real file diff; live
-preview; and per-flag history.
+preview; and per-flag history. The Experiments area covers the registry list,
+results with confidence intervals, CUPED, guardrails, segments and a cumulative
+lift chart, the set-up form with an MDE calculator, the metric catalog, and a
+Markdown readout export.
 Light and dark mode, keyboard accessible, protected environments called out and
 requiring typed confirmation.
 
-437 tests pass: 292 Go tests plus 14 in the S3 module, 78 frontend tests, and 53
+505 tests pass: 332 Go tests plus 14 in the S3 module, 97 frontend tests, and 62
 Playwright tests driving the real binary against fake OIDC and GitHub servers.
 `make lint` runs `gofmt`, `go vet` and `golangci-lint` with the same linter set
 go-feature-flag uses on itself. A `Dockerfile`, a Helm chart under
