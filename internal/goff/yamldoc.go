@@ -3,8 +3,10 @@ package goff
 import (
 	"bytes"
 	"fmt"
+	"sort"
 	"strings"
 
+	"github.com/go-feature-flag/studio/pkg/splits"
 	"gopkg.in/yaml.v3"
 )
 
@@ -96,6 +98,10 @@ func (d *Doc) SetField(flagKey, field string, value any) error {
 			continue
 		}
 		if sameValue(node.Content[i+1], next) {
+			return nil
+		}
+		if field == "metadata" {
+			node.Content[i+1] = mergeNode(node.Content[i+1], next)
 			return nil
 		}
 		next.HeadComment = node.Content[i+1].HeadComment
@@ -261,6 +267,7 @@ func (d *Doc) SpliceFlag(key string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	rendered = d.keepUntouchedText(key, rendered)
 
 	next := make([]string, 0, len(d.lines))
 	next = append(next, d.lines[:start]...)
@@ -339,4 +346,277 @@ func (d *Doc) SpliceDelete(key string) ([]byte, error) {
 	next := append([]string(nil), d.lines[:start]...)
 	next = append(next, d.lines[end:]...)
 	return []byte(strings.Join(next, "\n") + "\n"), nil
+}
+
+// SetExperiment writes metadata.experiment, reusing every original node whose
+// value did not change so a ramp from 1% to 2% diffs as one line.
+func (d *Doc) SetExperiment(flagKey string, exp *splits.Experiment) error {
+	node := d.flagNode(flagKey)
+	if node == nil || node.Kind != yaml.MappingNode {
+		return fmt.Errorf("flag %q not found", flagKey)
+	}
+
+	metadata := mappingValue(node, "metadata")
+	if exp == nil {
+		if metadata != nil {
+			deleteKey(metadata, "experiment")
+		}
+		return nil
+	}
+
+	next, err := experimentNode(exp)
+	if err != nil {
+		return err
+	}
+	if metadata == nil {
+		metadata = &yaml.Node{Kind: yaml.MappingNode, Tag: tagMap}
+		node.Content = append(node.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: tagStr, Value: "metadata"}, metadata)
+	}
+	for i := 0; i+1 < len(metadata.Content); i += 2 {
+		if metadata.Content[i].Value == "experiment" {
+			metadata.Content[i+1] = mergeNode(metadata.Content[i+1], next)
+			return nil
+		}
+	}
+	metadata.Content = append(metadata.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: tagStr, Value: "experiment"}, next)
+	return nil
+}
+
+func mappingValue(m *yaml.Node, key string) *yaml.Node {
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value == key && m.Content[i+1].Kind == yaml.MappingNode {
+			return m.Content[i+1]
+		}
+	}
+	return nil
+}
+
+func deleteKey(m *yaml.Node, key string) {
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value == key {
+			m.Content = append(m.Content[:i], m.Content[i+2:]...)
+			return
+		}
+	}
+}
+
+// Shards, ranges, units and logging maps read best on one line each.
+var flowKeys = map[string]bool{"unit": true, "holdout": true, "layer": true, "extraLogging": true, "ranges": true}
+
+func experimentNode(exp *splits.Experiment) (*yaml.Node, error) {
+	var node yaml.Node
+	if err := node.Encode(exp); err != nil {
+		return nil, fmt.Errorf("encoding experiment: %w", err)
+	}
+	styleExperiment(&node, "")
+	return &node, nil
+}
+
+func styleExperiment(n *yaml.Node, key string) {
+	if flowKeys[key] && (n.Kind == yaml.MappingNode || n.Kind == yaml.SequenceNode) {
+		n.Style = yaml.FlowStyle
+	}
+	switch n.Kind {
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			styleExperiment(n.Content[i+1], n.Content[i].Value)
+		}
+	case yaml.SequenceNode:
+		for _, item := range n.Content {
+			if key == "shards" && item.Kind == yaml.MappingNode {
+				item.Style = yaml.FlowStyle
+			}
+			styleExperiment(item, "")
+		}
+	}
+}
+
+// mergeNode keeps orig wherever it already says the same thing as next.
+func mergeNode(orig, next *yaml.Node) *yaml.Node {
+	if orig == nil {
+		return next
+	}
+	if sameValue(orig, next) {
+		return orig
+	}
+
+	switch {
+	case orig.Kind == yaml.MappingNode && next.Kind == yaml.MappingNode:
+		merged := *orig
+		merged.Content = nil
+		wanted := map[string]*yaml.Node{}
+		var order []string
+		for i := 0; i+1 < len(next.Content); i += 2 {
+			wanted[next.Content[i].Value] = next.Content[i+1]
+			order = append(order, next.Content[i].Value)
+		}
+		kept := map[string]bool{}
+		for i := 0; i+1 < len(orig.Content); i += 2 {
+			k := orig.Content[i].Value
+			v, ok := wanted[k]
+			if !ok {
+				continue
+			}
+			kept[k] = true
+			merged.Content = append(merged.Content, orig.Content[i], mergeNode(orig.Content[i+1], v))
+		}
+		for _, k := range order {
+			if !kept[k] {
+				merged.Content = append(merged.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: tagStr, Value: k}, wanted[k])
+			}
+		}
+		return &merged
+	case orig.Kind == yaml.SequenceNode && next.Kind == yaml.SequenceNode:
+		merged := *orig
+		merged.Content = nil
+		for i, item := range next.Content {
+			if i < len(orig.Content) {
+				merged.Content = append(merged.Content, mergeNode(orig.Content[i], item))
+			} else {
+				merged.Content = append(merged.Content, item)
+			}
+		}
+		return &merged
+	}
+
+	next.HeadComment, next.LineComment, next.FootComment = orig.HeadComment, orig.LineComment, orig.FootComment
+	if orig.Kind == yaml.ScalarNode && next.Kind == yaml.ScalarNode && orig.Tag == next.Tag {
+		next.Style = orig.Style
+	}
+	return next
+}
+
+// keepUntouchedText swaps every subtree of the edited flag that still holds its
+// original nodes back to its original text, so re-rendering a flag does not
+// realign comments or reflow values nobody touched. If the result does not
+// read back identically, the plain rendering is used instead.
+func (d *Doc) keepUntouchedText(key string, rendered []string) []string {
+	current := d.flagNode(key)
+	if current == nil || len(d.lines) == 0 {
+		return rendered
+	}
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(strings.Join(rendered, "\n")), &root); err != nil {
+		return rendered
+	}
+	if len(root.Content) == 0 || len(root.Content[0].Content) < 2 {
+		return rendered
+	}
+	fresh := root.Content[0].Content[1]
+
+	var swaps []swap
+	d.collectSwaps(current, fresh, rendered, &swaps)
+	if len(swaps) == 0 {
+		return rendered
+	}
+	sort.Slice(swaps, func(i, j int) bool { return swaps[i].to.start > swaps[j].to.start })
+
+	out := append([]string(nil), rendered...)
+	for _, s := range swaps {
+		replaced := append([]string(nil), out[:s.to.start]...)
+		replaced = append(replaced, d.lines[s.from.start:s.from.end]...)
+		out = append(replaced, out[s.to.end:]...)
+	}
+
+	var check yaml.Node
+	if err := yaml.Unmarshal([]byte(strings.Join(out, "\n")), &check); err != nil ||
+		len(check.Content) == 0 || !sameValue(check.Content[0], root.Content[0]) {
+		return rendered
+	}
+	return out
+}
+
+type lineRange struct{ start, end int }
+
+type swap struct{ from, to lineRange }
+
+func (d *Doc) collectSwaps(cur, fresh *yaml.Node, rendered []string, swaps *[]swap) {
+	if cur.Kind != fresh.Kind || cur.Style&yaml.FlowStyle != 0 || fresh.Style&yaml.FlowStyle != 0 {
+		return
+	}
+	switch cur.Kind {
+	case yaml.MappingNode:
+		if len(cur.Content) != len(fresh.Content) {
+			return
+		}
+		for i := 0; i+1 < len(cur.Content); i += 2 {
+			ck, cv, fk, fv := cur.Content[i], cur.Content[i+1], fresh.Content[i], fresh.Content[i+1]
+			if pristine(ck) && pristine(cv) && ck.Column == fk.Column {
+				indentless := cv.Kind == yaml.SequenceNode
+				*swaps = append(*swaps, swap{
+					from: extent(d.lines, ck.Line-1, ck.Column-1, indentless),
+					to:   extent(rendered, fk.Line-1, fk.Column-1, fv.Kind == yaml.SequenceNode),
+				})
+				continue
+			}
+			if pristine(ck) && ck.Column == fk.Column && cv.Line > ck.Line && fv.Line > fk.Line {
+				*swaps = append(*swaps, swap{
+					from: lineRange{ck.Line - 1, ck.Line},
+					to:   lineRange{fk.Line - 1, fk.Line},
+				})
+			}
+			d.collectSwaps(cv, fv, rendered, swaps)
+		}
+	case yaml.SequenceNode:
+		if len(cur.Content) != len(fresh.Content) {
+			return
+		}
+		for i := range cur.Content {
+			ci, fi := cur.Content[i], fresh.Content[i]
+			if pristine(ci) && ci.Column == fi.Column {
+				from, okFrom := itemExtent(d.lines, ci)
+				to, okTo := itemExtent(rendered, fi)
+				if okFrom && okTo {
+					*swaps = append(*swaps, swap{from: from, to: to})
+				}
+				continue
+			}
+			d.collectSwaps(ci, fi, rendered, swaps)
+		}
+	}
+}
+
+// pristine means the subtree is exactly what was parsed from the file.
+func pristine(n *yaml.Node) bool {
+	if n == nil || n.Line == 0 {
+		return false
+	}
+	for _, c := range n.Content {
+		if !pristine(c) {
+			return false
+		}
+	}
+	return true
+}
+
+func itemExtent(lines []string, item *yaml.Node) (lineRange, bool) {
+	start := item.Line - 1
+	if start < 0 || start >= len(lines) {
+		return lineRange{}, false
+	}
+	dash := strings.LastIndex(lines[start][:min(item.Column-1, len(lines[start]))], "-")
+	if dash < 0 {
+		return lineRange{}, false
+	}
+	return extent(lines, start, dash, false), true
+}
+
+// extent is the line range of a node starting at line start whose key or dash
+// sits at column col: every following line indented deeper, plus sibling-level
+// "- " lines for an indentless sequence, without trailing blanks or comments.
+func extent(lines []string, start, col int, indentless bool) lineRange {
+	last := start
+	for i := start + 1; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		indent := len(lines[i]) - len(strings.TrimLeft(lines[i], " "))
+		if indent > col || (indentless && indent == col && strings.HasPrefix(trimmed, "- ")) {
+			last = i
+			continue
+		}
+		break
+	}
+	return lineRange{start, last + 1}
 }

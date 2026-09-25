@@ -1,6 +1,7 @@
 package goff
 
 import (
+	"github.com/go-feature-flag/studio/pkg/splits"
 	"github.com/thomaspoignant/go-feature-flag/modules/core/flag"
 	"gopkg.in/yaml.v3"
 )
@@ -48,6 +49,8 @@ type Rule struct {
 	Disabled    bool                `json:"disabled,omitempty"`
 	Outcome     Outcome             `json:"outcome"`
 	Progressive *ProgressiveRollout `json:"progressive,omitempty"`
+	// True when metadata.experiment has an allocation keyed by this rule's name.
+	HasAllocation bool `json:"hasAllocation,omitempty"`
 }
 
 type Flag struct {
@@ -63,10 +66,14 @@ type Flag struct {
 	Metadata        map[string]any   `json:"metadata,omitempty"`
 	Team            string           `json:"team"`
 	Preserved       []string         `json:"preserved,omitempty"`
+	// Parsed metadata.experiment; null when the flag has none.
+	Experiment      *splits.Experiment `json:"experiment"`
+	ExperimentError string             `json:"experimentError,omitempty"`
 
-	internal      flag.InternalFlag
-	rawRules      map[string]*yaml.Node
-	originalRules map[string]Rule
+	internal           flag.InternalFlag
+	rawRules           map[string]*yaml.Node
+	originalRules      map[string]Rule
+	originalExperiment *splits.Experiment
 }
 
 func (f Flag) Internal() flag.InternalFlag { return f.internal }
@@ -76,4 +83,10 @@ type EvalResult struct {
 	Value     any    `json:"value"`
 	Reason    string `json:"reason"`
 	Error     string `json:"error,omitempty"`
+
+	// Set when the flag has an experiment block and was evaluated with pkg/splits.
+	ExperimentKey string            `json:"experimentKey,omitempty"`
+	Allocation    string            `json:"allocation,omitempty"`
+	DoLog         *bool             `json:"doLog,omitempty"`
+	ExtraLogging  map[string]string `json:"extraLogging,omitempty"`
 }

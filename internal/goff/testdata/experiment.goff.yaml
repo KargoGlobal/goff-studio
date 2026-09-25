@@ -1,0 +1,53 @@
+# Request timeout experiments.
+request-timeout:
+  variations:
+    control: 200
+    fast: 150
+    slow: 250
+  targeting:
+    - name: exp-region-a
+      query: region in ["region-a"]
+      variation: control
+    - name: legacy-override
+      query: tier eq "internal"
+      variation: fast
+  defaultRule:
+    variation: control
+  trackEvents: false
+  metadata:
+    team: platform
+    experiment:
+      version: 1
+      hash: md5-shard
+      totalShards: 10000
+      unit: {type: request, key: targetingKey}
+      holdout: null
+      allocations:
+        exp-region-a:            # imported allocation key kept
+          experimentKey: request-timeout-exp-region-a
+          doLog: true
+          startAt: 2026-10-01T00:00:00Z
+          endAt: null
+          passThrough: true
+          layer: null
+          splits:
+            - variation: control
+              shards:
+                - {salt: "c1e0a7d25f", ranges: [[0, 100]]}
+                - {salt: "9b3f41e2aa", ranges: [[0, 3334]]}
+            # one entry per arm
+            - variation: fast
+              shards:
+                - {salt: "c1e0a7d25f", ranges: [[0, 100]]}
+                - {salt: "9b3f41e2aa", ranges: [[3334, 6667]]}
+            - variation: slow
+              shards:
+                - {salt: "c1e0a7d25f", ranges: [[0, 100]]}
+                - {salt: "9b3f41e2aa", ranges: [[6667, 10000]]}
+
+plain:
+  variations:
+    on: true
+    off: false
+  defaultRule:
+    variation: "off"
