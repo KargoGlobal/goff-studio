@@ -24,7 +24,7 @@ function useSummary(e: ExperimentView): ResultSummary | undefined {
     srmFlag: r.srm.flag,
     primaryMetric: primary?.key,
     primaryVariant: pick?.variant,
-    primaryLift: pick?.lift,
+    primaryLift: pick?.lift ?? undefined,
     primarySignificant: pick?.significant ?? false,
     recommendation: r.decision?.recommendation,
     sample: Boolean(r.sample),

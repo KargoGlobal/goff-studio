@@ -6,22 +6,31 @@ import (
 )
 
 // good reports whether a lift moves the metric the way its owner wants.
-func good(direction string, lift float64) bool {
-	if direction == "decrease" {
-		return lift < 0
+func good(direction string, lift *float64) bool {
+	l, ok := val(lift)
+	if !ok {
+		return false
 	}
-	return lift > 0
+	if direction == "decrease" {
+		return l < 0
+	}
+	return l > 0
 }
 
 // harmful reports whether the whole interval sits on the wrong side of zero.
 func harmful(direction string, a ArmStat) bool {
+	if a.Guardrail != nil && a.Guardrail.SignificantHarm != nil {
+		return *a.Guardrail.SignificantHarm
+	}
 	if !a.Significant {
 		return false
 	}
 	if direction == "decrease" {
-		return a.CILow > 0
+		low, ok := val(a.CILow)
+		return ok && low > 0
 	}
-	return a.CIHigh < 0
+	high, ok := val(a.CIHigh)
+	return ok && high < 0
 }
 
 // Decide applies the roll-out rule: a significant win on the primary metric
@@ -45,7 +54,7 @@ func Decide(metrics []MetricResult, end, now time.Time) Recommendation {
 			if !r.Significant || !good(primary.Direction, r.Lift) {
 				continue
 			}
-			if best == nil || abs(r.Lift) > abs(best.Lift) {
+			if best == nil || abs(*r.Lift) > abs(*best.Lift) {
 				best = r
 			}
 		}

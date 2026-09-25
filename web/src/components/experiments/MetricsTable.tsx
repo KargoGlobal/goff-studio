@@ -4,14 +4,58 @@ import { CIBar } from '@/components/experiments/CIBar'
 import { Badge } from '@/components/ui/primitives'
 import {
   ciDomain,
+  cupedMode,
   formatCI,
   formatLift,
   formatPValue,
   formatValue,
   liftTone,
+  UNDEFINED_LIFT,
+  type Tone,
 } from '@/lib/experiments'
-import type { MetricResult, Role } from '@/lib/experimentTypes'
+import type { MetricFormat, MetricResult, Role } from '@/lib/experimentTypes'
 import { cn } from '@/lib/cn'
+
+function Interval({
+  low,
+  high,
+  lift,
+  domain,
+  tone,
+  label,
+  note,
+}: {
+  low: number | null
+  high: number | null
+  lift: number | null
+  domain: number
+  tone: Tone
+  label: string
+  note?: string
+}) {
+  if (low == null || high == null || lift == null) {
+    return (
+      <span className="text-ink-muted" title={UNDEFINED_LIFT}>
+        —
+      </span>
+    )
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <CIBar low={low} high={high} lift={lift} domain={domain} tone={tone} width={120} label={label} />
+      <span className="whitespace-nowrap text-[11.5px] tabular-nums text-ink-muted">{note ?? formatCI(low, high)}</span>
+    </div>
+  )
+}
+
+function Values({ control, value, format }: { control: number; value: number; format: MetricFormat }) {
+  return (
+    <>
+      <td className="px-3 py-2.5 text-right tabular-nums text-ink-soft">{formatValue(control, format)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums">{formatValue(value, format)}</td>
+    </>
+  )
+}
 
 const ROLE_TITLE: Record<Role, string> = {
   primary: 'Primary metrics',
@@ -31,7 +75,9 @@ export function MetricsTable({
   showCuped: boolean
 }) {
   if (metrics.length === 0) return null
-  const cuped = showCuped && metrics.some((m) => m.results.some((r) => r.cuped))
+  const mode = cupedMode(metrics)
+  // New documents are already adjusted at the top level; the extra column then shows the unadjusted readout.
+  const cuped = mode === 'adjusted' || (showCuped && mode === 'legacy')
   const guard = role === 'guardrail'
 
   return (
@@ -48,14 +94,18 @@ export function MetricsTable({
               <th className="px-3 py-2 text-right">Lift</th>
               <th className="px-3 py-2">{level} interval</th>
               <th className="px-3 py-2 text-right">p-value</th>
-              {cuped && <th className="px-3 py-2">CUPED-adjusted</th>}
+              {cuped && <th className="px-3 py-2">{mode === 'adjusted' ? 'Unadjusted' : 'CUPED-adjusted'}</th>}
               <th className="px-3 py-2">{guard ? 'Guardrail' : 'Result'}</th>
             </tr>
           </thead>
           <tbody>
             {metrics.map((m) => {
               const domain = ciDomain(
-                m.results.flatMap((r) => (r.cuped ? [r, { ci_low: r.cuped.ci_low, ci_high: r.cuped.ci_high }] : [r])),
+                m.results.flatMap((r) => [
+                  r,
+                  ...(r.cuped ? [r.cuped] : []),
+                  ...(r.raw ? [r.raw] : []),
+                ]),
               )
               return (
                 <Fragment key={m.key}>
@@ -72,50 +122,67 @@ export function MetricsTable({
                           </td>
                         )}
                         <td className="px-3 py-2.5 font-mono text-[12.5px]">{r.variant}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-ink-soft">{formatValue(r.control_value, m.format)}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums">{formatValue(r.value, m.format)}</td>
+                        <Values control={r.control_value} value={r.value} format={m.format} />
                         <td
                           className={cn(
-                            'px-3 py-2.5 text-right font-medium tabular-nums',
+                            'whitespace-nowrap px-3 py-2.5 text-right font-medium tabular-nums',
                             tone === 'good' && 'text-ok',
                             tone === 'bad' && 'text-danger',
                           )}
+                          title={r.lift == null ? UNDEFINED_LIFT : undefined}
                         >
-                          {formatLift(r.lift)}
+                          {r.lift == null ? <span className="font-normal text-ink-muted">n/a</span> : formatLift(r.lift)}
+                          {r.raw && (
+                            <Badge tone="brand" className="ml-1.5" title="CUPED-adjusted estimate">
+                              CUPED
+                            </Badge>
+                          )}
                         </td>
                         <td className="px-3 py-2.5">
-                          <div className="flex items-center gap-2">
-                            <CIBar low={r.ci_low} high={r.ci_high} lift={r.lift} domain={domain} tone={tone} width={120} label={`${m.name}, ${r.variant}`} />
-                            <span className="whitespace-nowrap text-[11.5px] tabular-nums text-ink-muted">{formatCI(r.ci_low, r.ci_high)}</span>
-                          </div>
+                          <Interval low={r.ci_low} high={r.ci_high} lift={r.lift} domain={domain} tone={tone} label={`${m.name}, ${r.variant}`} />
                         </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-ink-soft" title={r.adjusted_p !== r.p_value ? `raw p = ${formatPValue(r.p_value)}` : undefined}>
+                        <td
+                          className="px-3 py-2.5 text-right tabular-nums text-ink-soft"
+                          title={r.adjusted_p != null && r.adjusted_p !== r.p_value ? `unadjusted for multiple comparisons: p = ${formatPValue(r.p_value)}` : undefined}
+                        >
                           {formatPValue(r.adjusted_p ?? r.p_value)}
                         </td>
                         {cuped && (
                           <td className="px-3 py-2.5">
-                            {r.cuped ? (
-                              <div className="flex items-center gap-2">
-                                <CIBar
-                                  low={r.cuped.ci_low}
-                                  high={r.cuped.ci_high}
-                                  lift={r.cuped.lift}
-                                  domain={domain}
-                                  tone={liftTone(m.direction, { lift: r.cuped.lift, significant: r.cuped.ci_low > 0 || r.cuped.ci_high < 0 })}
-                                  width={120}
-                                  label={`${m.name}, ${r.variant}, CUPED`}
-                                />
-                                <span className="whitespace-nowrap text-[11.5px] tabular-nums text-ink-muted">
-                                  {formatLift(r.cuped.lift)} · VR {Math.round(r.cuped.variance_reduction * 100)}%
-                                </span>
-                              </div>
+                            {mode === 'adjusted' && r.raw ? (
+                              <Interval
+                                low={r.raw.ci_low}
+                                high={r.raw.ci_high}
+                                lift={r.raw.lift}
+                                domain={domain}
+                                tone="neutral"
+                                label={`${m.name}, ${r.variant}, unadjusted`}
+                                note={`${formatLift(r.raw.lift)} · p ${formatPValue(r.raw.p_value)}${r.cuped ? ` · VR ${Math.round(r.cuped.variance_reduction * 100)}%` : ''}`}
+                              />
+                            ) : mode === 'legacy' && r.cuped ? (
+                              <Interval
+                                low={r.cuped.ci_low}
+                                high={r.cuped.ci_high}
+                                lift={r.cuped.lift}
+                                domain={domain}
+                                tone={liftTone(m.direction, {
+                                  lift: r.cuped.lift,
+                                  significant: r.cuped.ci_low != null && r.cuped.ci_high != null && (r.cuped.ci_low > 0 || r.cuped.ci_high < 0),
+                                })}
+                                label={`${m.name}, ${r.variant}, CUPED`}
+                                note={`${formatLift(r.cuped.lift)} · VR ${Math.round(r.cuped.variance_reduction * 100)}%`}
+                              />
                             ) : (
                               <span className="text-ink-muted">—</span>
                             )}
                           </td>
                         )}
                         <td className="whitespace-nowrap px-3 py-2.5">
-                          {guard && r.guardrail ? (
+                          {guard && r.guardrail?.reason ? (
+                            <Badge tone="warn" title={r.guardrail.reason}>
+                              no data
+                            </Badge>
+                          ) : guard && r.guardrail ? (
                             r.guardrail.pass ? (
                               <Badge tone="ok" className="gap-1" title={`No drop beyond ${r.guardrail.max_drop_pct}% can be ruled in`}>
                                 <CheckCircle2 className="h-3 w-3" aria-hidden /> pass
@@ -130,7 +197,10 @@ export function MetricsTable({
                           ) : (
                             <Badge tone="neutral">not significant</Badge>
                           )}
-                          {guard && r.guardrail && (
+                          {guard && r.guardrail?.reason && (
+                            <span className="ml-1.5 text-[11px] text-ink-muted">{r.guardrail.reason}</span>
+                          )}
+                          {guard && r.guardrail?.max_drop_pct != null && (
                             <span className="ml-1.5 text-[11px] text-ink-muted">max drop {r.guardrail.max_drop_pct}%</span>
                           )}
                         </td>

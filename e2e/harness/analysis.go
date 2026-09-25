@@ -125,15 +125,28 @@ func arm(variant string, value, control, lift, half, p float64, cuped bool, guar
 	out := map[string]any{
 		"variant": variant, "value": value, "control_value": control, "lift": lift,
 		"ci_low": lift - half, "ci_high": lift + half, "p_value": p, "adjusted_p": p,
-		"significant": lift-half > 0 || lift+half < 0, "cuped": nil, "guardrail": nil,
+		"significant": lift-half > 0 || lift+half < 0, "raw": nil, "cuped": nil, "guardrail": nil,
 	}
 	if cuped {
-		out["cuped"] = map[string]any{"value": value, "lift": lift, "ci_low": lift - half*0.8, "ci_high": lift + half*0.8, "variance_reduction": 0.36}
+		// CUPED applies: the top level is the adjusted readout, raw the unadjusted one.
+		adj := half * 0.8
+		out["raw"] = map[string]any{"value": value, "control_value": control, "lift": lift, "ci_low": lift - half, "ci_high": lift + half, "p_value": p}
+		out["ci_low"], out["ci_high"], out["p_value"], out["adjusted_p"] = lift-adj, lift+adj, p/2, p/2
+		out["significant"] = lift-adj > 0 || lift+adj < 0
+		out["cuped"] = map[string]any{"value": value, "lift": lift, "ci_low": lift - adj, "ci_high": lift + adj, "variance_reduction": 0.36}
 	}
 	if guard != nil {
 		out["guardrail"] = *guard
 	}
 	return out
+}
+
+// undefinedArm is a result whose relative lift cannot be computed (control mean <= 0).
+func undefinedArm(variant string, guard map[string]any) map[string]any {
+	return map[string]any{
+		"variant": variant, "value": 0.0, "control_value": 0.0, "lift": nil, "ci_low": nil, "ci_high": nil,
+		"p_value": nil, "adjusted_p": nil, "significant": false, "raw": nil, "cuped": nil, "guardrail": guard,
+	}
 }
 
 func metric(key, name, role, direction, format string, results ...map[string]any) map[string]any {
@@ -162,13 +175,16 @@ func analysisResults(key string, now time.Time) (map[string]any, bool) {
 		primary := metric("click_rate", "Click rate", "primary", "increase", "percent", arm("on", 0.0421, 0.0402, 0.0473, 0.018, 0.0004, true, nil))
 		return map[string]any{
 			"experiment_key": key, "as_of": asOf, "status": "ok", "message": nil, "unit": "entity",
-			"method":   map[string]any{"test": "sequential", "alpha": 0.05, "cuped": true, "correction": "none"},
+			"method":   map[string]any{"test": "sequential", "alpha": 0.05, "cuped": true, "correction": "none", "sequential_tuning": map[string]any{"on": 1.21}},
 			"variants": []map[string]any{{"key": "off", "is_control": true, "units": 120331, "expected_share": 0.5}, {"key": "on", "is_control": false, "units": 120502, "expected_share": 0.5}},
 			"srm":      map[string]any{"chi2": 0.12, "p_value": 0.73, "flag": false, "max_abs_deviation": 0.0007},
 			"metrics": []map[string]any{
 				primary,
 				metric("net_cpm", "Net CPM", "guardrail", "increase", "currency", arm("on", 2.41, 2.42, -0.004, 0.009, 0.41, true, &guardPass)),
 				metric("gross_revenue", "Gross revenue per bid request", "secondary", "increase", "currency", arm("on", 0.0131, 0.0128, 0.021, 0.03, 0.17, true, nil)),
+				metric("pmp_gross_revenue", "PMP revenue", "secondary", "increase", "currency", undefinedArm("on", nil)),
+				metric("avg_bid_cpm", "Average bid CPM", "guardrail", "increase", "currency",
+					undefinedArm("on", map[string]any{"pass": false, "significant_harm": false, "reason": "no usable data"})),
 			},
 			"segments": []map[string]any{
 				{"dimension": "device", "value": "desktop", "metrics": []map[string]any{metric("click_rate", "Click rate", "primary", "increase", "percent", arm("on", 0.05, 0.048, 0.041, 0.02, 0.004, false, nil))}},

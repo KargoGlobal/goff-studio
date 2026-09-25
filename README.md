@@ -195,6 +195,12 @@ options (`sequential` or `fixed`, `alpha`, `power`, CUPED with a covariate,
 recorded decision. An experiment may run for at most 8 weeks unless it is marked
 `extended: true`. Keys Studio does not know about are preserved on save.
 
+The registry key has to be the experiment key one of its listed allocations
+logs exposures under: the allocation's `experimentKey` from
+`metadata.experiment`, or `<flag>-<rule>` for a rule without one (a plain
+percentage rollout included). That keeps keys unforgeable: a team cannot
+register an entry under another team's experiment key and read its results.
+
 **Metric catalog entry** (`metrics/<key>.yaml`): `kind` is `mean` (a numerator
 column) or `ratio` (numerator and denominator columns), with a display `format`
 (`percent`, `currency`, `number`), the `direction` that counts as better, and an
@@ -232,19 +238,33 @@ Studio calls two endpoints on the service:
   (`ok`, `insufficient_data`, `error`), `method`, `variants` with units and
   expected share, `srm` (chi-square, p-value, `flag`), `metrics` with per-variant
   `value`, `control_value`, relative `lift` and its interval (`ci_low`,
-  `ci_high`), `p_value`, `adjusted_p`, `significant`, optional `cuped`
-  (adjusted lift, interval, `variance_reduction`) and `guardrail`
-  (`max_drop_pct`, `pass`), plus `segments`, a daily cumulative-lift
+  `ci_high`), `p_value`, `adjusted_p`, `significant`, `raw`, `cuped` and
+  `guardrail`, plus `segments`, a daily cumulative-lift
   `timeseries`, `diagnostics`, and a `decision` recommendation
   (`roll_out`, `discuss`, `do_not_roll_out`, `keep_running`).
+  When CUPED is enabled and applies to a metric, the top-level estimates
+  (`value` through `significant`) are the CUPED-adjusted ones, `raw` carries the
+  unadjusted `value`, `control_value`, `lift`, `ci_low`, `ci_high` and
+  `p_value`, and `cuped` mirrors the adjusted estimate with its
+  `variance_reduction`; both are null otherwise. The UI marks adjusted lifts
+  "CUPED" and shows the unadjusted readout alongside. Documents without `raw`
+  are read the older way (top level unadjusted, adjusted in `cuped`). Lift,
+  interval and p-values are null when the control mean is zero or negative, and
+  a guardrail may come back as `{pass: false, significant_harm: false, reason}`
+  when there is no usable data; both render as "n/a" or "no data" rather than
+  as numbers. `method.sequential_tuning` is a per-variant map or null.
 - `POST {baseURL}/v1/experiments/power` with the baseline mean, variance, daily
   units, arms, alpha, power and CUPED variance reduction, returning the MDE and
   days to reach a target MDE.
 
-Results are cached in memory for 5 minutes per experiment and `as_of`; each call
-times out after 5 seconds. A slow service shows as a 504, a failing one as a 502,
+Finished results (`status: ok`) are cached in memory for 5 minutes per
+experiment and `as_of` day; `insufficient_data` and `error` answers are not
+cached, and concurrent requests for the same key share one call. `as_of` is
+reduced to a calendar day no later than today. Each call times out after 5
+seconds. A slow service shows as a 504, an unreachable or failing one as a 502,
 and "no results yet" as a 404, each with a message meant for the person reading
-the page. The experiments list never calls the service; it summarises whatever
+the page. Results and power responses are sent with `Cache-Control: no-cache`,
+so the browser always revalidates. The experiments list never calls the service; it summarises whatever
 is cached, and hovering a row prefetches that row's results.
 
 Without `analysis.baseURL`, results are generated deterministically from the

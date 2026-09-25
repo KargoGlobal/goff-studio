@@ -145,34 +145,31 @@ func (g sampleGen) metric(key, role string, catalog map[string]Metric, lifts map
 			}
 		}
 		se := cv * math.Sqrt(2/g.n)
-		stat := ArmStat{
-			Variant:      v,
-			Value:        round(base*(1+lift), 6),
-			ControlValue: round(base, 6),
-			Lift:         round(lift, 6),
-			CILow:        round(lift-z*se, 6),
-			CIHigh:       round(lift+z*se, 6),
-		}
+		value, control := round(base*(1+lift), 6), round(base, 6)
 		// Scaled so p < alpha exactly when the (possibly widened) interval excludes zero.
-		stat.PValue = round(twoSidedP(lift/se*zFixed/z), 6)
-		stat.AdjustedP = stat.PValue
-		stat.Significant = stat.CILow > 0 || stat.CIHigh < 0
+		estimate := func(se float64) (low, high, p float64) {
+			return round(lift-z*se, 6), round(lift+z*se, 6), round(twoSidedP(lift/se*zFixed/z), 6)
+		}
+		low, high, p := estimate(se)
+		stat := ArmStat{Variant: v, Value: value, ControlValue: control, Lift: num(round(lift, 6))}
 
 		if g.e.Analysis.CUPED {
+			// CUPED is the headline readout; the unadjusted one moves to raw.
 			vr := 0.2 + g.rng.Float64()*0.3
-			cse := se * math.Sqrt(1-vr)
-			stat.CUPED = &CUPEDStat{
-				Value: stat.Value, Lift: stat.Lift,
-				CILow: round(lift-z*cse, 6), CIHigh: round(lift+z*cse, 6),
-				VarianceReduction: round(vr, 4),
-			}
+			stat.Raw = &RawStat{Value: value, ControlValue: control, Lift: stat.Lift, CILow: num(low), CIHigh: num(high), PValue: num(p)}
+			low, high, p = estimate(se * math.Sqrt(1-vr))
+			stat.CUPED = &CUPEDStat{Value: value, Lift: stat.Lift, CILow: num(low), CIHigh: num(high), VarianceReduction: round(vr, 4)}
 		}
+		stat.CILow, stat.CIHigh, stat.PValue, stat.AdjustedP = num(low), num(high), num(p), num(p)
+		stat.Significant = low > 0 || high < 0
+
 		if guard != nil {
-			worst := stat.CILow
+			worst := low
 			if m.Direction == "decrease" {
-				worst = -stat.CIHigh
+				worst = -high
 			}
-			stat.Guardrail = &GuardrailCheck{MaxDropPct: guard.MaxDropPct, Pass: worst*100 > -guard.MaxDropPct}
+			harm := stat.Significant && !good(m.Direction, stat.Lift)
+			stat.Guardrail = &GuardrailCheck{MaxDropPct: num(guard.MaxDropPct), Pass: worst*100 > -guard.MaxDropPct, SignificantHarm: &harm}
 		}
 		res.Results = append(res.Results, stat)
 	}
@@ -186,11 +183,17 @@ func (g sampleGen) timeseries(metrics []MetricResult) []TimePoint {
 			continue
 		}
 		for _, r := range m.Results {
-			half := (r.CIHigh - r.CILow) / 2
+			low, okLow := val(r.CILow)
+			high, okHigh := val(r.CIHigh)
+			center, okLift := val(r.Lift)
+			if !okLow || !okHigh || !okLift {
+				continue
+			}
+			half := (high - low) / 2
 			for d := 1; d <= g.days; d++ {
 				scale := math.Sqrt(float64(g.days) / float64(d))
 				wobble := (g.rng.Float64() - 0.5) * half * scale * 0.6
-				lift := r.Lift + wobble
+				lift := center + wobble
 				out = append(out, TimePoint{
 					Date:    g.e.Start.AddDate(0, 0, d).Format(time.DateOnly),
 					Metric:  m.Key,

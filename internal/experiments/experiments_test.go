@@ -1,6 +1,7 @@
 package experiments
 
 import (
+	"encoding/json"
 	"math"
 	"strings"
 	"testing"
@@ -225,7 +226,7 @@ func TestSRMCheck(t *testing.T) {
 }
 
 func arm(variant string, lift, lo, hi float64, guard *GuardrailCheck) ArmStat {
-	return ArmStat{Variant: variant, Lift: lift, CILow: lo, CIHigh: hi, Significant: lo > 0 || hi < 0, Guardrail: guard}
+	return ArmStat{Variant: variant, Lift: num(lift), CILow: num(lo), CIHigh: num(hi), Significant: lo > 0 || hi < 0, Guardrail: guard}
 }
 
 func TestDecide(t *testing.T) {
@@ -233,9 +234,13 @@ func TestDecide(t *testing.T) {
 	before, after := end.Add(-time.Hour), end.Add(time.Hour)
 	win := MetricResult{Name: "Bid rate", Role: "primary", Direction: "increase", Results: []ArmStat{arm("b", 0.03, 0.01, 0.05, nil)}}
 	flat := MetricResult{Name: "Bid rate", Role: "primary", Direction: "increase", Results: []ArmStat{arm("b", 0.01, -0.01, 0.03, nil)}}
-	guardOK := MetricResult{Name: "CPM", Role: "guardrail", Direction: "increase", Results: []ArmStat{arm("b", -0.001, -0.01, 0.008, &GuardrailCheck{MaxDropPct: 2, Pass: true})}}
-	guardWide := MetricResult{Name: "CPM", Role: "guardrail", Direction: "increase", Results: []ArmStat{arm("b", -0.005, -0.04, 0.03, &GuardrailCheck{MaxDropPct: 2, Pass: false})}}
-	guardHurt := MetricResult{Name: "CPM", Role: "guardrail", Direction: "increase", Results: []ArmStat{arm("b", -0.05, -0.07, -0.03, &GuardrailCheck{MaxDropPct: 2, Pass: false})}}
+	guardOK := MetricResult{Name: "CPM", Role: "guardrail", Direction: "increase", Results: []ArmStat{arm("b", -0.001, -0.01, 0.008, &GuardrailCheck{MaxDropPct: num(2), Pass: true})}}
+	guardWide := MetricResult{Name: "CPM", Role: "guardrail", Direction: "increase", Results: []ArmStat{arm("b", -0.005, -0.04, 0.03, &GuardrailCheck{MaxDropPct: num(2), Pass: false})}}
+	guardHurt := MetricResult{Name: "CPM", Role: "guardrail", Direction: "increase", Results: []ArmStat{arm("b", -0.05, -0.07, -0.03, &GuardrailCheck{MaxDropPct: num(2), Pass: false})}}
+	undefined := MetricResult{Name: "Bid rate", Role: "primary", Direction: "increase", Results: []ArmStat{{Variant: "b"}}}
+	no, yes := false, true
+	guardNoData := MetricResult{Name: "CPM", Role: "guardrail", Direction: "increase", Results: []ArmStat{{Variant: "b", Guardrail: &GuardrailCheck{Pass: false, SignificantHarm: &no, Reason: "no usable data"}}}}
+	guardHarmFlag := MetricResult{Name: "CPM", Role: "guardrail", Direction: "increase", Results: []ArmStat{arm("b", -0.001, -0.01, 0.008, &GuardrailCheck{MaxDropPct: num(2), Pass: false, SignificantHarm: &yes})}}
 	lowerIsBetter := MetricResult{Name: "Timeouts", Role: "primary", Direction: "decrease", Results: []ArmStat{arm("b", -0.1, -0.15, -0.05, nil)}}
 
 	cases := []struct {
@@ -250,6 +255,9 @@ func TestDecide(t *testing.T) {
 		{"neutral before end", []MetricResult{flat}, before, "keep_running"},
 		{"neutral after end", []MetricResult{flat}, after, "do_not_roll_out"},
 		{"decrease metric improving", []MetricResult{lowerIsBetter}, before, "roll_out"},
+		{"undefined lift is never a win", []MetricResult{undefined}, after, "do_not_roll_out"},
+		{"guardrail with no usable data", []MetricResult{win, guardNoData}, before, "discuss"},
+		{"guardrail reports significant harm", []MetricResult{win, guardHarmFlag}, before, "do_not_roll_out"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -274,19 +282,26 @@ func TestSampleIsDeterministicAndLabelled(t *testing.T) {
 	if a.Status != "ok" || len(a.Metrics) != 3 || len(a.Variants) != 3 {
 		t.Fatalf("unexpected shape: status=%s metrics=%d variants=%d", a.Status, len(a.Metrics), len(a.Variants))
 	}
-	if a.Metrics[0].Results[0].Lift != b.Metrics[0].Results[0].Lift || a.SRM != b.SRM {
+	if *a.Metrics[0].Results[0].Lift != *b.Metrics[0].Results[0].Lift || a.SRM != b.SRM {
 		t.Error("sample results must be deterministic for the same inputs")
 	}
 	for _, m := range a.Metrics {
 		for _, r := range m.Results {
-			if r.CILow > r.Lift || r.CIHigh < r.Lift {
-				t.Errorf("%s/%s: lift %v outside CI [%v, %v]", m.Key, r.Variant, r.Lift, r.CILow, r.CIHigh)
+			if *r.CILow > *r.Lift || *r.CIHigh < *r.Lift {
+				t.Errorf("%s/%s: lift %v outside CI [%v, %v]", m.Key, r.Variant, *r.Lift, *r.CILow, *r.CIHigh)
 			}
-			if (r.PValue < e.Analysis.Alpha) != r.Significant {
-				t.Errorf("%s/%s: p = %v disagrees with significant = %v", m.Key, r.Variant, r.PValue, r.Significant)
+			if (*r.PValue < e.Analysis.Alpha) != r.Significant {
+				t.Errorf("%s/%s: p = %v disagrees with significant = %v", m.Key, r.Variant, *r.PValue, r.Significant)
 			}
-			if r.CUPED == nil {
-				t.Errorf("%s/%s: CUPED requested but missing", m.Key, r.Variant)
+			if r.CUPED == nil || r.Raw == nil {
+				t.Fatalf("%s/%s: CUPED requested but cuped/raw missing", m.Key, r.Variant)
+			}
+			// The headline is the adjusted estimate: it matches the cuped block and is no wider than raw.
+			if *r.CILow != *r.CUPED.CILow || *r.CIHigh != *r.CUPED.CIHigh {
+				t.Errorf("%s/%s: top level is not the CUPED estimate", m.Key, r.Variant)
+			}
+			if *r.CIHigh-*r.CILow > *r.Raw.CIHigh-*r.Raw.CILow {
+				t.Errorf("%s/%s: adjusted interval wider than raw", m.Key, r.Variant)
 			}
 			if (m.Role == "guardrail") != (r.Guardrail != nil) {
 				t.Errorf("%s/%s: guardrail block only belongs on guardrail metrics", m.Key, r.Variant)
@@ -337,5 +352,36 @@ func TestEstimate(t *testing.T) {
 	}
 	if _, err := Estimate(PowerRequest{}); err == nil {
 		t.Error("an empty request must be rejected")
+	}
+}
+
+func TestSampleWithoutCUPEDHasNoRawOrCupedBlocks(t *testing.T) {
+	e := valid()
+	e.Analysis.CUPED = false
+	r := Sample(e, catalog(), e.Start.Add(5*24*time.Hour))
+	for _, m := range r.Metrics {
+		for _, a := range m.Results {
+			if a.Raw != nil || a.CUPED != nil {
+				t.Errorf("%s/%s: raw and cuped must be null without CUPED", m.Key, a.Variant)
+			}
+		}
+	}
+}
+
+func TestResultsReadNullEstimatesAndNewFields(t *testing.T) {
+	doc := `{"status":"ok","method":{"test":"sequential","alpha":0.05,"cuped":true,"correction":"none","sequential_tuning":{"b":1.2}},
+	"metrics":[{"key":"m","role":"guardrail","results":[{"variant":"b","value":0,"control_value":0,"lift":null,"ci_low":null,"ci_high":null,
+	"p_value":null,"adjusted_p":null,"significant":false,"raw":null,"cuped":null,
+	"guardrail":{"pass":false,"significant_harm":false,"reason":"no usable data"}}]}]}`
+	var r Results
+	if err := json.Unmarshal([]byte(doc), &r); err != nil {
+		t.Fatal(err)
+	}
+	a := r.Metrics[0].Results[0]
+	if a.Lift != nil || a.PValue != nil || a.Guardrail.Reason != "no usable data" || a.Guardrail.MaxDropPct != nil {
+		t.Errorf("parsed %+v", a)
+	}
+	if r.Method.SequentialTuning["b"] != 1.2 {
+		t.Errorf("sequential_tuning = %v", r.Method.SequentialTuning)
 	}
 }

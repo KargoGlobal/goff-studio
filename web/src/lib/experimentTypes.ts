@@ -102,24 +102,49 @@ export interface MetricList {
 
 export interface CupedStat {
   value: number
-  lift: number
-  ci_low: number
-  ci_high: number
+  lift: number | null
+  ci_low: number | null
+  ci_high: number | null
   variance_reduction: number
 }
 
+/** The unadjusted readout, present only when the top level is CUPED-adjusted. */
+export interface RawStat {
+  value: number
+  control_value: number
+  lift: number | null
+  ci_low: number | null
+  ci_high: number | null
+  p_value: number | null
+}
+
+export interface GuardrailCheck {
+  max_drop_pct?: number | null
+  pass: boolean
+  significant_harm?: boolean
+  /** Set when the check could not run, e.g. "no usable data". */
+  reason?: string
+}
+
+/**
+ * One variant against control. When `raw` is present the top-level estimates
+ * are CUPED-adjusted; older documents without `raw` carry the unadjusted
+ * estimates at the top level and the adjusted ones in `cuped`. Lift, interval
+ * and p-values are null when relative lift is undefined (control mean <= 0).
+ */
 export interface ArmStat {
   variant: string
   value: number
   control_value: number
-  lift: number
-  ci_low: number
-  ci_high: number
-  p_value: number
-  adjusted_p: number
+  lift: number | null
+  ci_low: number | null
+  ci_high: number | null
+  p_value: number | null
+  adjusted_p?: number | null
   significant: boolean
+  raw?: RawStat | null
   cuped: CupedStat | null
-  guardrail: { max_drop_pct: number; pass: boolean } | null
+  guardrail: GuardrailCheck | null
 }
 
 export interface MetricResult {
@@ -138,12 +163,25 @@ export interface Results {
   status: 'ok' | 'insufficient_data' | 'error'
   message: string | null
   unit: string
-  method: { test: string; alpha: number; cuped: boolean; correction: string }
+  method: {
+    test: string
+    alpha: number
+    cuped: boolean
+    correction: string
+    sequential_tuning?: Record<string, number> | null
+  }
   variants: { key: string; is_control: boolean; units: number; expected_share: number }[]
   srm: { chi2: number; p_value: number; flag: boolean; max_abs_deviation: number }
   metrics: MetricResult[]
   segments: { dimension: string; value: string; metrics: MetricResult[] }[]
-  timeseries: { date: string; metric: string; variant: string; lift: number; ci_low: number; ci_high: number }[]
+  timeseries: {
+    date: string
+    metric: string
+    variant: string
+    lift: number | null
+    ci_low: number | null
+    ci_high: number | null
+  }[]
   diagnostics: { check: string; status: 'pass' | 'warn' | 'fail'; detail: string }[]
   decision: { recommendation: Recommendation; variant?: string; reason: string } | null
   sample?: boolean

@@ -13,6 +13,7 @@ import {
   groupByRole,
   liftSeries,
   liftTone,
+  cupedMode,
   readoutMarkdown,
 } from '@/lib/experiments'
 import type { Experiment, MetricResult, Results } from '@/lib/experimentTypes'
@@ -190,6 +191,63 @@ describe('readoutMarkdown', () => {
   })
 })
 
+
+describe('CUPED and undefined estimates', () => {
+  const adjustedArm = {
+    ...arm(0.03, 0.015, 0.045),
+    raw: { value: 0.412, control_value: 0.4, lift: 0.03, ci_low: 0.005, ci_high: 0.055, p_value: 0.02 },
+    cuped: { value: 0.412, lift: 0.03, ci_low: 0.015, ci_high: 0.045, variance_reduction: 0.4 },
+  }
+  const legacyArm = {
+    ...arm(0.03, 0.005, 0.055),
+    cuped: { value: 0.412, lift: 0.03, ci_low: 0.015, ci_high: 0.045, variance_reduction: 0.4 },
+  }
+  const undefinedArm = { ...arm(0, 0, 0, false), lift: null, ci_low: null, ci_high: null, p_value: null, adjusted_p: null }
+  const noData = {
+    ...undefinedArm,
+    guardrail: { pass: false, significant_harm: false, reason: 'no usable data' },
+  }
+  const doc = (ms: MetricResult[]): Results => ({ ...results, metrics: ms, sample: false })
+  const primary = (a: MetricResult['results'][number]): MetricResult => ({ ...metrics[0], results: [a] })
+
+  it('detects the adjusted, legacy and plain shapes', () => {
+    expect(cupedMode([primary(adjustedArm)])).toBe('adjusted')
+    expect(cupedMode([primary(legacyArm)])).toBe('legacy')
+    expect(cupedMode(metrics)).toBe('none')
+  })
+
+  it('marks adjusted lifts as CUPED and shows the unadjusted readout alongside', () => {
+    const md = readoutMarkdown(experiment, doc([primary(adjustedArm)]))
+    expect(md).toContain('Lifts, intervals and p-values are CUPED-adjusted')
+    expect(md).toContain('| Unadjusted (no CUPED) |')
+    expect(md).toContain('| +3.00% (CUPED) | [+1.50%, +4.50%] |')
+    expect(md).toContain('| +3.00% [+0.50%, +5.50%], p 0.020 |')
+  })
+
+  it('keeps the old table when raw is absent', () => {
+    const md = readoutMarkdown(experiment, doc([primary(legacyArm)]))
+    expect(md).not.toContain('Unadjusted')
+    expect(md).not.toContain('(CUPED)')
+  })
+
+  it('renders undefined lifts and guardrails without data gracefully', () => {
+    const md = readoutMarkdown(experiment, doc([primary(undefinedArm), { ...metrics[1], results: [noData] }]))
+    expect(md).toContain('| n/a (control mean <= 0) | — | — | no |')
+    expect(md).toContain('| no data (no usable data) |')
+    expect(formatCI(null, 0.1)).toBe('—')
+    expect(formatPValue(null)).toBe('—')
+    expect(liftTone('increase', { lift: null, significant: true })).toBe('neutral')
+    expect(ciDomain([{ ci_low: null, ci_high: null }, { ci_low: -0.1, ci_high: 0.2 }])).toBeCloseTo(0.23)
+  })
+
+  it('skips timeseries points without estimates', () => {
+    const s = liftSeries(
+      { ...results, timeseries: [{ date: '2026-09-11', metric: 'm', variant: 'b', lift: null, ci_low: null, ci_high: null }] },
+      'm',
+    )
+    expect(s.size).toBe(0)
+  })
+})
 
 describe('formProblems', () => {
   const ok = { ...experiment, decision: null }

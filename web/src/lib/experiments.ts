@@ -35,12 +35,13 @@ export function formatLift(lift: number | undefined | null): string {
   return `${pct > 0 ? '+' : ''}${text}%`
 }
 
-export function formatCI(low: number, high: number): string {
+export function formatCI(low: number | null | undefined, high: number | null | undefined): string {
+  if (low == null || high == null) return '—'
   return `[${formatLift(low)}, ${formatLift(high)}]`
 }
 
-export function formatPValue(p: number): string {
-  if (!Number.isFinite(p)) return '—'
+export function formatPValue(p: number | null | undefined): string {
+  if (p == null || !Number.isFinite(p)) return '—'
   if (p < 0.001) return '<0.001'
   return p.toFixed(3)
 }
@@ -53,15 +54,16 @@ export type Tone = 'good' | 'bad' | 'neutral'
 
 // Tone follows the metric's goal, so a significant drop in a "decrease" metric is good.
 export function liftTone(direction: Direction, arm: Pick<ArmStat, 'lift' | 'significant'>): Tone {
-  if (!arm.significant) return 'neutral'
+  if (!arm.significant || arm.lift == null) return 'neutral'
   const up = arm.lift > 0
   return (direction === 'decrease' ? !up : up) ? 'good' : 'bad'
 }
 
 // A symmetric domain around zero so every CI bar in a table shares one scale.
-export function ciDomain(arms: { ci_low: number; ci_high: number }[]): number {
+export function ciDomain(arms: { ci_low: number | null; ci_high: number | null }[]): number {
   let max = 0
   for (const a of arms) {
+    if (a.ci_low == null || a.ci_high == null) continue
     max = Math.max(max, Math.abs(a.ci_low), Math.abs(a.ci_high))
   }
   if (!Number.isFinite(max) || max === 0) return 0.01
@@ -155,7 +157,7 @@ export interface SeriesPoint {
 export function liftSeries(results: Results, metric: string): Map<string, SeriesPoint[]> {
   const out = new Map<string, SeriesPoint[]>()
   for (const p of results.timeseries ?? []) {
-    if (p.metric !== metric) continue
+    if (p.metric !== metric || p.lift == null || p.ci_low == null || p.ci_high == null) continue
     const list = out.get(p.variant) ?? []
     list.push({ date: p.date, lift: p.lift, low: p.ci_low, high: p.ci_high })
     out.set(p.variant, list)
@@ -168,6 +170,26 @@ export function liftSeries(results: Results, metric: string): Map<string, Series
 export function defaultVariance(format: MetricFormat, baseline: number): number {
   if (format === 'percent' && baseline > 0 && baseline < 1) return baseline * (1 - baseline)
   return baseline * baseline
+}
+
+/** Why a lift cannot be shown: relative lift is undefined when the control mean is not positive. */
+export const UNDEFINED_LIFT = 'Relative lift is undefined because the control mean is zero or negative'
+
+/**
+ * How CUPED shows up for an arm. New documents put the adjusted estimate at the
+ * top level and the unadjusted one in `raw`; older ones (no `raw`) keep the
+ * unadjusted estimate at the top level and the adjusted one in `cuped`.
+ */
+export function cupedMode(metrics: MetricResult[]): 'adjusted' | 'legacy' | 'none' {
+  const arms = metrics.flatMap((m) => m.results)
+  if (arms.some((a) => a.raw)) return 'adjusted'
+  if (arms.some((a) => a.cuped)) return 'legacy'
+  return 'none'
+}
+
+export function describeGuardrail(g: NonNullable<ArmStat['guardrail']>): string {
+  if (g.reason) return `no data (${g.reason})`
+  return g.pass ? 'pass' : 'FAIL'
 }
 
 export function guardrailPasses(m: MetricResult): boolean {
@@ -226,6 +248,9 @@ export function readoutMarkdown(e: Experiment, r: Results): string {
   }
   out.push('')
 
+  const adjusted = cupedMode(r.metrics ?? []) === 'adjusted'
+  const liftCell = (a: ArmStat) =>
+    a.lift == null ? 'n/a (control mean <= 0)' : `${formatLift(a.lift)}${a.raw ? ' (CUPED)' : ''}`
   const rowsFor = (ms: MetricResult[]) =>
     ms.flatMap((m) =>
       m.results.map((a) => [
@@ -233,14 +258,29 @@ export function readoutMarkdown(e: Experiment, r: Results): string {
         a.variant,
         formatValue(a.control_value, m.format),
         formatValue(a.value, m.format),
-        formatLift(a.lift),
+        liftCell(a),
         formatCI(a.ci_low, a.ci_high),
         formatPValue(a.adjusted_p ?? a.p_value),
         a.significant ? 'yes' : 'no',
+        ...(adjusted ? [a.raw ? `${formatLift(a.raw.lift)} ${formatCI(a.raw.ci_low, a.raw.ci_high)}, p ${formatPValue(a.raw.p_value)}` : '—'] : []),
       ]),
     )
-  const header = ['Metric', 'Variant', 'Control', 'Variant value', 'Lift', `${level} CI`, 'p-value', 'Significant']
+  const header = [
+    'Metric',
+    'Variant',
+    'Control',
+    'Variant value',
+    'Lift',
+    `${level} CI`,
+    'p-value',
+    'Significant',
+    ...(adjusted ? ['Unadjusted (no CUPED)'] : []),
+  ]
 
+  if (adjusted) {
+    out.push('Lifts, intervals and p-values are CUPED-adjusted; the unadjusted readout is shown alongside.')
+    out.push('')
+  }
   out.push('## Primary metrics')
   out.push('')
   out.push(groups.primary.length ? table(header, rowsFor(groups.primary)) : 'None.')
@@ -256,10 +296,10 @@ export function readoutMarkdown(e: Experiment, r: Results): string {
           m.results.map((a) => [
             m.name,
             a.variant,
-            formatLift(a.lift),
+            liftCell(a),
             formatCI(a.ci_low, a.ci_high),
-            a.guardrail ? `${a.guardrail.max_drop_pct}%` : '—',
-            a.guardrail ? (a.guardrail.pass ? 'pass' : 'FAIL') : '—',
+            a.guardrail?.max_drop_pct != null ? `${a.guardrail.max_drop_pct}%` : '—',
+            a.guardrail ? describeGuardrail(a.guardrail) : '—',
           ]),
         ),
       ),

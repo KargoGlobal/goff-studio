@@ -60,10 +60,19 @@ test('the results page shows decision, metrics, CUPED, segments and diagnostics'
   await expect(primary).toContainText('+4.73%')
   await expect(primary).toContainText('VR 36%')
   await expect(primary.getByRole('img', { name: /Click rate, on: lift \+4\.73%/ })).toBeVisible()
+  // CUPED is the headline estimate; the unadjusted readout sits alongside.
+  await expect(primary.getByText('CUPED', { exact: true })).toBeVisible()
+  await expect(primary.getByRole('columnheader', { name: 'Unadjusted' })).toBeVisible()
+  await expect(primary.getByRole('img', { name: /Click rate, on, unadjusted: lift \+4\.73%/ })).toBeVisible()
 
   const guardrails = page.getByRole('region', { name: 'Guardrails' })
   await expect(guardrails).toContainText('Net CPM')
   await expect(guardrails).toContainText('pass')
+  await expect(guardrails.getByRole('row', { name: /Average bid CPM/ })).toContainText('no data')
+  await expect(guardrails.getByRole('row', { name: /Average bid CPM/ })).toContainText('no usable data')
+
+  const secondary = page.getByRole('region', { name: 'Secondary metrics' }).first()
+  await expect(secondary.getByRole('row', { name: /PMP revenue/ })).toContainText('n/a')
 
   await expect(page.getByRole('tab', { name: 'device' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('tabpanel')).toContainText('desktop')
@@ -96,6 +105,9 @@ test('the readout downloads as Markdown', async ({ page }) => {
   expect(md).toContain('**Recommendation: Roll out on.**')
   expect(md).toContain('| Click rate | on |')
   expect(md).toContain('| Net CPM | on |')
+  expect(md).toContain('CUPED-adjusted; the unadjusted readout is shown alongside')
+  expect(md).toContain('| +4.73% (CUPED) |')
+  expect(md).toContain('no data (no usable data)')
 })
 
 test('creating an experiment goes through review and commits the registry file', async ({ page }) => {
@@ -110,7 +122,7 @@ test('creating an experiment goes through review and commits the registry file',
 
   await expect(page.getByLabel('Owner')).toHaveValue('platform')
   await expect(page.getByRole('group', { name: 'Allocations' }).getByLabel('exp-region-a')).toBeChecked()
-  await page.getByLabel('Control').selectOption('control')
+  await page.getByLabel('Control', { exact: true }).selectOption('control')
 
   await page.getByRole('group', { name: 'Primary metrics', exact: true }).getByLabel('Click rate').check()
   await expect(page.getByText('Detectable lift over the planned 28 days')).toContainText('±1.23%')

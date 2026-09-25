@@ -323,8 +323,7 @@ func summarize(res experiments.Results) *ResultSummary {
 				pick = r
 			}
 		}
-		lift := pick.Lift
-		out.PrimaryMetric, out.PrimaryVariant, out.PrimaryLift, out.PrimarySignificant = m.Key, pick.Variant, &lift, pick.Significant
+		out.PrimaryMetric, out.PrimaryVariant, out.PrimaryLift, out.PrimarySignificant = m.Key, pick.Variant, pick.Lift, pick.Significant
 		break
 	}
 	return out
