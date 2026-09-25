@@ -12,6 +12,8 @@ and derives the requirements for each area:
 - how results are reported in Studio and Omni (section 5)
 - how the MLE team tests models (section 6)
 
+The end-to-end architecture diagram is in [docs/architecture.md](docs/architecture.md).
+
 Features are listed by track and priority in section 7. The guiding rule is **the simplest
 migration that keeps every service behaving the same on day one**, including in-progress
 ramps. Improvements come after cutover.
