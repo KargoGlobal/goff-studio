@@ -4,15 +4,18 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-feature-flag/studio/internal/auth"
 	"github.com/go-feature-flag/studio/internal/config"
 	"github.com/go-feature-flag/studio/internal/goff"
 	"github.com/go-feature-flag/studio/internal/permissions"
 	"github.com/go-feature-flag/studio/internal/storage"
+	"github.com/go-feature-flag/studio/pkg/splits"
 )
 
 type Service struct {
@@ -24,6 +27,8 @@ type Service struct {
 	cacheMu sync.Mutex
 	cache   map[string]cachedFile
 	history map[cacheKey]map[string]goff.Flag
+
+	salt func() (string, error)
 }
 
 type cacheKey struct {
@@ -83,7 +88,7 @@ func (s *Service) knownSHA(file, sha string) bool {
 }
 
 func NewService(cfg *config.Config, repo storage.Backend, perms *permissions.Set) *Service {
-	return &Service{cfg: cfg, repo: repo, adapter: goff.New(), perms: perms}
+	return &Service{cfg: cfg, repo: repo, adapter: goff.New(), perms: perms, salt: splits.NewSalt}
 }
 
 type FlagView struct {
@@ -220,7 +225,9 @@ type SaveRequest struct {
 	LoadedFlag  *goff.Flag
 	Action      permissions.Action
 	Mutate      func(*goff.Flag)
-	Summary     string
+	// MutateErr is Mutate for changes that can fail against the freshly read flag.
+	MutateErr func(*goff.Flag) error
+	Summary   string
 }
 
 type SaveResult struct {
@@ -262,7 +269,9 @@ func (s *Service) Save(ctx context.Context, sess auth.Session, req SaveRequest) 
 			return nil, ErrNotFound
 		}
 
-		req.Mutate(target)
+		if err := mutate(target, req.Mutate, req.MutateErr); err != nil {
+			return nil, err
+		}
 
 		next, err := s.adapter.Serialize(current, req.Key, *target)
 		if err != nil {
@@ -289,8 +298,27 @@ func (s *Service) Save(ctx context.Context, sess auth.Session, req SaveRequest) 
 	return s.saved(result), nil
 }
 
+func mutate(f *goff.Flag, plain func(*goff.Flag), checked func(*goff.Flag) error) error {
+	if checked != nil {
+		if err := checked(f); err != nil {
+			return err
+		}
+	} else if plain != nil {
+		plain(f)
+	}
+	if f.ExperimentChanged() {
+		if err := splits.Validate(f.Experiment, splitsShape(*f)).Err(); err != nil {
+			return invalid("the experiment would not be valid: %s", err)
+		}
+	}
+	return nil
+}
+
 func sameFlagState(a, b goff.Flag) bool {
 	if a.Enabled != b.Enabled {
+		return false
+	}
+	if !reflect.DeepEqual(a.Experiment, b.Experiment) {
 		return false
 	}
 	if !sameOutcome(a.Default, b.Default) {
@@ -1000,6 +1028,7 @@ type DiffRequest struct {
 	Environment string
 	Key         string
 	Mutate      func(*goff.Flag)
+	MutateErr   func(*goff.Flag) error
 	Description string
 }
 
@@ -1020,7 +1049,9 @@ func (s *Service) Diff(ctx context.Context, sess auth.Session, req DiffRequest) 
 	}
 
 	draft := view.Flag
-	req.Mutate(&draft)
+	if err := mutate(&draft, req.Mutate, req.MutateErr); err != nil {
+		return nil, err
+	}
 
 	next, err := s.adapter.Serialize(file.Content, req.Key, draft)
 	if err != nil {
@@ -1057,6 +1088,9 @@ func (s *Service) Preview(ctx context.Context, sess auth.Session, environment, k
 		}
 	}
 
+	if result, handled := s.adapter.EvaluateSplits(content, key, targetingKey, attrs, time.Now()); handled {
+		return result, nil
+	}
 	return s.adapter.Evaluate(content, key, targetingKey, attrs), nil
 }
 
