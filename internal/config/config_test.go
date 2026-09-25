@@ -818,3 +818,49 @@ func TestEnvVarsOverrideAFileAndReplaceListsWholesale(t *testing.T) {
 		t.Errorf("permissions = %+v; an unset env var must leave the file alone", cfg.Permissions)
 	}
 }
+
+func TestAnalysisIsOptional(t *testing.T) {
+	cfg, err := Load(write(t, base(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AnalysisConfigured() {
+		t.Error("analysis should be off unless a base URL is set")
+	}
+}
+
+func TestAnalysisFromEnvironment(t *testing.T) {
+	t.Setenv("GOFF_STUDIO_ANALYSIS_BASE_URL", "https://analysis.example.com/api")
+	t.Setenv("GOFF_STUDIO_ANALYSIS_TOKEN", "tok")
+
+	cfg, err := Load(write(t, base(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.AnalysisConfigured() || cfg.Analysis.BaseURL != "https://analysis.example.com/api" || cfg.Analysis.Token != "tok" {
+		t.Errorf("analysis = %+v", cfg.Analysis)
+	}
+}
+
+func TestAnalysisBaseURLMustBeAbsolute(t *testing.T) {
+	t.Setenv("GOFF_STUDIO_ANALYSIS_BASE_URL", "analysis.example.com")
+	msg := loadErr(t, base(t))
+	assertMentions(t, msg, "analysis.baseURL", "GOFF_STUDIO_ANALYSIS_BASE_URL")
+}
+
+func TestAnalysisTokenWithoutURLWarns(t *testing.T) {
+	t.Setenv("GOFF_STUDIO_ANALYSIS_TOKEN", "tok")
+	cfg, err := Load(write(t, base(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, w := range cfg.Warnings() {
+		if strings.Contains(w, "analysis.token") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected a warning about the unused token, got %v", cfg.Warnings())
+	}
+}

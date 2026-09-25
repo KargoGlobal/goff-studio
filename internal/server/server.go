@@ -62,6 +62,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/environments/{env}/attributes", s.withSession(s.handleAttributes))
 	mux.HandleFunc("POST /api/environments", s.withSession(s.handleCreateEnvironment))
 	mux.HandleFunc("POST /api/environments/{env}/teams", s.withSession(s.handleCreateTeam))
+	s.experimentRoutes(mux)
 
 	if s.assets != nil {
 		mux.Handle("/", s.spa())

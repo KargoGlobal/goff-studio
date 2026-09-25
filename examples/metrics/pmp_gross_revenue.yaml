@@ -1,0 +1,7 @@
+key: pmp_gross_revenue
+name: PMP gross revenue per bid request
+kind: mean
+numerator: pmp_gross_revenue
+format: currency
+direction: increase
+description: Gross revenue from private marketplace deals per bid request.

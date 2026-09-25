@@ -1,0 +1,8 @@
+key: avg_bid_cpm
+name: Average bid CPM
+kind: ratio
+numerator: dsp_bid_price
+denominator: dsp_bid_count
+format: currency
+direction: increase
+description: Mean DSP bid price across all bids.

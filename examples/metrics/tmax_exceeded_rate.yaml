@@ -1,0 +1,7 @@
+key: tmax_exceeded_rate
+name: Timeout rate
+kind: mean
+numerator: dsp_tmax_exceeded_yn
+format: percent
+direction: decrease
+description: Share of DSP calls that exceeded the tmax budget.
