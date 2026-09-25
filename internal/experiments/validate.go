@@ -17,6 +17,10 @@ var (
 type FlagShape struct {
 	Variations []string
 	Rules      []string
+	// ExperimentKeys maps each rule to the experiment key its exposures are
+	// logged under: the allocation's experimentKey, or "<flag>-<rule>" when the
+	// rule has no allocation. Nil skips the check (callers without the flag body).
+	ExperimentKeys map[string]string
 }
 
 // ValidationError lists every problem found, so a form can show them all at once.
@@ -65,7 +69,32 @@ func ValidateExperiment(e Experiment, flag *FlagShape, catalog map[string]Metric
 			p.addf("allocation %q is not a rule on flag %s", a, e.Flag)
 		}
 	}
+	checkKeyOwnership(&p, e, flag)
 	return p.err()
+}
+
+// checkKeyOwnership ties the registry key to the key the flag actually logs
+// under, so nobody can register (and read the results of) another team's experiment.
+func checkKeyOwnership(p *problems, e Experiment, flag *FlagShape) {
+	if flag.ExperimentKeys == nil || e.Key == "" || len(e.Allocations) == 0 {
+		return
+	}
+	var logged []string
+	for _, a := range e.Allocations {
+		key, ok := flag.ExperimentKeys[a]
+		if !ok {
+			continue
+		}
+		if key == e.Key {
+			return
+		}
+		logged = append(logged, fmt.Sprintf("%s logs as %q", a, key))
+	}
+	if len(logged) == 0 {
+		return
+	}
+	p.addf("the key %q must match the experiment key one of its allocations logs exposures under (%s)",
+		e.Key, strings.Join(logged, ", "))
 }
 
 func checkIdentity(p *problems, e Experiment) {

@@ -314,10 +314,17 @@ func mutate(f *goff.Flag, plain func(*goff.Flag), checked func(*goff.Flag) error
 	} else if plain != nil {
 		plain(f)
 	}
-	if f.ExperimentChanged() {
-		if err := splits.Validate(f.Experiment, splitsShape(*f)).Err(); err != nil {
-			return invalid("the experiment would not be valid: %s", err)
-		}
+	return checkExperiment(*f)
+}
+
+// Every write re-checks the experiment block, because edits elsewhere (a
+// deleted variation, a renamed rule) can break it just as surely as editing it.
+func checkExperiment(f goff.Flag) error {
+	if f.Experiment == nil {
+		return nil
+	}
+	if err := splits.Validate(f.Experiment, splitsShape(f)).Err(); err != nil {
+		return invalid("the experiment would not be valid: %s", err)
 	}
 	return nil
 }
@@ -511,6 +518,21 @@ func brokenReferences(f goff.Flag, variations []goff.Variation, defaultVariation
 		note(r.Outcome.Variation, where)
 		for _, name := range sortedFloatKeys(r.Outcome.Percentage) {
 			note(name, where+"'s rollout")
+		}
+	}
+
+	if f.Experiment != nil {
+		rules := make([]string, 0, len(f.Experiment.Allocations))
+		for name := range f.Experiment.Allocations {
+			rules = append(rules, name)
+		}
+		sort.Strings(rules)
+		for _, rule := range rules {
+			if a := f.Experiment.Allocations[rule]; a != nil {
+				for _, split := range a.Splits {
+					note(split.Variation, fmt.Sprintf("an arm of the experiment on rule %q", rule))
+				}
+			}
 		}
 	}
 	return problems
@@ -795,6 +817,9 @@ func (s *Service) buildVariations(current []byte, req VariationsRequest) ([]byte
 	target.Type = req.Type
 	if req.Default != "" {
 		target.Default = goff.Outcome{Variation: req.Default}
+	}
+	if err := checkExperiment(*target); err != nil {
+		return nil, err
 	}
 
 	next, err := s.adapter.Serialize(current, req.Key, *target)

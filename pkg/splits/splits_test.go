@@ -553,7 +553,7 @@ func TestInHandlesBoolsNumbersAndNestedAttributes(t *testing.T) {
 }
 
 func TestCompileQueryRejectsBrokenQueries(t *testing.T) {
-	for _, q := range []string{`a in ["x"`, `a eq "x`} {
+	for _, q := range []string{`a in ["x"`, `a eq "x`, `a in ['x']`, `a in ["x", 'y']`, `a eq 'x'`} {
 		if _, err := compileQuery(q); err == nil {
 			t.Errorf("%s: expected an error", q)
 		}

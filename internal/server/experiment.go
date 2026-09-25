@@ -155,10 +155,23 @@ func (s *Service) rerandomize(f *goff.Flag, alloc *splits.Allocation, req Experi
 	total := f.Experiment.TotalShards
 
 	arms, exposure := req.Arms, req.ExposurePercent
+	if len(arms) == 0 && exposure == nil {
+		// Same ranges, new salts: nothing about the shape to infer.
+		if err := splits.Rerandomize(alloc, s.salt); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("re-randomized rule %s with new salts; every subject is reassigned", req.RuleName), nil
+	}
 	if layout, ok := alloc.Layout(); ok {
 		if len(arms) == 0 {
+			covered := 0
 			for i, r := range layout.Arms {
+				covered += r.Len()
 				arms = append(arms, splits.Arm{Variation: alloc.Splits[i].Variation, Weight: float64(r.Len())})
+			}
+			// Gaps (or overlaps) in the arm salt would silently change exposure once spread over every shard.
+			if covered != total {
+				return "", invalid("the arms of rule %s cover %d of %d shards, so their weights are ambiguous; give the arms explicitly to re-randomize", req.RuleName, covered, total)
 			}
 		}
 		if exposure == nil {
@@ -167,12 +180,6 @@ func (s *Service) rerandomize(f *goff.Flag, alloc *splits.Allocation, req Experi
 		}
 	}
 
-	if len(arms) == 0 && exposure == nil {
-		if err := splits.Rerandomize(alloc, s.salt); err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("re-randomized rule %s with new salts; every subject is reassigned", req.RuleName), nil
-	}
 	if len(arms) == 0 || exposure == nil {
 		return "", invalid("this allocation has no separate exposure salt; give both the arms and an exposure to rebuild it")
 	}

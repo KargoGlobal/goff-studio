@@ -449,3 +449,58 @@ func TestUnrelatedEditLeavesTheExperimentBlockUntouched(t *testing.T) {
 		t.Errorf("want only disable: true added, got +%v -%v", added, removed)
 	}
 }
+
+func TestRemovingAVariationUsedOnlyByAnArmIsRefused(t *testing.T) {
+	repo := splitRepo()
+	srv, sealer := testServer(t, repo, adminRules())
+	before := repo.files[growthPath]
+
+	body := `{"type":"number","variations":[{"name":"control","value":"200"},{"name":"slow","value":"250"}],"default":"control"}`
+	for _, target := range []string{"variations", "diff"} {
+		method, payload := http.MethodPut, body
+		if target == "diff" {
+			method, payload = http.MethodPost, `{"change":"variations",`+strings.TrimPrefix(body, "{")
+		}
+		rec := request(t, srv, sealer, admin(), method, "/api/environments/production/flags/request-timeout/"+target, payload)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `an arm of the experiment on rule \"exp-region-a\"`) {
+			t.Errorf("%s: got %d %s, want 400 naming the arm", target, rec.Code, rec.Body)
+		}
+	}
+	if repo.files[growthPath] != before || len(repo.puts) != 0 {
+		t.Error("nothing should have been committed")
+	}
+}
+
+func TestEveryWriteRevalidatesTheExperimentBlock(t *testing.T) {
+	repo := splitRepo()
+	// An arm naming a variation the flag does not have; GOFF's own validator cannot see it.
+	repo.files[growthPath] = strings.Replace(repo.files[growthPath], "- variation: fast", "- variation: ghost", 1)
+	srv, sealer := testServer(t, repo, adminRules())
+	sha := shaFor(t, srv, sealer, "request-timeout")
+
+	rec := request(t, srv, sealer, admin(), http.MethodPost, "/api/environments/production/flags/request-timeout/state",
+		`{"enabled":false,"fileSha":"`+sha+`"}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "ghost") {
+		t.Errorf("got %d %s, want 400 naming the broken arm", rec.Code, rec.Body)
+	}
+	if len(repo.puts) != 0 {
+		t.Error("nothing should have been committed")
+	}
+}
+
+func TestRerandomizeRefusesArmsThatDoNotCoverEveryShard(t *testing.T) {
+	repo := splitRepo()
+	// Arms cover [0, 8000): the implied weights would quietly raise exposure.
+	repo.files[growthPath] = strings.Replace(repo.files[growthPath], "[[5000, 10000]]", "[[5000, 8000]]", 1)
+	srv, sealer := testServer(t, repo, adminRules())
+
+	code, body := postExperiment(t, srv, sealer, admin(), `{"op":"rerandomize","ruleName":"exp-region-a","confirm":true,"exposurePercent":1}`)
+	if code != http.StatusBadRequest || !strings.Contains(body, "cover 8000 of 10000 shards") {
+		t.Errorf("got %d %s, want 400", code, body)
+	}
+	code, body = postExperiment(t, srv, sealer, admin(),
+		`{"op":"rerandomize","ruleName":"exp-region-a","confirm":true,"arms":[{"variation":"control","weight":1},{"variation":"fast","weight":1}]}`)
+	if code != http.StatusOK {
+		t.Errorf("explicit arms should still work: %d %s", code, body)
+	}
+}

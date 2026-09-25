@@ -1177,6 +1177,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.As(err, &bad):
 		writeError(w, http.StatusBadRequest, bad.Error())
+	case errors.Is(err, goff.ErrUneditable):
+		writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), goff.ErrUneditable.Error()+": "))
 	case errors.As(err, &dupe):
 		writeError(w, http.StatusConflict, dupe.Error())
 	case errors.Is(err, ErrForbidden):

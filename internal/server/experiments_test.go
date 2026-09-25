@@ -34,7 +34,7 @@ func experimentRepo(t *testing.T) *repoState {
 		}
 		rel, _ := filepath.Rel(root, path)
 		rel = filepath.ToSlash(rel)
-		repo.files[rel] = string(raw)
+		repo.files[rel] = withSecondRule(string(raw))
 		repo.shas[rel] = "sha-" + strings.NewReplacer("/", "-", ".", "-").Replace(rel)
 		return nil
 	})
@@ -42,6 +42,16 @@ func experimentRepo(t *testing.T) *repoState {
 		t.Fatal(err)
 	}
 	return repo
+}
+
+// withSecondRule gives the example tmax flag a rule exp-2, which logs under
+// tmax-exp-2, so tests can register a second experiment on the flag.
+func withSecondRule(src string) string {
+	return strings.Replace(src, "  targeting:\n", `  targeting:
+    - name: exp-2
+      query: region eq "us-west-2"
+      variation: control
+`, 1)
 }
 
 func experimentServer(t *testing.T, repo *repoState, rules []permissions.Rule) (*Server, *auth.Sealer) {
@@ -68,7 +78,7 @@ const newExperiment = `{"experiment": {
   "hypothesis": "Still lower is better",
   "flag": "tmax",
   "environment": "production",
-  "allocations": ["exp-us-east-1"],
+  "allocations": ["exp-2"],
   "control": "control",
   "variants": ["control", "tmax150"],
   "unit": {"type": "request", "key": "targetingKey"},
@@ -487,7 +497,7 @@ func TestExperimentsOnTheFileBackend(t *testing.T) {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, rel)), 0o750); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(root, rel), raw, 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(withSecondRule(string(raw))), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -519,5 +529,41 @@ func TestExperimentsOnTheFileBackend(t *testing.T) {
 	raw, _ := os.ReadFile(filepath.Join(root, "experiments", "tmax-exp-2.yaml"))
 	if !strings.Contains(string(raw), "status: running") {
 		t.Errorf("file = %s", raw)
+	}
+}
+
+func TestRegistryKeyMustMatchTheAllocationsExperimentKey(t *testing.T) {
+	repo := experimentRepo(t)
+	srv, sealer := experimentServer(t, repo, experimentRules())
+
+	// Squatting: another team's allocation logs as tmax-exp-us-east-1, not tmax-squat.
+	squat := strings.Replace(strings.Replace(newExperiment, `"tmax-exp-2"`, `"tmax-squat"`, 1), `["exp-2"]`, `["exp-us-east-1"]`, 1)
+	rec := request(t, srv, sealer, bidderTeam(), http.MethodPost, "/api/experiments", squat)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `exp-us-east-1 logs as \"tmax-exp-us-east-1\"`) {
+		t.Fatalf("got %d %s, want 400 naming the logged key", rec.Code, rec.Body)
+	}
+
+	// An allocation with an explicit experimentKey in metadata.experiment registers under that key only.
+	repo.files["production/bidder.goff.yaml"] += `  metadata:
+    experiment:
+      version: 1
+      allocations:
+        exp-2:
+          experimentKey: bidder-latency-q4
+          splits:
+            - variation: tmax150
+              shards: [{salt: s, ranges: [[0, 10000]]}]
+`
+	repo.files["production/bidder.goff.yaml"] = strings.Replace(repo.files["production/bidder.goff.yaml"], "  metadata:\n    team: bidder\n", "", 1)
+	repo.files["production/bidder.goff.yaml"] = strings.Replace(repo.files["production/bidder.goff.yaml"], "  metadata:\n    experiment:", "  metadata:\n    team: bidder\n    experiment:", 1)
+	repo.shas["production/bidder.goff.yaml"] = "sha-bidder-with-experiment"
+
+	rec = request(t, srv, sealer, bidderTeam(), http.MethodPost, "/api/experiments", newExperiment)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `exp-2 logs as \"bidder-latency-q4\"`) {
+		t.Fatalf("default key on an allocation with its own key: got %d %s", rec.Code, rec.Body)
+	}
+	owned := strings.Replace(newExperiment, `"tmax-exp-2"`, `"bidder-latency-q4"`, 1)
+	if rec = request(t, srv, sealer, bidderTeam(), http.MethodPost, "/api/experiments", owned); rec.Code != http.StatusCreated && rec.Code != http.StatusOK {
+		t.Fatalf("the allocation's own key should register: %d %s", rec.Code, rec.Body)
 	}
 }

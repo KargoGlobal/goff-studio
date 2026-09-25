@@ -148,8 +148,16 @@ func (r *requestScope) flagsIn(ctx context.Context, env string) (map[string]flag
 			for _, v := range flag.Variations {
 				ref.shape.Variations = append(ref.shape.Variations, v.Name)
 			}
+			ref.shape.ExperimentKeys = map[string]string{}
 			for _, rule := range flag.Rules {
 				ref.shape.Rules = append(ref.shape.Rules, rule.Name)
+				key := flag.Key + "-" + rule.Name
+				if flag.Experiment != nil {
+					if a := flag.Experiment.Allocations[rule.Name]; a != nil {
+						key = a.KeyFor(flag.Key, rule.Name)
+					}
+				}
+				ref.shape.ExperimentKeys[rule.Name] = key
 			}
 			idx[flag.Key] = ref
 		}

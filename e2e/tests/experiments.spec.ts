@@ -48,7 +48,7 @@ test('hovering a row prefetches results and fills in the summary', async ({ page
 })
 
 test('the results page shows decision, metrics, CUPED, segments and diagnostics', async ({ page }) => {
-  await page.goto('/experiments/checkout-gold-cohort')
+  await page.goto('/experiments/new-checkout-gold-cohort')
 
   await expect(page.getByText('The new checkout raises click rate')).toBeVisible()
   await expect(page.getByRole('link', { name: 'new-checkout' })).toHaveAttribute('href', '/env/production/flags/new-checkout')
@@ -76,20 +76,20 @@ test('the results page shows decision, metrics, CUPED, segments and diagnostics'
 })
 
 test('a sample ratio mismatch blocks the page with a red banner', async ({ page }) => {
-  await page.goto('/experiments/ramp-latency-check')
+  await page.goto('/experiments/ramped-ramp')
   const banner = page.getByRole('alert')
   await expect(banner).toContainText('Sample ratio mismatch: do not act on these results')
 })
 
 test('the readout downloads as Markdown', async ({ page }) => {
-  await page.goto('/experiments/checkout-gold-cohort')
+  await page.goto('/experiments/new-checkout-gold-cohort')
   await expect(page.getByText('Recommendation')).toBeVisible()
 
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     page.getByRole('button', { name: 'Download readout as Markdown' }).click(),
   ])
-  expect(download.suggestedFilename()).toBe('checkout-gold-cohort-readout.md')
+  expect(download.suggestedFilename()).toBe('new-checkout-gold-cohort-readout.md')
   const md = await readFile(await download.path(), 'utf8')
   expect(md).toContain('# Experiment readout: New checkout for gold')
   expect(md).toContain('**Hypothesis:** The new checkout raises click rate')
@@ -103,21 +103,21 @@ test('creating an experiment goes through review and commits the registry file',
   await page.getByRole('button', { name: 'New experiment' }).click()
   await expect(page.getByRole('heading', { name: 'New experiment' })).toBeVisible()
 
-  await page.getByLabel('Key', { exact: true }).fill('checkout-copy')
+  await page.getByLabel('Key', { exact: true }).fill('request-timeout-exp-region-a')
   await page.getByLabel('Name', { exact: true }).fill('Checkout copy')
   await page.getByLabel('Hypothesis').fill('Clearer copy raises clicks')
-  await page.getByLabel('Flag', { exact: true }).selectOption('new-checkout')
+  await page.getByLabel('Flag', { exact: true }).selectOption('request-timeout')
 
-  await expect(page.getByLabel('Owner')).toHaveValue('payments')
-  await expect(page.getByRole('group', { name: 'Allocations' }).getByLabel('gold-cohort')).toBeChecked()
-  await page.getByLabel('Control').selectOption('off')
+  await expect(page.getByLabel('Owner')).toHaveValue('platform')
+  await expect(page.getByRole('group', { name: 'Allocations' }).getByLabel('exp-region-a')).toBeChecked()
+  await page.getByLabel('Control').selectOption('control')
 
   await page.getByRole('group', { name: 'Primary metrics', exact: true }).getByLabel('Click rate').check()
   await expect(page.getByText('Detectable lift over the planned 28 days')).toContainText('±1.23%')
 
   await page.getByRole('button', { name: 'Review and create' }).click()
   const dialog = await waitForReviewReady(page)
-  await expect(dialog).toContainText('Create experiment checkout-copy on new-checkout in production')
+  await expect(dialog).toContainText('Create experiment request-timeout-exp-region-a on request-timeout in production')
   await dialog.getByLabel('Type production to confirm').fill('production')
   await dialog.getByRole('button', { name: 'Save change' }).click()
 
@@ -125,11 +125,11 @@ test('creating an experiment goes through review and commits the registry file',
   await expect(page.getByText('There are no results for this experiment yet')).toBeVisible()
 
   const [c] = await waitForCommits(1)
-  expect(c.path).toBe('experiments/checkout-copy.yaml')
-  expect(c.message).toContain('[experiments] checkout-copy: created')
-  const file = (await dump()).files['experiments/checkout-copy.yaml']
-  expect(file).toContain('flag: new-checkout')
-  expect(file).toContain('control: "off"')
+  expect(c.path).toBe('experiments/request-timeout-exp-region-a.yaml')
+  expect(c.message).toContain('[experiments] request-timeout-exp-region-a: created')
+  const file = (await dump()).files['experiments/request-timeout-exp-region-a.yaml']
+  expect(file).toContain('flag: request-timeout')
+  expect(file).toContain('control: control')
   expect(file).toContain('status: draft')
 })
 
@@ -143,7 +143,7 @@ test('the form refuses an over-long window before review', async ({ page }) => {
 })
 
 test('editing an experiment records a status change', async ({ page }) => {
-  await page.goto('/experiments/checkout-gold-cohort')
+  await page.goto('/experiments/new-checkout-gold-cohort')
   await page.getByRole('link', { name: 'Edit' }).click()
   await page.getByLabel('Status').selectOption('stopped')
   await page.getByRole('button', { name: 'Review changes' }).click()
@@ -154,7 +154,7 @@ test('editing an experiment records a status change', async ({ page }) => {
   await dialog.getByRole('button', { name: 'Save change' }).click()
 
   await waitForCommits(1)
-  expect((await dump()).files['experiments/checkout-gold-cohort.yaml']).toContain('status: stopped')
+  expect((await dump()).files['experiments/new-checkout-gold-cohort.yaml']).toContain('status: stopped')
 })
 
 test('the metric catalog lists and adds metrics', async ({ page }) => {

@@ -2,7 +2,9 @@ package goff
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -101,8 +103,15 @@ func (d *Doc) SetField(flagKey, field string, value any) error {
 			return nil
 		}
 		if field == "metadata" {
-			node.Content[i+1] = mergeNode(node.Content[i+1], next)
+			merged, err := mergeNode(node.Content[i+1], next, field)
+			if err != nil {
+				return err
+			}
+			node.Content[i+1] = merged
 			return nil
+		}
+		if err := refuseAnchored(node.Content[i+1], field); err != nil {
+			return err
 		}
 		next.HeadComment = node.Content[i+1].HeadComment
 		next.LineComment = node.Content[i+1].LineComment
@@ -125,6 +134,9 @@ func (d *Doc) DeleteField(flagKey, field string) error {
 	}
 	for i := 0; i < len(node.Content); i += 2 {
 		if node.Content[i].Value == field {
+			if err := refuseAnchored(node.Content[i+1], field); err != nil {
+				return err
+			}
 			node.Content = append(node.Content[:i], node.Content[i+2:]...)
 			return nil
 		}
@@ -224,7 +236,8 @@ func deepEqual(a, b any) bool {
 		}
 		return true
 	default:
-		return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
+		// The type matters: "1" and 1, or "true" and true, are different YAML values.
+		return reflect.TypeOf(a) == reflect.TypeOf(b) && fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
 	}
 }
 
@@ -238,9 +251,10 @@ func (d *Doc) blockOf(key string) (start, end int, ok bool) {
 		end = len(d.lines)
 		if i+2 < len(m.Content) {
 			end = m.Content[i+2].Line - 1
-			for end > start && isBlankOrComment(d.lines, end-1) {
-				end--
-			}
+		}
+		// Trailing comments stay in the original text; renderFlag drops the copy yaml.v3 keeps as a foot comment.
+		for end > start+1 && isBlankOrComment(d.lines, end-1) {
+			end--
 		}
 		return start, end, true
 	}
@@ -302,6 +316,7 @@ func (d *Doc) renderFlag(key string) ([]string, error) {
 		{Kind: yaml.ScalarNode, Tag: tagStr, Value: key},
 		node,
 	}}
+	defer restoreFootComments(dropTrailingFootComments(node))
 
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
@@ -356,11 +371,25 @@ func (d *Doc) SetExperiment(flagKey string, exp *splits.Experiment) error {
 		return fmt.Errorf("flag %q not found", flagKey)
 	}
 
-	metadata := mappingValue(node, "metadata")
+	metadata, err := metadataMapping(node, exp != nil)
+	if err != nil {
+		return err
+	}
 	if exp == nil {
-		if metadata != nil {
-			deleteKey(metadata, "experiment")
+		if metadata == nil {
+			return nil
 		}
+		for i := 0; i+1 < len(metadata.Content); i += 2 {
+			if metadata.Content[i].Value == "experiment" {
+				if err := refuseAnchored(metadata, "metadata"); err != nil {
+					return err
+				}
+				if err := refuseAnchored(metadata.Content[i+1], "metadata.experiment"); err != nil {
+					return err
+				}
+			}
+		}
+		deleteKey(metadata, "experiment")
 		return nil
 	}
 
@@ -368,27 +397,96 @@ func (d *Doc) SetExperiment(flagKey string, exp *splits.Experiment) error {
 	if err != nil {
 		return err
 	}
-	if metadata == nil {
-		metadata = &yaml.Node{Kind: yaml.MappingNode, Tag: tagMap}
-		node.Content = append(node.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: tagStr, Value: "metadata"}, metadata)
-	}
 	for i := 0; i+1 < len(metadata.Content); i += 2 {
 		if metadata.Content[i].Value == "experiment" {
-			metadata.Content[i+1] = mergeNode(metadata.Content[i+1], next)
+			if metadata.Anchor != "" && !sameValue(metadata.Content[i+1], next) {
+				return refuseAnchored(metadata, "metadata")
+			}
+			merged, err := mergeNode(metadata.Content[i+1], next, "metadata.experiment")
+			if err != nil {
+				return err
+			}
+			metadata.Content[i+1] = merged
 			return nil
 		}
+	}
+	if err := refuseAnchored(metadata, "metadata"); err != nil {
+		return err
 	}
 	metadata.Content = append(metadata.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: tagStr, Value: "experiment"}, next)
 	return nil
 }
 
-func mappingValue(m *yaml.Node, key string) *yaml.Node {
-	for i := 0; i+1 < len(m.Content); i += 2 {
-		if m.Content[i].Value == key && m.Content[i+1].Kind == yaml.MappingNode {
-			return m.Content[i+1]
+// metadataMapping finds the flag's metadata mapping. A missing, null or empty
+// metadata becomes an empty mapping in place (never a second metadata key)
+// when create is set; any other shape is refused.
+func metadataMapping(flag *yaml.Node, create bool) (*yaml.Node, error) {
+	for i := 0; i+1 < len(flag.Content); i += 2 {
+		if flag.Content[i].Value != "metadata" {
+			continue
+		}
+		value := flag.Content[i+1]
+		switch {
+		case value.Kind == yaml.MappingNode:
+			return value, nil
+		case value.Kind == yaml.AliasNode && value.Alias != nil && value.Alias.Kind == yaml.MappingNode:
+			if !create {
+				return nil, nil
+			}
+			// Editing through an alias would change the anchoring flag too, so this flag gets its own copy.
+			detached := copyNode(value.Alias)
+			detached.Anchor = ""
+			flag.Content[i+1] = detached
+			return detached, nil
+		case value.Kind == yaml.ScalarNode && (value.Tag == "!!null" || value.Value == ""):
+			if !create {
+				return nil, nil
+			}
+			if err := refuseAnchored(value, "metadata"); err != nil {
+				return nil, err
+			}
+			mapping := &yaml.Node{Kind: yaml.MappingNode, Tag: tagMap,
+				HeadComment: value.HeadComment, LineComment: value.LineComment, FootComment: value.FootComment}
+			flag.Content[i+1] = mapping
+			return mapping, nil
+		default:
+			return nil, fmt.Errorf("%w: this flag's metadata is not a mapping, so Studio cannot add an experiment to it; fix it in the file first", ErrUneditable)
 		}
 	}
+	if !create {
+		return nil, nil
+	}
+	mapping := &yaml.Node{Kind: yaml.MappingNode, Tag: tagMap}
+	flag.Content = append(flag.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: tagStr, Value: "metadata"}, mapping)
+	return mapping, nil
+}
+
+// ErrUneditable marks YAML Studio will not rewrite safely, such as a value
+// behind an anchor other flags may alias. It is the user's to fix in the file.
+var ErrUneditable = errors.New("cannot edit this safely")
+
+// refuseAnchored stops an edit that would change or drop an anchored value,
+// because every alias of it elsewhere in the file would silently change too.
+func refuseAnchored(n *yaml.Node, field string) error {
+	if name := anchorIn(n); name != "" {
+		return fmt.Errorf("%w: %s uses the YAML anchor &%s, which other flags may share; edit it in the file instead", ErrUneditable, field, name)
+	}
 	return nil
+}
+
+func anchorIn(n *yaml.Node) string {
+	if n == nil || n.Kind == yaml.AliasNode {
+		return ""
+	}
+	if n.Anchor != "" {
+		return n.Anchor
+	}
+	for _, c := range n.Content {
+		if name := anchorIn(c); name != "" {
+			return name
+		}
+	}
+	return ""
 }
 
 func deleteKey(m *yaml.Node, key string) {
@@ -431,13 +529,18 @@ func styleExperiment(n *yaml.Node, key string) {
 	}
 }
 
-// mergeNode keeps orig wherever it already says the same thing as next.
-func mergeNode(orig, next *yaml.Node) *yaml.Node {
+// mergeNode keeps orig wherever it already says the same thing as next. An
+// alias that changes is replaced by a plain value, detaching it; an anchored
+// value that changes is refused.
+func mergeNode(orig, next *yaml.Node, path string) (*yaml.Node, error) {
 	if orig == nil {
-		return next
+		return next, nil
 	}
 	if sameValue(orig, next) {
-		return orig
+		return orig, nil
+	}
+	if orig.Anchor != "" {
+		return nil, refuseAnchored(orig, path)
 	}
 
 	switch {
@@ -458,32 +561,55 @@ func mergeNode(orig, next *yaml.Node) *yaml.Node {
 				continue
 			}
 			kept[k] = true
-			merged.Content = append(merged.Content, orig.Content[i], mergeNode(orig.Content[i+1], v))
+			child, err := mergeNode(orig.Content[i+1], v, path+"."+k)
+			if err != nil {
+				return nil, err
+			}
+			merged.Content = append(merged.Content, orig.Content[i], child)
 		}
 		for _, k := range order {
 			if !kept[k] {
 				merged.Content = append(merged.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: tagStr, Value: k}, wanted[k])
 			}
 		}
-		return &merged
+		for i := 0; i+1 < len(orig.Content); i += 2 {
+			if !kept[orig.Content[i].Value] {
+				if err := refuseAnchored(orig.Content[i+1], path+"."+orig.Content[i].Value); err != nil {
+					return nil, err
+				}
+			}
+		}
+		return &merged, nil
 	case orig.Kind == yaml.SequenceNode && next.Kind == yaml.SequenceNode:
 		merged := *orig
 		merged.Content = nil
 		for i, item := range next.Content {
 			if i < len(orig.Content) {
-				merged.Content = append(merged.Content, mergeNode(orig.Content[i], item))
+				child, err := mergeNode(orig.Content[i], item, fmt.Sprintf("%s[%d]", path, i))
+				if err != nil {
+					return nil, err
+				}
+				merged.Content = append(merged.Content, child)
 			} else {
 				merged.Content = append(merged.Content, item)
 			}
 		}
-		return &merged
+		for i := len(next.Content); i < len(orig.Content); i++ {
+			if err := refuseAnchored(orig.Content[i], fmt.Sprintf("%s[%d]", path, i)); err != nil {
+				return nil, err
+			}
+		}
+		return &merged, nil
 	}
 
 	next.HeadComment, next.LineComment, next.FootComment = orig.HeadComment, orig.LineComment, orig.FootComment
 	if orig.Kind == yaml.ScalarNode && next.Kind == yaml.ScalarNode && orig.Tag == next.Tag {
 		next.Style = orig.Style
 	}
-	return next
+	if err := refuseAnchored(orig, path); err != nil {
+		return nil, err
+	}
+	return next, nil
 }
 
 // keepUntouchedText swaps every subtree of the edited flag that still holds its
@@ -619,4 +745,52 @@ func extent(lines []string, start, col int, indentless bool) lineRange {
 		break
 	}
 	return lineRange{start, last + 1}
+}
+
+func copyNode(n *yaml.Node) *yaml.Node {
+	if n == nil {
+		return nil
+	}
+	out := *n
+	// A copy is new text, never "pristine", so it is not spliced back from the anchor's lines.
+	out.Line, out.Column = 0, 0
+	out.Content = make([]*yaml.Node, len(n.Content))
+	for i, c := range n.Content {
+		out.Content[i] = copyNode(c)
+	}
+	return &out
+}
+
+type footComment struct {
+	node    *yaml.Node
+	comment string
+}
+
+// dropTrailingFootComments clears the foot comments along the flag's last
+// entries: those lines lie outside the flag's block and are kept verbatim.
+func dropTrailingFootComments(n *yaml.Node) []footComment {
+	var saved []footComment
+	clearFoot := func(x *yaml.Node) {
+		if x != nil && x.FootComment != "" {
+			saved = append(saved, footComment{x, x.FootComment})
+			x.FootComment = ""
+		}
+	}
+	for n != nil {
+		clearFoot(n)
+		if len(n.Content) == 0 || n.Kind == yaml.AliasNode {
+			break
+		}
+		if n.Kind == yaml.MappingNode && len(n.Content) >= 2 {
+			clearFoot(n.Content[len(n.Content)-2])
+		}
+		n = n.Content[len(n.Content)-1]
+	}
+	return saved
+}
+
+func restoreFootComments(saved []footComment) {
+	for _, s := range saved {
+		s.node.FootComment = s.comment
+	}
 }

@@ -3,6 +3,7 @@ package goff
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-feature-flag/studio/pkg/splits"
+	"gopkg.in/yaml.v3"
 )
 
 func experimentFile(t *testing.T) []byte {
@@ -344,5 +346,123 @@ func TestEvaluateSplitsUsesTheShardEvaluator(t *testing.T) {
 	got, _ = a.EvaluateSplits(content, "request-timeout", exposed, map[string]any{"region": "region-b", "tier": "internal"}, at)
 	if got.Reason != splits.ReasonStock || got.Variation != "fast" || got.Allocation != "legacy-override" {
 		t.Errorf("stock rule: %+v", got)
+	}
+}
+
+func newExperimentFor(t *testing.T, rule string) *splits.Experiment {
+	t.Helper()
+	exp, err := splits.ParseJSON([]byte(`{"version":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp.Allocations[rule] = &splits.Allocation{Splits: []splits.Split{{Variation: "on", Shards: []splits.Shard{{Salt: "s", Ranges: []splits.Range{{Start: 0, End: 10000}}}}}}}
+	return exp
+}
+
+func TestAddingAnExperimentToNullMetadataReplacesItInPlace(t *testing.T) {
+	for _, meta := range []string{"  metadata:\n", "  metadata: ~\n", "  metadata: null\n"} {
+		src := []byte("f:\n  variations: {on: true, off: false}\n  targeting:\n    - name: r\n      query: a eq \"b\"\n      variation: \"off\"\n  defaultRule: {variation: \"off\"}\n" + meta)
+		f := flagNamed(t, src, "f")
+		f.Experiment = newExperimentFor(t, "r")
+		out, err := New().Serialize(src, "f", f)
+		if err != nil {
+			t.Fatalf("%q: %v", meta, err)
+		}
+		if n := strings.Count(string(out), "metadata:"); n != 1 {
+			t.Errorf("%q: %d metadata keys in\n%s", meta, n, out)
+		}
+		if err := New().Validate(out); err != nil {
+			t.Errorf("%q: %v", meta, err)
+		}
+		if back := flagNamed(t, out, "f"); back.Experiment == nil || back.Experiment.Allocations["r"] == nil {
+			t.Errorf("%q: experiment did not read back from\n%s", meta, out)
+		}
+	}
+}
+
+const anchoredFlags = `a:
+  variations: {on: true, off: false}
+  defaultRule: {variation: "off"}
+  metadata: &meta
+    team: growth
+b:
+  variations: {on: true, off: false}
+  targeting:
+    - name: r
+      query: a eq "b"
+      variation: "off"
+  defaultRule: {variation: "off"}
+  metadata: *meta
+`
+
+func TestEditingAnAnchoredValueIsRefused(t *testing.T) {
+	src := []byte(anchoredFlags)
+
+	a := flagNamed(t, src, "a")
+	a.Metadata["team"] = "payments"
+	if _, err := New().Serialize(src, "a", a); !errors.Is(err, ErrUneditable) || !strings.Contains(err.Error(), "&meta") {
+		t.Errorf("changing an anchored metadata: got %v", err)
+	}
+
+	a = flagNamed(t, src, "a")
+	a.Enabled = false
+	if _, err := New().Serialize(src, "a", a); err != nil {
+		t.Errorf("an unrelated edit of the anchoring flag should work: %v", err)
+	}
+}
+
+func TestEditingAnAliasDetachesIt(t *testing.T) {
+	src := []byte(anchoredFlags)
+	b := flagNamed(t, src, "b")
+	b.Experiment = newExperimentFor(t, "r")
+	out, err := New().Serialize(src, "b", b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := flagNamed(t, out, "a"); got.Experiment != nil || got.Metadata["team"] != "growth" {
+		t.Errorf("the anchoring flag changed: %+v", got.Metadata)
+	}
+	if got := flagNamed(t, out, "b"); got.Experiment == nil || got.Metadata["team"] != "growth" {
+		t.Errorf("the edited flag lost its metadata: %+v\n%s", got.Metadata, out)
+	}
+}
+
+func TestTrailingCommentIsNotDuplicatedOnMetadataWrites(t *testing.T) {
+	for name, src := range map[string]string{
+		"before another flag": "f:\n  variations: {on: true, off: false}\n  targeting:\n    - name: r\n      query: a eq \"b\"\n      variation: \"off\"\n  defaultRule: {variation: \"off\"}\n  metadata:\n    team: x\n  # end of f\n\ng:\n  variations: {on: true}\n  defaultRule: {variation: \"on\"}\n",
+		"at end of file":      "f:\n  variations: {on: true, off: false}\n  targeting:\n    - name: r\n      query: a eq \"b\"\n      variation: \"off\"\n  defaultRule: {variation: \"off\"}\n  metadata:\n    team: x\n# end of f\n",
+	} {
+		for _, edit := range []func(*Flag){
+			func(f *Flag) { f.Experiment = newExperimentFor(t, "r") },
+			func(f *Flag) { f.Metadata["owner"] = "y" },
+		} {
+			f := flagNamed(t, []byte(src), "f")
+			edit(&f)
+			out, err := New().Serialize([]byte(src), "f", f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if n := strings.Count(string(out), "# end of f"); n != 1 {
+				t.Errorf("%s: comment appears %d times:\n%s", name, n, out)
+			}
+		}
+	}
+}
+
+func TestMetadataTypeOnlyChangesAreWritten(t *testing.T) {
+	src := []byte("f:\n  variations: {on: true, off: false}\n  defaultRule: {variation: \"off\"}\n  metadata:\n    team: x\n    tier: \"1\"\n    beta: \"true\"\n")
+	f := flagNamed(t, src, "f")
+	f.Metadata["tier"] = 1
+	f.Metadata["beta"] = true
+	out, err := New().Serialize(src, "f", f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back := flagNamed(t, out, "f")
+	if back.Metadata["tier"] != 1 || back.Metadata["beta"] != true {
+		t.Errorf("type change dropped: %#v\n%s", back.Metadata, out)
+	}
+	if !sameValue(&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: "1"}, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: "1"}) {
+		t.Error("identical scalars must compare equal")
 	}
 }

@@ -60,7 +60,7 @@ func experimentFixtures(now time.Time) map[string]string {
 		return now.UTC().Truncate(24*time.Hour).AddDate(0, 0, offset).Format(time.RFC3339)
 	}
 	return map[string]string{
-		"experiments/checkout-gold-cohort.yaml": fmt.Sprintf(`key: checkout-gold-cohort
+		"experiments/new-checkout-gold-cohort.yaml": fmt.Sprintf(`key: new-checkout-gold-cohort
 name: New checkout for gold
 owner: payments
 hypothesis: The new checkout raises click rate for gold-tier accounts without hurting revenue
@@ -88,7 +88,7 @@ analysis:
   correction: none
 segments: [device]
 `, day(-10), day(18)),
-		"experiments/ramp-latency-check.yaml": fmt.Sprintf(`key: ramp-latency-check
+		"experiments/ramped-ramp.yaml": fmt.Sprintf(`key: ramped-ramp
 name: Ramp latency check
 owner: platform
 hypothesis: Ramping the new path does not raise timeouts
@@ -158,7 +158,7 @@ func analysisResults(key string, now time.Time) (map[string]any, bool) {
 	guardPass := map[string]any{"max_drop_pct": 2, "pass": true}
 
 	switch key {
-	case "checkout-gold-cohort":
+	case "new-checkout-gold-cohort":
 		primary := metric("click_rate", "Click rate", "primary", "increase", "percent", arm("on", 0.0421, 0.0402, 0.0473, 0.018, 0.0004, true, nil))
 		return map[string]any{
 			"experiment_key": key, "as_of": asOf, "status": "ok", "message": nil, "unit": "entity",
@@ -178,7 +178,7 @@ func analysisResults(key string, now time.Time) (map[string]any, bool) {
 			"diagnostics": []map[string]any{{"check": "traffic_balance", "status": "pass", "detail": "Traffic matches the planned split."}, {"check": "full_week", "status": "pass", "detail": "10 days of data."}},
 			"decision":    map[string]any{"recommendation": "roll_out", "variant": "on", "reason": "on significantly improves Click rate and every guardrail passes."},
 		}, true
-	case "ramp-latency-check":
+	case "ramped-ramp":
 		return map[string]any{
 			"experiment_key": key, "as_of": asOf, "status": "ok", "message": nil, "unit": "request",
 			"method":   map[string]any{"test": "fixed", "alpha": 0.05, "cuped": false, "correction": "none"},

@@ -36,6 +36,10 @@ func compileQuery(raw string) (*query, error) {
 		return q, nil
 	}
 
+	// The untouched query must be one GO Feature Flag itself accepts, or its own validator would reject the flag.
+	if err := validNikunjy(trimmed); err != nil {
+		return nil, err
+	}
 	rewritten, checks, err := rewriteIn(trimmed)
 	if err != nil {
 		return nil, err
@@ -247,6 +251,8 @@ func parseList(src string, open int) (int, []string, error) {
 		case ',':
 			i++
 			continue
+		case '\'':
+			return 0, nil, fmt.Errorf("list entries must use double quotes")
 		case '"':
 			end, err := skipString(src, i)
 			if err != nil {
@@ -293,4 +299,15 @@ func isLetter(c byte) bool { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 
 
 func isAttrChar(c byte) bool {
 	return isLetter(c) || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == ':' || c == '.'
+}
+
+func validNikunjy(q string) error {
+	ev, err := parser.NewEvaluator(q)
+	if err != nil {
+		return fmt.Errorf("parsing query %q: %w", q, err)
+	}
+	if _, err := ev.Process(map[string]any{}); err != nil {
+		return fmt.Errorf("invalid query %q: %w", q, err)
+	}
+	return nil
 }
