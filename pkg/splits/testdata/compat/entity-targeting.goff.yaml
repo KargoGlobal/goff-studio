@@ -1,0 +1,55 @@
+# Generated compatibility fixture: legacy shard-compatible bucketing.
+pacing-strategy:
+  variations:
+    control: "control"
+    smooth: "smooth"
+    burst: "burst"
+  targeting:
+    - name: exp-listed
+      query: 'id in ["e-0", "e-97", "e-194", "e-291", "e-388", "e-485", "e-582", "e-679", "e-776", "e-873", "e-970", "e-1067", "e-1164", "e-1261", "e-1358", "e-1455", "e-1552", "e-1649", "e-1746", "e-1843", "e-1940", "e-2037", "e-2134", "e-2231", "e-2328", "e-2425", "e-2522", "e-2619", "e-2716", "e-2813", "e-2910", "e-3007", "e-3104", "e-3201", "e-3298", "e-3395", "e-3492", "e-3589", "e-3686", "e-3783", "e-3880", "e-3977", "e-4074", "e-4171", "e-4268", "e-4365", "e-4462", "e-4559", "e-4656", "e-4753", "e-4850", "e-4947", "e-5044", "e-5141", "e-5238", "e-5335", "e-5432", "e-5529", "e-5626", "e-5723", "e-5820", "e-5917", "e-6014", "e-6111", "e-6208", "e-6305", "e-6402", "e-6499", "e-6596", "e-6693", "e-6790", "e-6887", "e-6984", "e-7081", "e-7178", "e-7275", "e-7372", "e-7469", "e-7566", "e-7663", "e-7760", "e-7857", "e-7954", "e-8051", "e-8148", "e-8245", "e-8342", "e-8439", "e-8536", "e-8633", "e-8730", "e-8827", "e-8924", "e-9021", "e-9118", "e-9215", "e-9312", "e-9409", "e-9506", "e-9603", "e-9700", "e-9797", "e-9894", "e-9991", "e-10088", "e-10185", "e-10282", "e-10379", "e-10476", "e-10573", "e-10670", "e-10767", "e-10864", "e-10961", "e-11058", "e-11155", "e-11252", "e-11349", "e-11446", "e-11543", "e-11640", "e-11737", "e-11834", "e-11931", "e-12028", "e-12125", "e-12222", "e-12319", "e-12416", "e-12513", "e-12610", "e-12707", "e-12804", "e-12901", "e-12998", "e-13095", "e-13192", "e-13289", "e-13386", "e-13483", "e-13580", "e-13677", "e-13774", "e-13871", "e-13968", "e-14065", "e-14162", "e-14259", "e-14356", "e-14453", "e-14550", "e-14647", "e-14744", "e-14841", "e-14938", "e-15035", "e-15132", "e-15229", "e-15326", "e-15423", "e-15520", "e-15617", "e-15714", "e-15811", "e-15908", "e-16005", "e-16102", "e-16199", "e-16296", "e-16393", "e-16490", "e-16587", "e-16684", "e-16781", "e-16878", "e-16975", "e-17072", "e-17169", "e-17266", "e-17363", "e-17460", "e-17557", "e-17654", "e-17751", "e-17848", "e-17945", "e-18042", "e-18139", "e-18236", "e-18333", "e-18430", "e-18527", "e-18624", "e-18721", "e-18818", "e-18915", "e-19012", "e-19109", "e-19206", "e-19303", "e-19400", "e-19497", "e-19594", "e-19691", "e-19788", "e-19885", "e-19982"]'
+      variation: control
+    - name: exp-sites
+      query: 'siteId in ["101", "202", "303"]'
+      variation: control
+  defaultRule:
+    variation: control
+  metadata:
+    experiment:
+      version: 1
+      hash: md5-shard
+      totalShards: 10000
+      unit: {type: entity, key: targetingKey}
+      holdout: null
+      allocations:
+        exp-listed:
+          experimentKey: pacing-strategy-exp-listed
+          doLog: true
+          startAt: null
+          endAt: null
+          passThrough: true
+          layer: null
+          splits:
+            - variation: control
+              shards:
+                - {salt: "2e2e2e", ranges: [[0, 10000]]}
+                - {salt: "3f3f3f", ranges: [[0, 5000]]}
+            - variation: smooth
+              shards:
+                - {salt: "2e2e2e", ranges: [[0, 10000]]}
+                - {salt: "3f3f3f", ranges: [[5000, 10000]]}
+        exp-sites:
+          experimentKey: pacing-strategy-exp-sites
+          doLog: true
+          startAt: null
+          endAt: null
+          passThrough: true
+          layer: null
+          splits:
+            - variation: control
+              shards:
+                - {salt: "4a4a4a", ranges: [[0, 5000]]}
+                - {salt: "5b5b5b", ranges: [[0, 5000]]}
+            - variation: burst
+              shards:
+                - {salt: "4a4a4a", ranges: [[0, 5000]]}
+                - {salt: "5b5b5b", ranges: [[5000, 10000]]}

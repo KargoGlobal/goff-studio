@@ -30,7 +30,7 @@ If a port is already taken the run fails fast with
 `http://127.0.0.1:9403/ is already used`. Free them with:
 
 ```bash
-for p in 9400 9401 9402 9403; do pid=$(lsof -ti :$p); [ -n "$pid" ] && kill $pid; done
+for p in 9400 9401 9402 9403 9404; do pid=$(lsof -ti :$p); [ -n "$pid" ] && kill $pid; done
 ```
 
 ## How it fits together
@@ -49,8 +49,9 @@ binary serves the built SPA, which is what production does.
 | 9401 | fake OIDC IDP | `E2E_IDP_PORT` |
 | 9402 | fake GitHub Contents API | `E2E_GITHUB_PORT` |
 | 9403 | state dump / reset | `E2E_DUMP_PORT` |
+| 9404 | fake analysis service | `E2E_ANALYSIS_PORT` |
 
-### The fakes (`harness/fakes.go`)
+### The fakes (`harness/fakes.go`, `harness/analysis.go`)
 
 Single stdlib-only Go program, no module dependencies.
 
@@ -60,7 +61,16 @@ Single stdlib-only Go program, no module dependencies.
   `sub`/`name`/`email`/`groups`, where groups is `["flags-admins"]`.
 - **GitHub** serves two flag files under `production/` from memory, honours the
   blob-SHA optimistic concurrency check (409 on mismatch), and records commits.
-- **Dump** returns `{files, shas, commits, user}` so a test can assert what was
+- **GitHub** also serves two experiments (`experiments/checkout-gold-cohort.yaml`
+  on `new-checkout`, `experiments/ramp-latency-check.yaml` on `ramped`, with
+  dates relative to today) and five catalog metrics under `metrics/`.
+- **Analysis** answers `GET /v1/experiments/{key}/results` for those two
+  experiments (the second one with a sample ratio mismatch), 404s any other key,
+  requires the bearer token `e2e-analysis-token`, and answers
+  `POST /v1/experiments/power` with a fixed estimate. The app is started with
+  `GOFF_STUDIO_ANALYSIS_BASE_URL` pointing at it, so the suite exercises the real
+  proxy and cache; sample mode is covered by the Go server tests.
+- **Dump** returns `{files, shas, commits, analysisCalls, user}` so a test can assert what was
   actually committed. `POST /reset` restores the fixtures; every test gets a
   clean repo through the auto-use `freshRepo` fixture in `tests/support/studio.ts`.
 

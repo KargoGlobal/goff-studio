@@ -1,0 +1,33 @@
+# Generated compatibility fixture: legacy shard-compatible bucketing.
+new-ranker:
+  variations:
+    control: "control"
+    treatment: "treatment"
+  targeting:
+    - name: exp-all
+      query: 'targetingKey pr'
+      variation: control
+  defaultRule:
+    variation: control
+  metadata:
+    experiment:
+      version: 1
+      hash: md5-shard
+      totalShards: 10000
+      unit: {type: request, key: targetingKey}
+      holdout: null
+      allocations:
+        exp-all:
+          experimentKey: new-ranker-exp-all
+          doLog: true
+          startAt: null
+          endAt: null
+          passThrough: true
+          layer: null
+          splits:
+            - variation: control
+              shards:
+                - {salt: "f00dfeed", ranges: [[0, 5000]]}
+            - variation: treatment
+              shards:
+                - {salt: "f00dfeed", ranges: [[5000, 10000]]}

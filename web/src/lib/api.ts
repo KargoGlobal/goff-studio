@@ -1,3 +1,15 @@
+import type {
+  Experiment as RegistryExperiment,
+  ExperimentList,
+  ExperimentView,
+  Metric,
+  MetricList,
+  MetricView,
+  PowerRequest,
+  PowerResult,
+  Results,
+} from '@/lib/experimentTypes'
+
 export type Action =
   | 'view'
   | 'toggle'
@@ -72,7 +84,69 @@ export interface Rule {
   disabled?: boolean
   outcome: Outcome
   progressive?: ProgressiveRollout
+  hasAllocation?: boolean
 }
+
+/** Half-open [start, end) range of shard values. */
+export type ShardRange = [number, number]
+
+export interface Shard {
+  salt: string
+  ranges: ShardRange[]
+}
+
+export interface Split {
+  variation: string
+  extraLogging?: Record<string, string>
+  shards: Shard[]
+}
+
+export interface Allocation {
+  experimentKey?: string
+  doLog?: boolean
+  startAt: string | null
+  endAt: string | null
+  passThrough?: boolean
+  layer: Shard | null
+  splits: Split[]
+}
+
+export interface ExperimentUnit {
+  type: 'request' | 'entity'
+  key: string
+}
+
+export interface Experiment {
+  version: number
+  hash: string
+  totalShards: number
+  unit: ExperimentUnit
+  holdout: Shard | null
+  allocations: Record<string, Allocation>
+}
+
+export interface Arm {
+  variation: string
+  weight: number
+}
+
+export type ExperimentEdit =
+  | { op: 'exposure'; ruleName: string; exposurePercent: number }
+  | {
+      op: 'create'
+      ruleName: string
+      exposurePercent: number
+      arms: Arm[]
+      experimentKey?: string
+    }
+  | {
+      op: 'rerandomize'
+      ruleName: string
+      confirm: true
+      exposurePercent?: number
+      arms?: Arm[]
+    }
+  | { op: 'window'; ruleName: string; startAt?: string; endAt?: string }
 
 export interface Flag {
   key: string
@@ -87,6 +161,8 @@ export interface Flag {
   metadata?: Record<string, unknown>
   team: string
   preserved?: string[]
+  experiment: Experiment | null
+  experimentError?: string
   actions: Action[]
   summary: string
   fileSha: string
@@ -120,6 +196,10 @@ export interface EvalResult {
   value: unknown
   reason: string
   error?: string
+  experimentKey?: string
+  allocation?: string
+  doLog?: boolean
+  extraLogging?: Record<string, string>
 }
 
 export interface Commit {
@@ -352,6 +432,18 @@ export const api = {
       body: JSON.stringify({ ...payload, fileSha }),
     }),
 
+  setExperiment: (env: string, key: string, edit: ExperimentEdit, fileSha: string) =>
+    request<SaveResult>(`/api/environments/${env}/flags/${encodeURIComponent(key)}/experiment`, {
+      method: 'POST',
+      body: JSON.stringify({ ...edit, fileSha }),
+    }),
+
+  diffFlagExperiment: (env: string, key: string, edit: ExperimentEdit) =>
+    request<DiffResult>(`/api/environments/${env}/flags/${encodeURIComponent(key)}/diff`, {
+      method: 'POST',
+      body: JSON.stringify({ change: 'experiment', edit }),
+    }),
+
   diffGeneric: (env: string, key: string, body: Record<string, unknown>) =>
     request<DiffResult>(`/api/environments/${env}/flags/${encodeURIComponent(key)}/diff`, {
       method: 'POST',
@@ -365,4 +457,54 @@ export const api = {
     }),
 
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
+
+  experiments: () => request<ExperimentList>('/api/experiments'),
+
+  experiment: (key: string) =>
+    request<ExperimentView>(`/api/experiments/${encodeURIComponent(key)}`),
+
+  experimentResults: (key: string, asOf?: string) =>
+    request<Results>(
+      `/api/experiments/${encodeURIComponent(key)}/results${asOf ? `?as_of=${encodeURIComponent(asOf)}` : ''}`,
+    ),
+
+  diffExperiment: (experiment: RegistryExperiment, create: boolean) =>
+    request<DiffResult>(`/api/experiments/${encodeURIComponent(experiment.key)}/diff`, {
+      method: 'POST',
+      body: JSON.stringify({ experiment, create }),
+    }),
+
+  createExperiment: (experiment: RegistryExperiment) =>
+    request<SaveResult>('/api/experiments', {
+      method: 'POST',
+      body: JSON.stringify({ experiment }),
+    }),
+
+  updateExperiment: (key: string, experiment: RegistryExperiment, fileSha: string) =>
+    request<SaveResult>(`/api/experiments/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ experiment, fileSha }),
+    }),
+
+  power: (body: PowerRequest) =>
+    request<PowerResult>('/api/experiments/power', { method: 'POST', body: JSON.stringify(body) }),
+
+  metrics: () => request<MetricList>('/api/metrics'),
+
+  metric: (key: string) => request<MetricView>(`/api/metrics/${encodeURIComponent(key)}`),
+
+  diffMetric: (metric: Metric, create: boolean) =>
+    request<DiffResult>(`/api/metrics/${encodeURIComponent(metric.key)}/diff`, {
+      method: 'POST',
+      body: JSON.stringify({ metric, create }),
+    }),
+
+  createMetric: (metric: Metric) =>
+    request<SaveResult>('/api/metrics', { method: 'POST', body: JSON.stringify({ metric }) }),
+
+  updateMetric: (key: string, metric: Metric, fileSha: string) =>
+    request<SaveResult>(`/api/metrics/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ metric, fileSha }),
+    }),
 }

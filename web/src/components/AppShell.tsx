@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Moon, Sun, LogOut, Plus, ShieldAlert } from 'lucide-react'
+import { FlaskConical, Gauge, Moon, Sun, LogOut, Plus, ShieldAlert } from 'lucide-react'
 import { Logo } from '@/components/Logo'
 import { cn } from '@/lib/cn'
 import { api, type Environment } from '@/lib/api'
@@ -80,6 +80,30 @@ export function AppShell({
             <Plus className="h-3.5 w-3.5" />
             New environment
           </button>
+
+          <p className="px-3 pb-1 pt-4 text-[11px] font-medium uppercase tracking-wide text-ink-muted">
+            Experimentation
+          </p>
+          {[
+            { to: '/experiments', label: 'Experiments', icon: FlaskConical },
+            { to: '/metrics', label: 'Metrics', icon: Gauge },
+          ].map(({ to, label, icon: Icon }) => {
+            const isActive = location.pathname === to || location.pathname.startsWith(`${to}/`)
+            return (
+              <Link
+                key={to}
+                to={to}
+                aria-current={isActive ? 'page' : undefined}
+                className={cn(
+                  'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors',
+                  isActive ? 'bg-brand-soft font-medium text-brand' : 'text-ink-soft hover:bg-canvas',
+                )}
+              >
+                <Icon className="h-3.5 w-3.5" aria-hidden />
+                {label}
+              </Link>
+            )
+          })}
         </nav>
 
         <div className="shrink-0 border-t px-4 py-3">

@@ -21,6 +21,7 @@ import {
   type Flag,
   type NewVariation,
   type Experimentation,
+  type ExperimentEdit,
   type Outcome,
   type ProgressiveRollout,
 } from '@/lib/api'
@@ -33,6 +34,7 @@ import {
   useRenameFlag,
   useSetProgressive,
   useSetExperimentation,
+  useSetExperiment,
   useDeleteRule,
   useEditRule,
   useFlag,
@@ -49,6 +51,7 @@ import { RuleBuilder } from '@/components/RuleBuilder'
 import { VariationsEditor } from '@/components/VariationsEditor'
 import { ProgressiveEditor } from '@/components/ProgressiveEditor'
 import { ExperimentationEditor } from '@/components/ExperimentationEditor'
+import { ExperimentPanel, StartExperiment } from '@/components/ExperimentPanel'
 import { groupFromCondition, queryFromGroup } from '@/lib/query'
 import { tokensFromCondition } from '@/lib/tokens'
 import { ConditionView } from '@/components/ConditionView'
@@ -70,6 +73,7 @@ type Pending =
   | { kind: 'progressiveClear'; ruleName: string; variation: string }
   | { kind: 'experimentation'; window: Experimentation }
   | { kind: 'experimentationClear' }
+  | { kind: 'experiment'; edit: ExperimentEdit }
   | { kind: 'rename'; newKey: string }
   | { kind: 'deleteFlag' }
 
@@ -99,6 +103,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
   const renameFlag = useRenameFlag(env)
   const setProgressive = useSetProgressive(env)
   const setExperimentation = useSetExperimentation(env)
+  const setExperiment = useSetExperiment(env)
 
   const [pending, setPending] = useState<Pending | null>(null)
   const [diff, setDiff] = useState<DiffResult | undefined>()
@@ -143,7 +148,8 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
     deleteFlag.isPending ||
     renameFlag.isPending ||
     setProgressive.isPending ||
-    setExperimentation.isPending
+    setExperimentation.isPending ||
+    setExperiment.isPending
 
   async function openReview(next: Pending) {
     setPending(next)
@@ -215,6 +221,8 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
         })
       case 'experimentationClear':
         return api.diffGeneric(env, key, { change: 'experimentationClear' })
+      case 'experiment':
+        return api.diffFlagExperiment(env, key, next.edit)
       case 'rename':
         return api.diffGeneric(env, key, { change: 'rename', name: next.newKey })
       case 'deleteFlag':
@@ -314,6 +322,8 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
         })
       case 'experimentationClear':
         return setExperimentation.mutateAsync({ flag: target, clear: true })
+      case 'experiment':
+        return setExperiment.mutateAsync({ flag: target, edit: change.edit })
       case 'rename':
         return renameFlag.mutateAsync({ flag: target, newKey: change.newKey })
       case 'deleteFlag':
@@ -650,6 +660,41 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                     )}
 
                     <div className="mt-3 border-t pt-3">
+                      {(() => {
+                        const allocation = rule.hasAllocation
+                          ? flag.experiment?.allocations[rule.name]
+                          : undefined
+                        if (allocation && flag.experiment) {
+                          return (
+                            <>
+                              <ExperimentPanel
+                                key={`${rule.name}-${JSON.stringify(allocation)}`}
+                                flagKey={flag.key}
+                                ruleName={rule.name}
+                                experiment={flag.experiment}
+                                allocation={allocation}
+                                canRollout={can('rollout')}
+                                canEditRules={can('edit_rules')}
+                                preview={preview}
+                                onReview={(edit) => void openReview({ kind: 'experiment', edit })}
+                              />
+                              <p className="mb-2 text-[12px] text-ink-muted">
+                                Outside the experiment, this rule's own variation applies:
+                              </p>
+                            </>
+                          )
+                        }
+                        if (can('edit_rules') && rule.name && !rule.progressive && !flag.experimentError) {
+                          return (
+                            <StartExperiment
+                              ruleName={rule.name}
+                              variations={variationNames}
+                              onReview={(edit) => void openReview({ kind: 'experiment', edit })}
+                            />
+                          )
+                        }
+                        return null
+                      })()}
                       {rule.progressive ? (
                         <ProgressiveEditor
                           rollout={rule.progressive}
@@ -879,6 +924,12 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                       {preview.variation && <>variation {preview.variation} · </>}
                       {preview.reason}
                     </p>
+                    {preview.experimentKey && (
+                      <p className="mt-0.5 text-[12px] text-ink-muted">
+                        experiment {preview.experimentKey} · rule {preview.allocation} ·{' '}
+                        {preview.doLog ? 'logged' : 'not logged'}
+                      </p>
+                    )}
                   </>
                 )}
               </div>

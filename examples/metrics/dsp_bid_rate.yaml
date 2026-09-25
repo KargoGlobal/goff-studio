@@ -1,0 +1,7 @@
+key: dsp_bid_rate
+name: DSP bid rate
+kind: mean
+numerator: dsp_bid_yn
+format: percent
+direction: increase
+description: Share of bid requests with at least one DSP bid.

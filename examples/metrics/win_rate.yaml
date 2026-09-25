@@ -1,0 +1,7 @@
+key: win_rate
+name: Exchange win rate
+kind: mean
+numerator: won_yn
+format: percent
+direction: increase
+description: Share of bid requests the exchange won.

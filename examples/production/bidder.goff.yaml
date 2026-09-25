@@ -1,0 +1,17 @@
+# Bidder flags. The experiment registry entry is experiments/tmax-exp-us-east-1.yaml.
+tmax:
+  variations:
+    control: 300
+    tmax150: 150
+    tmax225: 225
+  targeting:
+    - name: exp-us-east-1
+      query: region eq "us-east-1"
+      percentage:
+        control: 34
+        tmax150: 33
+        tmax225: 33
+  defaultRule:
+    variation: control
+  metadata:
+    team: bidder

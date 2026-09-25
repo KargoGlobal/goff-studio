@@ -212,6 +212,8 @@ func message(op ChangeOp, who Identity) string {
 
 var errStaleSHA = errors.New("stale file sha")
 
+var ErrNotFound = errors.New("not found")
+
 func (c *Client) put(ctx context.Context, path, sha string, content []byte, msg string, who Identity) (string, error) {
 	endpoint := fmt.Sprintf("%s/repos/%s/%s/contents/%s", c.cfg.APIBase, c.cfg.Owner, c.cfg.Repo, path)
 
@@ -325,7 +327,7 @@ func (c *Client) do(ctx context.Context, method, endpoint string, body, out any)
 	case res.StatusCode == http.StatusConflict, res.StatusCode == http.StatusPreconditionFailed:
 		return errStaleSHA
 	case res.StatusCode == http.StatusNotFound:
-		return fmt.Errorf("not found: %s", shortPath(endpoint))
+		return fmt.Errorf("%w: %s", ErrNotFound, shortPath(endpoint))
 	case res.StatusCode < 200 || res.StatusCode >= 300:
 		return fmt.Errorf("github %s %s: %s", method, shortPath(endpoint), apiError(payload, res.StatusCode))
 	}

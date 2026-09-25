@@ -1,4 +1,4 @@
-// Command fakes runs the stub OIDC IDP, GitHub Contents API, and state-dump endpoint the Playwright suite needs.
+// Command fakes runs the stub OIDC IDP, GitHub Contents API, analysis service, and state-dump endpoint the Playwright suite needs.
 package main
 
 import (
@@ -78,6 +78,42 @@ const rampFixture = `ramped:
     variation: "off"
   metadata:
     team: platform
+
+request-timeout:
+  variations:
+    control: 200
+    fast: 150
+  targeting:
+    - name: exp-region-a
+      query: region in ["region-a"]
+      variation: control
+  defaultRule:
+    variation: control
+  metadata:
+    team: platform
+    experiment:
+      version: 1
+      hash: md5-shard
+      totalShards: 10000
+      unit: {type: request, key: targetingKey}
+      holdout: null
+      allocations:
+        exp-region-a:
+          experimentKey: request-timeout-exp-region-a
+          doLog: true
+          startAt: null
+          endAt: null
+          passThrough: true
+          layer: null
+          splits:
+            - variation: control
+              shards:
+                - {salt: "c1e0a7d25f", ranges: [[0, 100]]}
+                - {salt: "9b3f41e2aa", ranges: [[0, 5000]]}
+            - variation: fast
+              shards:
+                - {salt: "c1e0a7d25f", ranges: [[0, 100]]}
+                - {salt: "9b3f41e2aa", ranges: [[5000, 10000]]}
 `
 
 type commit struct {
@@ -89,11 +125,12 @@ type commit struct {
 }
 
 type repoState struct {
-	mu      sync.Mutex
-	gen     int
-	files   map[string]string
-	shas    map[string]string
-	commits []commit
+	mu            sync.Mutex
+	gen           int
+	files         map[string]string
+	shas          map[string]string
+	commits       []commit
+	analysisCalls int
 }
 
 func newRepoState() *repoState {
@@ -117,7 +154,16 @@ func (s *repoState) reset() {
 		"production/payments.goff.yaml": fmt.Sprintf("sha-payments-%d-0", s.gen),
 		"production/growth.goff.yaml":   fmt.Sprintf("sha-growth-%d-0", s.gen),
 	}
+	for path, body := range experimentFixtures(time.Now()) {
+		s.files[path] = body
+		s.shas[path] = fmt.Sprintf("sha-%s-%d-0", strings.NewReplacer("/", "-", ".", "-").Replace(path), s.gen)
+	}
+	for path, body := range metricFixtures() {
+		s.files[path] = body
+		s.shas[path] = fmt.Sprintf("sha-%s-%d-0", strings.NewReplacer("/", "-", ".", "-").Replace(path), s.gen)
+	}
 	s.commits = nil
+	s.analysisCalls = 0
 }
 
 func env(key, fallback string) string {
@@ -131,6 +177,7 @@ func main() {
 	idpAddr := "127.0.0.1:" + env("E2E_IDP_PORT", "9401")
 	ghAddr := "127.0.0.1:" + env("E2E_GITHUB_PORT", "9402")
 	dumpAddr := "127.0.0.1:" + env("E2E_DUMP_PORT", "9403")
+	analysisAddr := "127.0.0.1:" + env("E2E_ANALYSIS_PORT", "9404")
 	idpBase := "http://" + idpAddr
 
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -143,8 +190,9 @@ func main() {
 	serve(idpAddr, idpHandler(idpBase, key))
 	serve(ghAddr, githubHandler(state))
 	serve(dumpAddr, dumpHandler(state))
+	serve(analysisAddr, analysisHandler(state))
 
-	log.Printf("fakes up: idp %s, github %s, dump %s", idpAddr, ghAddr, dumpAddr)
+	log.Printf("fakes up: idp %s, github %s, dump %s, analysis %s", idpAddr, ghAddr, dumpAddr, analysisAddr)
 	select {}
 }
 
@@ -407,10 +455,11 @@ func dumpHandler(state *repoState) http.Handler {
 			commits = []commit{}
 		}
 		writeJSON(w, map[string]any{
-			"files":   state.files,
-			"shas":    state.shas,
-			"commits": commits,
-			"user":    map[string]string{"name": fullName, "email": email, "subject": subject},
+			"files":         state.files,
+			"shas":          state.shas,
+			"commits":       commits,
+			"analysisCalls": state.analysisCalls,
+			"user":          map[string]string{"name": fullName, "email": email, "subject": subject},
 		})
 	})
 

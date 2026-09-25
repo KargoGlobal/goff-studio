@@ -1,0 +1,7 @@
+key: video_complete_rate
+name: Video completion rate
+kind: mean
+numerator: video_complete_yn
+format: percent
+direction: increase
+description: Share of served video impressions played to completion.

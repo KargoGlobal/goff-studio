@@ -1,0 +1,70 @@
+# Generated compatibility fixture: legacy shard-compatible bucketing.
+request-timeout:
+  variations:
+    control: "control"
+    arm-1: "arm-1"
+    arm-2: "arm-2"
+    arm-3: "arm-3"
+    arm-4: "arm-4"
+    arm-5: "arm-5"
+    arm-6: "arm-6"
+    arm-7: "arm-7"
+    arm-8: "arm-8"
+  targeting:
+    - name: exp-region-a
+      query: 'region in ["region-a"]'
+      variation: control
+  defaultRule:
+    variation: control
+  metadata:
+    experiment:
+      version: 1
+      hash: md5-shard
+      totalShards: 10000
+      unit: {type: request, key: targetingKey}
+      holdout: null
+      allocations:
+        exp-region-a:
+          experimentKey: request-timeout-exp-region-a
+          doLog: true
+          startAt: null
+          endAt: null
+          passThrough: true
+          layer: null
+          splits:
+            - variation: control
+              shards:
+                - {salt: "c1e0a7d25f", ranges: [[0, 100]]}
+                - {salt: "9b3f41e2aa", ranges: [[0, 1111]]}
+            - variation: arm-1
+              shards:
+                - {salt: "c1e0a7d25f", ranges: [[0, 100]]}
+                - {salt: "9b3f41e2aa", ranges: [[1111, 2222]]}
+            - variation: arm-2
+              shards:
+                - {salt: "c1e0a7d25f", ranges: [[0, 100]]}
+                - {salt: "9b3f41e2aa", ranges: [[2222, 3333]]}
+            - variation: arm-3
+              shards:
+                - {salt: "c1e0a7d25f", ranges: [[0, 100]]}
+                - {salt: "9b3f41e2aa", ranges: [[3333, 4444]]}
+            - variation: arm-4
+              shards:
+                - {salt: "c1e0a7d25f", ranges: [[0, 100]]}
+                - {salt: "9b3f41e2aa", ranges: [[4444, 5555]]}
+            - variation: arm-5
+              shards:
+                - {salt: "c1e0a7d25f", ranges: [[0, 100]]}
+                - {salt: "9b3f41e2aa", ranges: [[5555, 6666]]}
+            - variation: arm-6
+              shards:
+                - {salt: "c1e0a7d25f", ranges: [[0, 100]]}
+                - {salt: "9b3f41e2aa", ranges: [[6666, 7777]]}
+            - variation: arm-7
+              shards:
+                - {salt: "c1e0a7d25f", ranges: [[0, 100]]}
+                - {salt: "9b3f41e2aa", ranges: [[7777, 8888]]}
+            - variation: arm-8
+              shards:
+                - {salt: "c1e0a7d25f", ranges: [[0, 100]]}
+                - {salt: "9b3f41e2aa", ranges: [[8888, 10000]]}

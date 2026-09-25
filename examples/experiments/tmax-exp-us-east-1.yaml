@@ -1,0 +1,29 @@
+key: tmax-exp-us-east-1
+name: TMAX US-East
+owner: bidder
+hypothesis: A lower tmax raises the DSP bid rate without hurting bid CPM
+ticket: EXP-1234
+flag: tmax
+environment: production
+allocations: [exp-us-east-1]
+control: control
+variants: [control, tmax150, tmax225]
+unit: {type: request, key: targetingKey}
+start: 2026-09-10T00:00:00Z
+end: 2026-10-08T00:00:00Z
+status: running
+metrics:
+  primary: [dsp_bid_rate]
+  secondary: [dsp_win_rate, gross_revenue]
+  guardrails:
+    - {metric: avg_bid_cpm, max_drop_pct: 2}
+    - {metric: tmax_exceeded_rate, max_drop_pct: 5}
+analysis:
+  test: sequential
+  alpha: 0.05
+  power: 0.8
+  cuped: true
+  covariate: pre_period_bids
+  correction: none
+  strata: []
+segments: [auction_type, media_type]

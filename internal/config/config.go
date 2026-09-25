@@ -40,6 +40,8 @@ const (
 	envPollSeconds    = "GOFF_STUDIO_EXPECTED_POLL_SECONDS"
 	envEnvironments   = "GOFF_STUDIO_ENVIRONMENTS"
 	envPermissions    = "GOFF_STUDIO_PERMISSIONS"
+	envAnalysisURL    = "GOFF_STUDIO_ANALYSIS_BASE_URL"
+	envAnalysisToken  = "GOFF_STUDIO_ANALYSIS_TOKEN"
 )
 
 var environmentName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
@@ -84,6 +86,13 @@ type GitHub struct {
 	DevToken       string `yaml:"devToken"`
 }
 
+// Analysis points at the service that computes experiment results. Unset,
+// Studio serves clearly labelled sample results instead.
+type Analysis struct {
+	BaseURL string `yaml:"baseURL"`
+	Token   string `yaml:"token"`
+}
+
 type Config struct {
 	Server               Server             `yaml:"server"`
 	OIDC                 OIDC               `yaml:"oidc"`
@@ -93,6 +102,7 @@ type Config struct {
 	DiscoverEnvironments bool               `yaml:"discoverEnvironments"`
 	Permissions          []permissions.Rule `yaml:"permissions"`
 	PollSeconds          int                `yaml:"expectedPollSeconds"`
+	Analysis             Analysis           `yaml:"analysis"`
 
 	warnings []string
 }
@@ -221,6 +231,9 @@ func (c *Config) applyEnv() error {
 
 	integer(envPollSeconds, &c.PollSeconds)
 
+	str(envAnalysisURL, &c.Analysis.BaseURL)
+	str(envAnalysisToken, &c.Analysis.Token)
+
 	if len(bad) > 0 {
 		return fmt.Errorf("environment overrides: %s", strings.Join(bad, "; "))
 	}
@@ -244,6 +257,9 @@ func (c *Config) validate() error {
 			fmt.Sprintf("must be a positive number of seconds, got %d; it is shown to users as \"live in apps within about N seconds\"", c.PollSeconds))
 	}
 	if err := c.validateEnvironments(); err != nil {
+		return err
+	}
+	if err := c.validateAnalysis(); err != nil {
 		return err
 	}
 	return c.validatePermissions()
@@ -351,7 +367,7 @@ func (c *Config) validateStorage() error {
 		if !storage.Registered("s3") {
 			return fieldErr("storage.backend", envStorage, "s3 is not compiled into this binary; use an image built with the s3 backend, or pick one of: "+strings.Join(storage.Available(), ", "))
 		}
-		c.warnf("storage.backend is s3, so changes have no attribution and no review; Studio's permission config is the only control over who may change a flag")
+		c.warnf("storage.backend is s3, so changes have no review; Studio's permission config is the only control over who may change a flag, and history and attribution need bucket versioning")
 		return nil
 	default:
 		if storage.Registered(backend) {
@@ -449,6 +465,31 @@ func (c *Config) validateEnvironments() error {
 		}
 	}
 	return nil
+}
+
+func (c *Config) validateAnalysis() error {
+	if strings.TrimSpace(c.Analysis.BaseURL) == "" {
+		if c.Analysis.Token != "" {
+			c.warnf("analysis.token is set but analysis.baseURL is not (%s), so the token is unused and experiments show sample results", envAnalysisURL)
+		}
+		return nil
+	}
+	parsed, err := absoluteURL("analysis.baseURL", envAnalysisURL, c.Analysis.BaseURL)
+	if err != nil {
+		return err
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fieldErr("analysis.baseURL", envAnalysisURL,
+			fmt.Sprintf("must not contain a query string or fragment, got %q; Studio appends /v1/experiments/...", c.Analysis.BaseURL))
+	}
+	if parsed.Scheme == "http" && !isLoopbackHost(parsed.Hostname()) && c.Analysis.Token != "" {
+		c.warnf("analysis.baseURL %q is not https, so analysis.token is sent in plaintext (%s)", c.Analysis.BaseURL, envAnalysisURL)
+	}
+	return nil
+}
+
+func (c *Config) AnalysisConfigured() bool {
+	return strings.TrimSpace(c.Analysis.BaseURL) != ""
 }
 
 func (c *Config) validatePermissions() error {

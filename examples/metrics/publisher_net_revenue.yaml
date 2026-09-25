@@ -1,0 +1,7 @@
+key: publisher_net_revenue
+name: Publisher net revenue per bid request
+kind: mean
+numerator: publisher_net_revenue
+format: currency
+direction: increase
+description: Revenue paid out to publishers per bid request.

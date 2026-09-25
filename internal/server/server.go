@@ -52,6 +52,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/environments/{env}/flags/{key}/rollout", s.withSession(s.handleRollout))
 	mux.HandleFunc("POST /api/environments/{env}/flags/{key}/progressive", s.withSession(s.handleProgressive))
 	mux.HandleFunc("POST /api/environments/{env}/flags/{key}/experimentation", s.withSession(s.handleExperimentation))
+	mux.HandleFunc("POST /api/environments/{env}/flags/{key}/experiment", s.withSession(s.handleExperiment))
 	mux.HandleFunc("POST /api/environments/{env}/flags/{key}/preview", s.withSession(s.handlePreview))
 	mux.HandleFunc("GET /api/environments/{env}/flags/{key}/history", s.withSession(s.handleHistory))
 	mux.HandleFunc("POST /api/environments/{env}/flags/{key}/diff", s.withSession(s.handleDiff))
@@ -62,6 +63,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/environments/{env}/attributes", s.withSession(s.handleAttributes))
 	mux.HandleFunc("POST /api/environments", s.withSession(s.handleCreateEnvironment))
 	mux.HandleFunc("POST /api/environments/{env}/teams", s.withSession(s.handleCreateTeam))
+	s.experimentRoutes(mux)
 
 	if s.assets != nil {
 		mux.Handle("/", s.spa())
@@ -337,6 +339,7 @@ type diffBody struct {
 	Progressive *progressiveSteps  `json:"progressive"`
 	Window      *experimentWindow  `json:"experimentation"`
 	Order       []string           `json:"order"`
+	Edit        *ExperimentRequest `json:"edit"`
 }
 
 type outcomeBody struct {
@@ -996,6 +999,16 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request, sess auth.Se
 		result, err := s.svc.DiffRename(r.Context(), sess, env, key, body.Name)
 		s.writeDiff(w, result, err)
 		return
+	case "experiment":
+		if body.Edit == nil {
+			writeError(w, http.StatusBadRequest, "no experiment change given")
+			return
+		}
+		req := *body.Edit
+		req.Environment, req.Key = env, key
+		result, err := s.svc.DiffFlagExperiment(r.Context(), sess, req)
+		s.writeDiff(w, result, err)
+		return
 	case "variations":
 		req, err := s.variationsRequest(r, sess, env, key, variationsBody{
 			Type: body.Type, Variations: body.Variations, Default: body.Default,
@@ -1164,6 +1177,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.As(err, &bad):
 		writeError(w, http.StatusBadRequest, bad.Error())
+	case errors.Is(err, goff.ErrUneditable):
+		writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), goff.ErrUneditable.Error()+": "))
 	case errors.As(err, &dupe):
 		writeError(w, http.StatusConflict, dupe.Error())
 	case errors.Is(err, ErrForbidden):
@@ -1230,6 +1245,7 @@ func insertRule(rule goff.Rule, position *int) func(*goff.Flag) {
 	}
 }
 
+// Deleting a rule also drops its allocation, so the experiment block never points at a missing rule.
 func removeRule(name string) func(*goff.Flag) {
 	return func(f *goff.Flag) {
 		next := make([]goff.Rule, 0, len(f.Rules))
@@ -1239,6 +1255,10 @@ func removeRule(name string) func(*goff.Flag) {
 			}
 		}
 		f.Rules = next
+		if f.Experiment != nil && f.Experiment.Allocations[name] != nil {
+			f.Experiment = f.Experiment.Clone()
+			delete(f.Experiment.Allocations, name)
+		}
 	}
 }
 
@@ -1437,4 +1457,20 @@ func (s *Server) snapshotFor(env, key, sha string) *goff.Flag {
 		}
 	}
 	return nil
+}
+
+func (s *Server) handleExperiment(w http.ResponseWriter, r *http.Request, sess auth.Session) {
+	var req ExperimentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "could not read the request")
+		return
+	}
+	req.Environment, req.Key = r.PathValue("env"), r.PathValue("key")
+
+	result, err := s.svc.SaveFlagExperiment(r.Context(), sess, req)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }

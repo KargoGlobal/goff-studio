@@ -1,0 +1,7 @@
+key: net_cpm
+name: Net CPM
+kind: mean
+numerator: net_cpm
+format: currency
+direction: increase
+description: Net revenue per thousand impressions.

@@ -4,15 +4,19 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-feature-flag/studio/internal/auth"
 	"github.com/go-feature-flag/studio/internal/config"
+	"github.com/go-feature-flag/studio/internal/experiments"
 	"github.com/go-feature-flag/studio/internal/goff"
 	"github.com/go-feature-flag/studio/internal/permissions"
 	"github.com/go-feature-flag/studio/internal/storage"
+	"github.com/go-feature-flag/studio/pkg/splits"
 )
 
 type Service struct {
@@ -21,9 +25,14 @@ type Service struct {
 	adapter *goff.Adapter
 	perms   *permissions.Set
 
+	analysis *experiments.Client
+	clock    func() time.Time
+
 	cacheMu sync.Mutex
 	cache   map[string]cachedFile
 	history map[cacheKey]map[string]goff.Flag
+
+	salt func() (string, error)
 }
 
 type cacheKey struct {
@@ -83,7 +92,11 @@ func (s *Service) knownSHA(file, sha string) bool {
 }
 
 func NewService(cfg *config.Config, repo storage.Backend, perms *permissions.Set) *Service {
-	return &Service{cfg: cfg, repo: repo, adapter: goff.New(), perms: perms}
+	svc := &Service{cfg: cfg, repo: repo, adapter: goff.New(), perms: perms, salt: splits.NewSalt}
+	if cfg.AnalysisConfigured() {
+		svc.analysis = experiments.NewClient(cfg.Analysis.BaseURL, cfg.Analysis.Token, nil)
+	}
+	return svc
 }
 
 type FlagView struct {
@@ -220,7 +233,9 @@ type SaveRequest struct {
 	LoadedFlag  *goff.Flag
 	Action      permissions.Action
 	Mutate      func(*goff.Flag)
-	Summary     string
+	// MutateErr is Mutate for changes that can fail against the freshly read flag.
+	MutateErr func(*goff.Flag) error
+	Summary   string
 }
 
 type SaveResult struct {
@@ -262,7 +277,9 @@ func (s *Service) Save(ctx context.Context, sess auth.Session, req SaveRequest) 
 			return nil, ErrNotFound
 		}
 
-		req.Mutate(target)
+		if err := mutate(target, req.Mutate, req.MutateErr); err != nil {
+			return nil, err
+		}
 
 		next, err := s.adapter.Serialize(current, req.Key, *target)
 		if err != nil {
@@ -289,8 +306,34 @@ func (s *Service) Save(ctx context.Context, sess auth.Session, req SaveRequest) 
 	return s.saved(result), nil
 }
 
+func mutate(f *goff.Flag, plain func(*goff.Flag), checked func(*goff.Flag) error) error {
+	if checked != nil {
+		if err := checked(f); err != nil {
+			return err
+		}
+	} else if plain != nil {
+		plain(f)
+	}
+	return checkExperiment(*f)
+}
+
+// Every write re-checks the experiment block, because edits elsewhere (a
+// deleted variation, a renamed rule) can break it just as surely as editing it.
+func checkExperiment(f goff.Flag) error {
+	if f.Experiment == nil {
+		return nil
+	}
+	if err := splits.Validate(f.Experiment, splitsShape(f)).Err(); err != nil {
+		return invalid("the experiment would not be valid: %s", err)
+	}
+	return nil
+}
+
 func sameFlagState(a, b goff.Flag) bool {
 	if a.Enabled != b.Enabled {
+		return false
+	}
+	if !reflect.DeepEqual(a.Experiment, b.Experiment) {
 		return false
 	}
 	if !sameOutcome(a.Default, b.Default) {
@@ -475,6 +518,21 @@ func brokenReferences(f goff.Flag, variations []goff.Variation, defaultVariation
 		note(r.Outcome.Variation, where)
 		for _, name := range sortedFloatKeys(r.Outcome.Percentage) {
 			note(name, where+"'s rollout")
+		}
+	}
+
+	if f.Experiment != nil {
+		rules := make([]string, 0, len(f.Experiment.Allocations))
+		for name := range f.Experiment.Allocations {
+			rules = append(rules, name)
+		}
+		sort.Strings(rules)
+		for _, rule := range rules {
+			if a := f.Experiment.Allocations[rule]; a != nil {
+				for _, split := range a.Splits {
+					note(split.Variation, fmt.Sprintf("an arm of the experiment on rule %q", rule))
+				}
+			}
 		}
 	}
 	return problems
@@ -760,6 +818,9 @@ func (s *Service) buildVariations(current []byte, req VariationsRequest) ([]byte
 	if req.Default != "" {
 		target.Default = goff.Outcome{Variation: req.Default}
 	}
+	if err := checkExperiment(*target); err != nil {
+		return nil, err
+	}
 
 	next, err := s.adapter.Serialize(current, req.Key, *target)
 	if err != nil {
@@ -1000,6 +1061,7 @@ type DiffRequest struct {
 	Environment string
 	Key         string
 	Mutate      func(*goff.Flag)
+	MutateErr   func(*goff.Flag) error
 	Description string
 }
 
@@ -1020,7 +1082,9 @@ func (s *Service) Diff(ctx context.Context, sess auth.Session, req DiffRequest) 
 	}
 
 	draft := view.Flag
-	req.Mutate(&draft)
+	if err := mutate(&draft, req.Mutate, req.MutateErr); err != nil {
+		return nil, err
+	}
 
 	next, err := s.adapter.Serialize(file.Content, req.Key, draft)
 	if err != nil {
@@ -1057,6 +1121,9 @@ func (s *Service) Preview(ctx context.Context, sess auth.Session, environment, k
 		}
 	}
 
+	if result, handled := s.adapter.EvaluateSplits(content, key, targetingKey, attrs, time.Now()); handled {
+		return result, nil
+	}
 	return s.adapter.Evaluate(content, key, targetingKey, attrs), nil
 }
 
@@ -1101,7 +1168,7 @@ func (s *Service) Environments(ctx context.Context, sess auth.Session) []config.
 	if s.cfg.DiscoverEnvironments {
 		if dirs, err := s.repo.ListDirectories(ctx, ""); err == nil {
 			for _, name := range dirs {
-				if strings.HasPrefix(name, ".") {
+				if strings.HasPrefix(name, ".") || reservedDirs[name] {
 					continue
 				}
 				if _, configured := known[name]; configured {
@@ -1136,6 +1203,9 @@ func (s *Service) CreateEnvironment(ctx context.Context, sess auth.Session, name
 	name = strings.Trim(strings.TrimSpace(name), "/")
 	if name == "" {
 		return fmt.Errorf("%w: an environment needs a name", ErrInvalid)
+	}
+	if reservedDirs[name] {
+		return fmt.Errorf("%w: %q holds experiment data, pick another name", ErrInvalid, name)
 	}
 	if strings.ContainsAny(name, "/\\ \t") || strings.HasPrefix(name, ".") {
 		return fmt.Errorf("%w: %q is not a valid directory name; use letters, numbers and dashes", ErrInvalid, name)

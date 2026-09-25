@@ -3,10 +3,12 @@ package goff
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/go-feature-flag/studio/pkg/splits"
 	"github.com/thomaspoignant/go-feature-flag/modules/core/dto"
 	"github.com/thomaspoignant/go-feature-flag/modules/core/flag"
 	"gopkg.in/yaml.v3"
@@ -36,6 +38,7 @@ func (a *Adapter) Parse(path string, content []byte) ([]Flag, []Broken, error) {
 			continue
 		}
 		f := fromInternal(key, path, internal)
+		attachExperiment(&f)
 		f.rawRules = rawRuleNodes(node)
 		f.originalRules = map[string]Rule{}
 		for _, r := range f.Rules {
@@ -104,6 +107,12 @@ func (a *Adapter) Serialize(existing []byte, key string, f Flag) ([]byte, error)
 
 	if len(f.Metadata) > 0 {
 		if err := doc.SetField(key, "metadata", f.Metadata); err != nil {
+			return nil, err
+		}
+	}
+
+	if !reflect.DeepEqual(f.Experiment, f.originalExperiment) {
+		if err := doc.SetExperiment(key, f.Experiment); err != nil {
 			return nil, err
 		}
 	}
@@ -177,11 +186,7 @@ func ruleBody(r Rule, f Flag) *yaml.Node {
 		add("name", &yaml.Node{Kind: yaml.ScalarNode, Tag: tagStr, Value: r.Name})
 	}
 
-	query := r.Query
-	if !r.Advanced && r.Condition != nil {
-		query = CompileCondition(r.Condition)
-	}
-	if query != "" {
+	if query := effectiveQuery(r, f); query != "" {
 		add("query", &yaml.Node{Kind: yaml.ScalarNode, Tag: tagStr, Value: query})
 	}
 
@@ -635,11 +640,7 @@ func ruleUnchanged(r Rule, f Flag) bool {
 	if r.Disabled != original.Disabled {
 		return false
 	}
-	query := r.Query
-	if !r.Advanced && r.Condition != nil {
-		query = CompileCondition(r.Condition)
-	}
-	if query != original.Query {
+	if effectiveQuery(r, f) != original.Query {
 		return false
 	}
 	if r.Outcome.Variation != original.Outcome.Variation {
@@ -661,4 +662,39 @@ func progressiveEqual(a, b *ProgressiveRollout) bool {
 		return a == nil && b == nil
 	}
 	return a.Initial == b.Initial && a.End == b.End
+}
+
+func attachExperiment(f *Flag) {
+	exp, err := splits.FromMetadata(f.Metadata)
+	if err != nil {
+		f.ExperimentError = err.Error()
+		return
+	}
+	f.Experiment = exp
+	f.originalExperiment = exp.Clone()
+	if exp == nil {
+		return
+	}
+	for i := range f.Rules {
+		_, f.Rules[i].HasAllocation = exp.Allocations[f.Rules[i].Name]
+	}
+}
+
+// ExperimentChanged reports whether an edit touched metadata.experiment.
+func (f Flag) ExperimentChanged() bool {
+	return !reflect.DeepEqual(f.Experiment, f.originalExperiment)
+}
+
+// effectiveQuery keeps the author's query text when the builder condition is
+// unchanged, so an edit elsewhere never rewrites `in ["x"]` as `eq "x"`.
+func effectiveQuery(r Rule, f Flag) string {
+	if r.Advanced || r.Condition == nil {
+		return r.Query
+	}
+	compiled := CompileCondition(r.Condition)
+	if original, ok := f.originalRules[r.Name]; ok && r.Name != "" && original.Condition != nil &&
+		r.Query == original.Query && CompileCondition(original.Condition) == compiled {
+		return original.Query
+	}
+	return compiled
 }

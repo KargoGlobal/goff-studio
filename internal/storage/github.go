@@ -25,14 +25,29 @@ func (g *GitHubBackend) Capabilities() Capabilities {
 func (g *GitHubBackend) ReadFile(ctx context.Context, path string) (*File, error) {
 	f, err := g.client.ReadFile(ctx, path)
 	if err != nil {
-		return nil, err
+		return nil, notFound(err)
 	}
 	return &File{Path: f.Path, Content: f.Content, Version: f.SHA}, nil
 }
 
 func (g *GitHubBackend) ListFiles(ctx context.Context, dir string) ([]string, error) {
-	return g.client.ListFiles(ctx, dir)
+	files, err := g.client.ListFiles(ctx, dir)
+	return files, notFound(err)
 }
+
+func notFound(err error) error {
+	if errors.Is(err, githubapp.ErrNotFound) {
+		return missing{err}
+	}
+	return err
+}
+
+// missing keeps GitHub's message while matching ErrNotFound.
+type missing struct{ err error }
+
+func (m missing) Error() string        { return m.err.Error() }
+func (m missing) Unwrap() error        { return m.err }
+func (m missing) Is(target error) bool { return target == ErrNotFound }
 
 func (g *GitHubBackend) ListDirectories(ctx context.Context, dir string) ([]string, error) {
 	return g.client.ListDirectories(ctx, dir)

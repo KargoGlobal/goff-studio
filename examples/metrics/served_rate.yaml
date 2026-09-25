@@ -1,0 +1,7 @@
+key: served_rate
+name: Served rate
+kind: mean
+numerator: served_yn
+format: percent
+direction: increase
+description: Share of bid requests that ended in a served impression.

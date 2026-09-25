@@ -93,6 +93,7 @@ typechecking; run the Playwright suite too if you touched the UI or the HTTP API
 
 ```
 cmd/goff-studio/      main; embeds the built frontend with go:embed
+pkg/splits/           public salted-shard experiment evaluator services import; no internal imports
 internal/config/      YAML config + GOFF_STUDIO_* env overrides, validation
 internal/auth/        OIDC (PKCE) + AES-GCM sealed cookie sessions, no server store
 internal/permissions/ group -> file/environment/action matching, default deny
@@ -106,8 +107,9 @@ charts/goff-studio/   Helm chart
 backends/s3/          S3 backend, its own Go module and binary
 ```
 
-Rough dependency direction: `config` and `permissions` are leaves; `goff` depends
-on nothing internal; `githubapp` depends on nothing internal; `server` wires them
+Rough dependency direction: `config` and `permissions` are leaves; `pkg/splits`
+imports nothing from this repo, because services outside it depend on it;
+`goff` depends on nothing internal except `pkg/splits`; `githubapp` depends on nothing internal; `server` wires them
 together; `cmd` wires `server`. Keep it that way — if `internal/goff` starts
 importing `internal/server`, something has gone wrong.
 

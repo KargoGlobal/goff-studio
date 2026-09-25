@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/go-feature-flag/studio/internal/goff"
+	"github.com/go-feature-flag/studio/pkg/splits"
 )
 
 func Summarize(f goff.Flag) string {
@@ -17,6 +18,10 @@ func Summarize(f goff.Flag) string {
 	var parts []string
 	for _, r := range f.Rules {
 		if r.Disabled {
+			continue
+		}
+		if described, ok := describeExperimentRule(f, r); ok {
+			parts = append(parts, described)
 			continue
 		}
 		parts = append(parts, describeRule(r))
@@ -31,6 +36,10 @@ func Summarize(f goff.Flag) string {
 }
 
 func describeRule(r goff.Rule) string {
+	return fmt.Sprintf("%s get %s", describeWho(r), describeOutcome(r.Outcome))
+}
+
+func describeWho(r goff.Rule) string {
 	who := "users"
 	if r.Advanced {
 		who = "users matching a custom rule"
@@ -39,7 +48,27 @@ func describeRule(r goff.Rule) string {
 			who = "users where " + described
 		}
 	}
-	return fmt.Sprintf("%s get %s", who, describeOutcome(r.Outcome))
+	return who
+}
+
+func describeExperimentRule(f goff.Flag, r goff.Rule) (string, bool) {
+	if f.Experiment == nil {
+		return "", false
+	}
+	a := f.Experiment.Allocations[r.Name]
+	if a == nil {
+		return "", false
+	}
+	exposed := 0.0
+	for _, share := range a.Shares(f.Experiment.TotalShards) {
+		exposed += share
+	}
+	rest := "the rest continue to the next rule"
+	if !a.PassesThrough() {
+		rest = "the rest get " + describeOutcome(r.Outcome)
+	}
+	return fmt.Sprintf("%s enter experiment %s (%s%% exposed; %s)",
+		describeWho(r), a.KeyFor(f.Key, r.Name), splits.FormatPercent(exposed*100), rest), true
 }
 
 func describeCondition(c *goff.Condition) string {

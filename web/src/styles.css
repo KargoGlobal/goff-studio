@@ -22,6 +22,12 @@
   --color-warn-soft: #fdf6e7;
   --color-ok: #1f7a4d;
   --color-ok-soft: #eaf6ef;
+
+  /* Experiment variants, fixed order; validated for CVD separation in both modes. */
+  --color-series-1: #2a78d6;
+  --color-series-2: #eb6834;
+  --color-series-3: #1baf7a;
+  --color-series-4: #eda100;
 }
 
 @layer base {
@@ -48,6 +54,10 @@
     --color-warn-soft: #322a1a;
     --color-ok: #6fce9a;
     --color-ok-soft: #1a3026;
+    --color-series-1: #3987e5;
+    --color-series-2: #d95926;
+    --color-series-3: #199e70;
+    --color-series-4: #c98500;
   }
 
   * {

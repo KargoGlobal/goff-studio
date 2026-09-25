@@ -1,0 +1,60 @@
+# Generated compatibility fixture: legacy shard-compatible bucketing.
+cache-policy:
+  variations:
+    control: "control"
+    quiet-a: "quiet-a"
+    quiet-b: "quiet-b"
+    logged: "logged"
+  targeting:
+    - name: rollout-quiet
+      query: 'targetingKey pr'
+      variation: control
+    - name: exp-logged
+      query: 'targetingKey pr'
+      variation: control
+  defaultRule:
+    variation: control
+  metadata:
+    experiment:
+      version: 1
+      hash: md5-shard
+      totalShards: 10000
+      unit: {type: request, key: targetingKey}
+      holdout: null
+      allocations:
+        rollout-quiet:
+          experimentKey: cache-policy-rollout-quiet
+          doLog: false
+          startAt: null
+          endAt: null
+          passThrough: true
+          layer: null
+          splits:
+            - variation: quiet-a
+              extraLogging: {arm: quiet-a, cohort: q}
+              shards:
+                - {salt: "0a0b0c", ranges: [[0, 4000]]}
+                - {salt: "0d0e0f", ranges: [[0, 5000]]}
+            - variation: quiet-b
+              extraLogging: {arm: quiet-b, cohort: q}
+              shards:
+                - {salt: "0a0b0c", ranges: [[0, 4000]]}
+                - {salt: "0d0e0f", ranges: [[5000, 10000]]}
+        exp-logged:
+          experimentKey: cache-policy-exp-logged
+          doLog: true
+          startAt: null
+          endAt: null
+          passThrough: true
+          layer: null
+          splits:
+            - variation: control
+              extraLogging: {arm: control}
+              shards:
+                - {salt: "1a1b1c", ranges: [[0, 10000]]}
+                - {salt: "1d1e1f", ranges: [[0, 5000]]}
+            - variation: logged
+              extraLogging: {arm: logged}
+              shards:
+                - {salt: "1a1b1c", ranges: [[0, 10000]]}
+                - {salt: "1d1e1f", ranges: [[5000, 10000]]}
