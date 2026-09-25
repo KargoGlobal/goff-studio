@@ -567,3 +567,59 @@ func TestRegistryKeyMustMatchTheAllocationsExperimentKey(t *testing.T) {
 		t.Fatalf("the allocation's own key should register: %d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestAsOfIsBoundedToAPastCalendarDay(t *testing.T) {
+	var seen []string
+	srv, sealer := analysisServer(t, experimentRepo(t), func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.URL.Query().Get("as_of"))
+		_, _ = w.Write([]byte(`{"status":"ok","metrics":[]}`))
+	})
+	for _, tc := range []struct {
+		asOf string
+		code int
+	}{
+		{"2026-09-19T08:00:00Z", http.StatusOK},
+		{"2026-09-19T21:30:00Z", http.StatusOK},
+		{"2026-09-19", http.StatusOK},
+		{"2026-09-21", http.StatusBadRequest},
+		{"1999-12-31", http.StatusBadRequest},
+		{"yesterday", http.StatusBadRequest},
+	} {
+		rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/tmax-exp-us-east-1/results?as_of="+tc.asOf, "")
+		if rec.Code != tc.code {
+			t.Errorf("as_of=%s: %d %s, want %d", tc.asOf, rec.Code, rec.Body, tc.code)
+		}
+	}
+	if len(seen) != 1 || seen[0] != "2026-09-19" {
+		t.Errorf("timestamps on one day should share one upstream call keyed by the day, got %v", seen)
+	}
+}
+
+func TestResultsAndPowerAreNotCachedByTheBrowser(t *testing.T) {
+	srv, sealer := experimentServer(t, experimentRepo(t), experimentRules())
+	rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/tmax-exp-us-east-1/results", "")
+	if got := rec.Header().Get("Cache-Control"); rec.Code != http.StatusOK || got != "no-cache" {
+		t.Errorf("results: %d Cache-Control %q", rec.Code, got)
+	}
+	rec = request(t, srv, sealer, admin(), http.MethodPost, "/api/experiments/power",
+		`{"baseline_mean":0.4,"variance":0.24,"n_per_day":10000,"arms":2,"alpha":0.05,"power":0.8}`)
+	if got := rec.Header().Get("Cache-Control"); rec.Code != http.StatusOK || got != "no-cache" {
+		t.Errorf("power: %d %s Cache-Control %q", rec.Code, rec.Body, got)
+	}
+}
+
+func TestUnreachableAnalysisServiceIs502(t *testing.T) {
+	srv, sealer := analysisServer(t, experimentRepo(t), func(w http.ResponseWriter, r *http.Request) {})
+	dead := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	dead.Close()
+	cfg := *srv.svc.cfg
+	cfg.Analysis.BaseURL = dead.URL
+	svc := NewService(&cfg, srv.svc.repo, srv.svc.perms)
+	svc.clock = srv.svc.clock
+	srv.svc = svc
+
+	rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/tmax-exp-us-east-1/results", "")
+	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "unreachable") {
+		t.Errorf("got %d %s", rec.Code, rec.Body)
+	}
+}

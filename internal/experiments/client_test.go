@@ -59,7 +59,7 @@ func TestCacheIsKeyedByAsOf(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		_, _ = w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}))
 	defer srv.Close()
 
@@ -118,8 +118,8 @@ func TestSlowServiceTimesOut(t *testing.T) {
 	c.timeout = 50 * time.Millisecond
 	start := time.Now()
 	_, err := c.Results(context.Background(), "exp-1", "")
-	if !errors.Is(err, ErrUnavailable) {
-		t.Errorf("err = %v, want ErrUnavailable", err)
+	if !errors.Is(err, ErrTimeout) {
+		t.Errorf("err = %v, want ErrTimeout", err)
 	}
 	if time.Since(start) > 2*time.Second {
 		t.Error("the timeout was not applied")
@@ -173,5 +173,87 @@ func TestPowerIsTranslated(t *testing.T) {
 	}
 	if len(res.Curve) != 2 || math.Abs(res.Curve[0].MDE-0.0025) > 1e-12 {
 		t.Errorf("curve = %+v", res.Curve)
+	}
+}
+
+func TestUnreachableServiceIsNotATimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	addr := srv.URL
+	srv.Close()
+
+	c := NewClient(addr, "", nil)
+	_, err := c.Results(context.Background(), "exp-1", "")
+	if !errors.Is(err, ErrUnreachable) || errors.Is(err, ErrTimeout) {
+		t.Errorf("err = %v, want ErrUnreachable", err)
+	}
+}
+
+func TestOnlyFinishedResultsAreCached(t *testing.T) {
+	for _, status := range []string{"error", "insufficient_data", "ok"} {
+		var calls atomic.Int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls.Add(1)
+			_, _ = w.Write([]byte(`{"status":"` + status + `"}`))
+		}))
+		c := NewClient(srv.URL, "", srv.Client())
+		for range 2 {
+			if _, err := c.Results(context.Background(), "exp-1", ""); err != nil {
+				t.Fatal(err)
+			}
+		}
+		want := int32(2)
+		if status == "ok" {
+			want = 1
+		}
+		if calls.Load() != want {
+			t.Errorf("status %q: service called %d times, want %d", status, calls.Load(), want)
+		}
+		srv.Close()
+	}
+}
+
+func TestConcurrentRequestsShareOneFetch(t *testing.T) {
+	var calls atomic.Int32
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		<-release
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "", srv.Client())
+
+	const n = 20
+	errs := make(chan error, n)
+	for range n {
+		go func() {
+			_, err := c.Results(context.Background(), "exp-1", "2026-10-10")
+			errs <- err
+		}()
+	}
+	for calls.Load() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(20 * time.Millisecond)
+	close(release)
+	for range n {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if calls.Load() != 1 {
+		t.Errorf("service called %d times for %d concurrent requests, want 1", calls.Load(), n)
+	}
+}
+
+func TestPowerNotFoundIsNotAboutResults(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "", srv.Client())
+	_, err := c.Power(context.Background(), PowerRequest{BaselineMean: 0.4, Variance: 0.24, NPerDay: 1000, Arms: 2, Alpha: 0.05, Power: 0.8})
+	if !errors.Is(err, ErrNoPower) || errors.Is(err, ErrNoResults) {
+		t.Errorf("err = %v, want ErrNoPower", err)
 	}
 }

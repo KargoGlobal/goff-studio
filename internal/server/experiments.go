@@ -548,7 +548,8 @@ func (s *Service) ExperimentResults(ctx context.Context, sess auth.Session, key,
 	if _, err := s.GetExperiment(ctx, sess, key); err != nil {
 		return nil, err
 	}
-	if err := validAsOf(asOf); err != nil {
+	asOf, err := s.normalizeAsOf(asOf)
+	if err != nil {
 		return nil, err
 	}
 	if s.analysis != nil {
@@ -572,14 +573,24 @@ func (s *Service) ExperimentResults(ctx context.Context, sess auth.Session, key,
 	return json.Marshal(experiments.Sample(e, catalog, now))
 }
 
-func validAsOf(asOf string) error {
+// normalizeAsOf reduces as_of to a calendar day no later than today, which
+// bounds the cache keys a caller can mint (and so cannot flush the cache).
+func (s *Service) normalizeAsOf(asOf string) (string, error) {
 	if asOf == "" {
-		return nil
+		return "", nil
 	}
-	if _, err := parseAsOf(asOf); err != nil {
-		return invalid("as_of must be a date like 2026-10-10 or an RFC 3339 timestamp")
+	t, err := parseAsOf(asOf)
+	if err != nil {
+		return "", invalid("as_of must be a date like 2026-10-10 or an RFC 3339 timestamp")
 	}
-	return nil
+	day := t.UTC().Format(time.DateOnly)
+	if day > s.now().UTC().Format(time.DateOnly) {
+		return "", invalid("as_of cannot be in the future")
+	}
+	if day < "2000-01-01" {
+		return "", invalid("as_of is too far in the past")
+	}
+	return day, nil
 }
 
 func parseAsOf(raw string) (time.Time, error) {

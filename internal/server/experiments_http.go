@@ -119,7 +119,8 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request, sess auth
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "private, max-age=60")
+	// Studio caches results server-side; the browser must revalidate so a restarted backend is seen at once.
+	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write(raw) //nolint:gosec // JSON from the analysis service or json.Marshal, served as application/json
 }
 
@@ -135,6 +136,7 @@ func (s *Server) handlePower(w http.ResponseWriter, r *http.Request, sess auth.S
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write(raw) //nolint:gosec // JSON from the analysis service or json.Marshal, served as application/json
 }
 
@@ -225,9 +227,14 @@ func writeExperimentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "someone else just changed this, please reload and try again")
 	case errors.Is(err, experiments.ErrNoResults):
 		writeError(w, http.StatusNotFound, "There are no results for this experiment yet. They appear once the first day of data is processed.")
-	case errors.Is(err, experiments.ErrUnavailable):
+	case errors.Is(err, experiments.ErrNoPower):
+		writeError(w, http.StatusBadGateway, "The analysis service does not offer power estimates right now.")
+	case errors.Is(err, experiments.ErrTimeout):
 		log.Printf("analysis service: %v", err)
 		writeError(w, http.StatusGatewayTimeout, "The analysis service did not answer in time. Try again in a minute.")
+	case errors.Is(err, experiments.ErrUnreachable):
+		log.Printf("analysis service: %v", err)
+		writeError(w, http.StatusBadGateway, "The analysis service is unreachable. Try again in a minute.")
 	case errors.As(err, &upstream):
 		log.Printf("analysis service: %v", err)
 		writeError(w, http.StatusBadGateway, "The analysis service could not produce results right now. Try again later.")

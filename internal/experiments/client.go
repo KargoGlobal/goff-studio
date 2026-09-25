@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -23,8 +24,13 @@ const (
 )
 
 var (
-	ErrUnavailable = errors.New("the analysis service did not answer in time")
+	ErrTimeout     = errors.New("the analysis service did not answer in time")
+	ErrUnreachable = errors.New("the analysis service is unreachable")
 	ErrNoResults   = errors.New("the analysis service has no results for this experiment yet")
+	// ErrNoPower is a 404 from the power endpoint, which is not about any experiment's data.
+	ErrNoPower = errors.New("the analysis service does not offer power estimates")
+
+	errUpstreamNotFound = errors.New("not found")
 )
 
 type UpstreamError struct {
@@ -48,8 +54,16 @@ type Client struct {
 	timeout time.Duration
 	now     func() time.Time
 
-	mu    sync.Mutex
-	cache map[string]cached
+	mu       sync.Mutex
+	cache    map[string]cached
+	inflight map[string]*call
+}
+
+// call is one in-flight fetch that concurrent requests for the same key share.
+type call struct {
+	done chan struct{}
+	body []byte
+	err  error
 }
 
 type cached struct {
@@ -62,13 +76,14 @@ func NewClient(baseURL, token string, hc *http.Client) *Client {
 		hc = &http.Client{}
 	}
 	return &Client{
-		base:    strings.TrimRight(baseURL, "/"),
-		token:   token,
-		http:    hc,
-		ttl:     ResultsTTL,
-		timeout: RequestTimeout,
-		now:     time.Now,
-		cache:   map[string]cached{},
+		base:     strings.TrimRight(baseURL, "/"),
+		token:    token,
+		http:     hc,
+		ttl:      ResultsTTL,
+		timeout:  RequestTimeout,
+		now:      time.Now,
+		cache:    map[string]cached{},
+		inflight: map[string]*call{},
 	}
 }
 
@@ -78,19 +93,57 @@ func (c *Client) Results(ctx context.Context, key, asOf string) ([]byte, error) 
 	if body, ok := c.cached(cacheKey); ok {
 		return body, nil
 	}
+	return c.shared(cacheKey, func() ([]byte, error) {
+		q := url.Values{"segments": {"true"}}
+		if asOf != "" {
+			q.Set("as_of", asOf)
+		}
+		endpoint := fmt.Sprintf("%s/v1/experiments/%s/results?%s", c.base, url.PathEscape(key), q.Encode())
 
-	q := url.Values{"segments": {"true"}}
-	if asOf != "" {
-		q.Set("as_of", asOf)
-	}
-	endpoint := fmt.Sprintf("%s/v1/experiments/%s/results?%s", c.base, url.PathEscape(key), q.Encode())
+		body, err := c.do(ctx, http.MethodGet, endpoint, nil)
+		if errors.Is(err, errUpstreamNotFound) {
+			return nil, ErrNoResults
+		}
+		if err != nil {
+			return nil, err
+		}
+		// Only a finished readout is worth keeping: "error" and "insufficient_data" can change any minute.
+		if resultStatus(body) == "ok" {
+			c.store(cacheKey, body)
+		}
+		return body, nil
+	})
+}
 
-	body, err := c.do(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
+// shared runs fetch once per key at a time; concurrent callers wait for its result.
+func (c *Client) shared(key string, fetch func() ([]byte, error)) ([]byte, error) {
+	c.mu.Lock()
+	if inflight, ok := c.inflight[key]; ok {
+		c.mu.Unlock()
+		<-inflight.done
+		return inflight.body, inflight.err
 	}
-	c.store(cacheKey, body)
-	return body, nil
+	cl := &call{done: make(chan struct{})}
+	c.inflight[key] = cl
+	c.mu.Unlock()
+
+	cl.body, cl.err = fetch()
+
+	c.mu.Lock()
+	delete(c.inflight, key)
+	c.mu.Unlock()
+	close(cl.done)
+	return cl.body, cl.err
+}
+
+func resultStatus(body []byte) string {
+	var doc struct {
+		Status string `json:"status"`
+	}
+	if json.Unmarshal(body, &doc) != nil {
+		return ""
+	}
+	return doc.Status
 }
 
 // Power asks the analysis service for an MDE estimate and returns it in
@@ -112,6 +165,9 @@ func (c *Client) Power(ctx context.Context, req PowerRequest) ([]byte, error) {
 		return nil, err
 	}
 	body, err := c.do(ctx, http.MethodPost, c.base+"/v1/experiments/power", payload)
+	if errors.Is(err, errUpstreamNotFound) {
+		return nil, ErrNoPower
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -215,18 +271,18 @@ func (c *Client) do(ctx context.Context, method, endpoint string, payload []byte
 
 	res, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
+		return nil, transportError(ctx, err)
 	}
 	defer func() { _ = res.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(res.Body, maxBody))
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
+		return nil, transportError(ctx, err)
 	}
 
 	switch {
 	case res.StatusCode == http.StatusNotFound:
-		return nil, ErrNoResults
+		return nil, errUpstreamNotFound
 	case res.StatusCode < 200 || res.StatusCode >= 300:
 		return nil, &UpstreamError{Status: res.StatusCode, Message: upstreamMessage(body)}
 	}
@@ -257,4 +313,14 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// transportError separates "too slow" (504) from "could not connect" (502).
+func transportError(ctx context.Context, err error) error {
+	var netErr net.Error
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) ||
+		(errors.As(err, &netErr) && netErr.Timeout()) {
+		return fmt.Errorf("%w: %v", ErrTimeout, err)
+	}
+	return fmt.Errorf("%w: %v", ErrUnreachable, err)
 }
