@@ -60,6 +60,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/environments/{env}/flags/{key}/rules/{rule}", s.withSession(s.handleDeleteRule))
 	mux.HandleFunc("PUT /api/environments/{env}/flags/{key}/rules/order", s.withSession(s.handleReorderRules))
 	mux.HandleFunc("GET /api/environments/{env}/attributes", s.withSession(s.handleAttributes))
+	mux.HandleFunc("GET /api/flags/{key}/compare", s.withSession(s.handleCompare))
+	mux.HandleFunc("POST /api/flags/{key}/promote", s.withSession(s.handlePromote))
+	mux.HandleFunc("POST /api/flags/{key}/promote/diff", s.withSession(s.handlePromoteDiff))
 	mux.HandleFunc("POST /api/environments", s.withSession(s.handleCreateEnvironment))
 	mux.HandleFunc("POST /api/environments/{env}/teams", s.withSession(s.handleCreateTeam))
 
@@ -95,6 +98,9 @@ func (s *Server) withSession(next handlerWithSession) http.HandlerFunc {
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "please sign in")
 			return
+		}
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes)
 		}
 		next(w, r, sess)
 	}
@@ -244,6 +250,10 @@ func (s *Server) handleRollout(w http.ResponseWriter, r *http.Request, sess auth
 		writeError(w, http.StatusBadRequest, "no percentages given")
 		return
 	}
+	if err := validPercentages(body.Percentage); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	env, key := r.PathValue("env"), r.PathValue("key")
 
@@ -261,6 +271,16 @@ func (s *Server) handleRollout(w http.ResponseWriter, r *http.Request, sess auth
 	if err != nil {
 		writeServiceError(w, err)
 		return
+	}
+	if allows(view.Actions, permissions.Rollout) {
+		if err := validOutcome(view.Flag, goff.Outcome{Percentage: body.Percentage}); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if body.RuleName != "" && !ruleExists(view.Rules, body.RuleName) {
+			writeError(w, http.StatusBadRequest, "there is no rule called "+body.RuleName+" on this flag")
+			return
+		}
 	}
 
 	summary := describeOutcome(goff.Outcome{Percentage: body.Percentage})
@@ -895,6 +915,15 @@ func validateProgressive(p goff.ProgressiveRollout) error {
 	return validateOrder(start, end, "initial")
 }
 
+func allows(actions []permissions.Action, want permissions.Action) bool {
+	for _, a := range actions {
+		if a == want {
+			return true
+		}
+	}
+	return false
+}
+
 func hasVariation(variations []goff.Variation, name string) bool {
 	for _, v := range variations {
 		if v.Name == name {
@@ -943,10 +972,27 @@ func (s *Server) handleSaveRule(w http.ResponseWriter, r *http.Request, sess aut
 		}
 	}
 
+	if err := validQuery(body.Query); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	view, err := s.svc.Get(r.Context(), sess, env, key)
 	if err != nil {
 		writeServiceError(w, err)
 		return
+	}
+	if allows(view.Actions, permissions.EditRules) {
+		if !ruleExists(view.Rules, body.RuleName) {
+			writeError(w, http.StatusBadRequest, "there is no rule called "+body.RuleName+" on this flag")
+			return
+		}
+		if body.Outcome != nil {
+			if err := validOutcome(view.Flag, body.Outcome.toOutcome()); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
 	}
 
 	result, err := s.svc.Save(r.Context(), sess, SaveRequest{
@@ -1043,6 +1089,14 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request, sess auth.Se
 			writeError(w, http.StatusBadRequest, "a new rule needs a name and at least one condition")
 			return
 		}
+		if err := validRuleName(body.Name); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := validQuery(body.Query); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		mutate = insertRule(newRule(body.Name, body.Query, body.Outcome.toOutcome()), nil)
 		description = fmt.Sprintf("Add rule %s to %s", body.Name, key)
 	case "deleteRule":
@@ -1057,11 +1111,21 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request, sess auth.Se
 			writeError(w, http.StatusBadRequest, "no order given")
 			return
 		}
+		if view, err := s.svc.Get(r.Context(), sess, env, key); err == nil {
+			if err := isPermutation(view.Rules, body.Order); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
 		mutate = reorderRules(body.Order)
 		description = fmt.Sprintf("Reorder the rules on %s to: %s", key, strings.Join(body.Order, ", "))
 	case "rollout":
 		if len(body.Percentage) == 0 {
 			writeError(w, http.StatusBadRequest, "no percentages given")
+			return
+		}
+		if err := validPercentages(body.Percentage); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		mutate = func(f *goff.Flag) {
@@ -1092,6 +1156,16 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request, sess auth.Se
 		if err := validateProgressive(*next); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
+		}
+		if view, err := s.svc.Get(r.Context(), sess, env, key); err == nil {
+			if !ruleExists(view.Rules, body.RuleName) {
+				writeError(w, http.StatusBadRequest, "there is no rule called "+body.RuleName+" on this flag")
+				return
+			}
+			if err := knownVariations(view.Variations, next); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
 		}
 		mutate = applyProgressive(body.RuleName, next, "")
 		description = fmt.Sprintf("Update the progressive rollout on %s", body.RuleName)
@@ -1139,6 +1213,63 @@ func (s *Server) writeDiff(w http.ResponseWriter, result *DiffResult, err error)
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request, sess auth.Session) {
+	q := r.URL.Query()
+	result, err := s.svc.Compare(r.Context(), sess, r.PathValue("key"), q.Get("from"), q.Get("to"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+type promoteBody struct {
+	From    string   `json:"from"`
+	To      string   `json:"to"`
+	Team    string   `json:"team"`
+	Fields  []string `json:"fields"`
+	FileSHA string   `json:"fileSha"`
+}
+
+func (s *Server) promoteRequest(r *http.Request) (PromoteRequest, error) {
+	var body promoteBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		return PromoteRequest{}, err
+	}
+	return PromoteRequest{
+		Key:     r.PathValue("key"),
+		From:    body.From,
+		To:      body.To,
+		Team:    body.Team,
+		Fields:  body.Fields,
+		FileSHA: body.FileSHA,
+	}, nil
+}
+
+func (s *Server) handlePromote(w http.ResponseWriter, r *http.Request, sess auth.Session) {
+	req, err := s.promoteRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "could not read the request")
+		return
+	}
+	result, err := s.svc.Promote(r.Context(), sess, req)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handlePromoteDiff(w http.ResponseWriter, r *http.Request, sess auth.Session) {
+	req, err := s.promoteRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "could not read the request")
+		return
+	}
+	result, err := s.svc.DiffPromote(r.Context(), sess, req)
+	s.writeDiff(w, result, err)
 }
 
 func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request, sess auth.Session) {
@@ -1313,6 +1444,14 @@ func (s *Server) handleAddRule(w http.ResponseWriter, r *http.Request, sess auth
 	}
 	if strings.TrimSpace(body.Query) == "" {
 		writeError(w, http.StatusBadRequest, "a rule needs at least one condition")
+		return
+	}
+	if err := validRuleName(name); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validQuery(body.Query); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 

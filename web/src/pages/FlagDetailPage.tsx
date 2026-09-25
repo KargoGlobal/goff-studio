@@ -4,6 +4,7 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
+  GitCompare,
   History,
   Lock,
   Pencil,
@@ -403,6 +404,15 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
           <p className="mt-1 text-[13px] text-ink-soft">{flag.summary}</p>
         </div>
         <div className="flex items-center gap-2.5">
+          {environments.length > 1 && (
+            <Link
+              to={`/env/${env}/flags/${encodeURIComponent(key)}/compare`}
+              className="inline-flex items-center gap-1.5 text-[13px] text-ink-muted hover:text-ink"
+            >
+              <GitCompare className="h-3.5 w-3.5" />
+              Compare
+            </Link>
+          )}
           {can('delete') && (
             <Button
               size="sm"

@@ -14,7 +14,7 @@ export function NewEnvironmentDialog({
   const create = useCreateEnvironment()
   const toast = useToast()
   const [name, setName] = useState('')
-  const [file, setFile] = useState('flags.goff.yaml')
+  const [file, setFile] = useState('flags')
   const [error, setError] = useState<string | null>(null)
 
   async function submit() {
@@ -79,18 +79,22 @@ export function NewEnvironmentDialog({
 
         <div>
           <label htmlFor="env-file" className="mb-1 block text-[12px] text-ink-soft">
-            First flag file
+            First team
           </label>
           <Input
             id="env-file"
             value={file}
             onChange={(e) => setFile(e.target.value)}
-            placeholder="flags.goff.yaml"
+            placeholder="flags"
             className="font-mono"
           />
           <p className="mt-1 text-[11.5px] text-ink-muted">
-            One file per team. The name without its extension becomes the team you pick when
-            creating a flag.
+            One file per team. Creates{' '}
+            <code className="text-ink-soft">
+              {(name.trim() || 'staging')}/{(file.trim() || 'flags').replace(/\.(goff\.)?ya?ml$/, '')}
+              .goff.yaml
+            </code>
+            .
           </p>
         </div>
 

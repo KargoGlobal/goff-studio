@@ -123,6 +123,9 @@ type ListResult struct {
 }
 
 func (s *Service) List(ctx context.Context, sess auth.Session, environment string) (*ListResult, error) {
+	if err := validEnvironment(environment); err != nil {
+		return nil, err
+	}
 	if !s.perms.AllowedAnywhere(sess.Groups, environment, permissions.View) {
 		return nil, ErrForbidden
 	}
@@ -269,7 +272,7 @@ func (s *Service) Save(ctx context.Context, sess auth.Session, req SaveRequest) 
 			return nil, err
 		}
 		if err := s.adapter.Validate(next); err != nil {
-			return nil, fmt.Errorf("refusing to commit an invalid file: %w", err)
+			return nil, invalid("refusing to commit an invalid file: %v", err)
 		}
 		return next, nil
 	}
@@ -399,14 +402,10 @@ func validKey(key string) error {
 }
 
 func validTeam(team string) error {
-	trimmed := strings.TrimSpace(team)
-	if trimmed == "" {
+	if strings.TrimSpace(team) == "" {
 		return invalid("pick a team; it decides which file the flag lives in")
 	}
-	if strings.ContainsAny(trimmed, "/\\ \t") || strings.HasPrefix(trimmed, ".") {
-		return invalid("%q is not a valid team name; use letters, numbers and dashes", trimmed)
-	}
-	return nil
+	return validPathSegment("team name", team)
 }
 
 func checkVariationShape(variations []goff.Variation) error {
@@ -418,6 +417,9 @@ func checkVariationShape(variations []goff.Variation) error {
 	for _, v := range variations {
 		if strings.TrimSpace(v.Name) == "" {
 			return invalid("every variation needs a name")
+		}
+		if err := validName("variation name", v.Name); err != nil {
+			return err
 		}
 		if seen[v.Name] {
 			return invalid("variation %q is listed twice", v.Name)
@@ -550,7 +552,7 @@ func (s *Service) buildCreate(current []byte, req CreateRequest) ([]byte, error)
 		return nil, err
 	}
 	if err := s.adapter.Validate(next); err != nil {
-		return nil, fmt.Errorf("refusing to commit an invalid file: %w", err)
+		return nil, invalid("refusing to commit an invalid file: %v", err)
 	}
 	return next, nil
 }
@@ -646,7 +648,7 @@ func (s *Service) Delete(ctx context.Context, sess auth.Session, environment, ke
 				return nil, ErrNotFound
 			}
 			if err := s.adapter.Validate(next); err != nil {
-				return nil, fmt.Errorf("refusing to commit an invalid file: %w", err)
+				return nil, invalid("refusing to commit an invalid file: %v", err)
 			}
 			return next, nil
 		},
@@ -711,7 +713,7 @@ func (s *Service) Rename(ctx context.Context, sess auth.Session, environment, ke
 				return nil, invalid("%s", err.Error())
 			}
 			if err := s.adapter.Validate(next); err != nil {
-				return nil, fmt.Errorf("refusing to commit an invalid file: %w", err)
+				return nil, invalid("refusing to commit an invalid file: %v", err)
 			}
 			return next, nil
 		},
@@ -766,7 +768,7 @@ func (s *Service) buildVariations(current []byte, req VariationsRequest) ([]byte
 		return nil, err
 	}
 	if err := s.adapter.Validate(next); err != nil {
-		return nil, fmt.Errorf("refusing to commit an invalid file: %w", err)
+		return nil, invalid("refusing to commit an invalid file: %v", err)
 	}
 	return next, nil
 }
@@ -1070,7 +1072,7 @@ func (s *Service) History(ctx context.Context, sess auth.Session, environment, k
 		return nil, err
 	}
 
-	commits, err := s.repo.History(ctx, view.File, limit)
+	commits, err := s.repo.History(ctx, view.File, boundedLimit(limit))
 	if err != nil {
 		return nil, err
 	}
@@ -1134,11 +1136,8 @@ func (s *Service) Environments(ctx context.Context, sess auth.Session) []config.
 
 func (s *Service) CreateEnvironment(ctx context.Context, sess auth.Session, name, seedFile string) error {
 	name = strings.Trim(strings.TrimSpace(name), "/")
-	if name == "" {
-		return fmt.Errorf("%w: an environment needs a name", ErrInvalid)
-	}
-	if strings.ContainsAny(name, "/\\ \t") || strings.HasPrefix(name, ".") {
-		return fmt.Errorf("%w: %q is not a valid directory name; use letters, numbers and dashes", ErrInvalid, name)
+	if err := validEnvironment(name); err != nil {
+		return err
 	}
 
 	if !s.perms.AllowedAnywhere(sess.Groups, name, permissions.Create) {
@@ -1151,11 +1150,9 @@ func (s *Service) CreateEnvironment(ctx context.Context, sess auth.Session, name
 		}
 	}
 
-	if seedFile == "" {
-		seedFile = "flags.goff.yaml"
-	}
-	if !strings.HasSuffix(seedFile, ".yaml") && !strings.HasSuffix(seedFile, ".yml") {
-		seedFile += ".goff.yaml"
+	seedFile, err := seedFileName(seedFile)
+	if err != nil {
+		return err
 	}
 
 	path := name + "/" + seedFile
@@ -1169,6 +1166,9 @@ func (s *Service) CreateEnvironment(ctx context.Context, sess auth.Session, name
 }
 
 func (s *Service) CreateTeam(ctx context.Context, sess auth.Session, environment, name string) error {
+	if err := validEnvironment(environment); err != nil {
+		return err
+	}
 	name = strings.Trim(strings.TrimSpace(name), "/")
 	if err := validTeam(name); err != nil {
 		return err
