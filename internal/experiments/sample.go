@@ -19,7 +19,7 @@ var segmentValues = map[string][]string{
 // Sample builds deterministic results from the registry alone, so the UI and
 // end-to-end tests work without an analysis service. It is labelled sample.
 func Sample(e Experiment, catalog map[string]Metric, now time.Time) Results {
-	rng := rand.New(rand.NewPCG(seed(e.Key), 0x5eed))
+	rng := rand.New(rand.NewPCG(seed(e.Key), 0x5eed)) //nolint:gosec // deterministic sample data, seeded on purpose
 	now = now.UTC()
 
 	out := Results{
@@ -126,16 +126,18 @@ func (g sampleGen) metric(key, role string, catalog map[string]Metric, lifts map
 	res := MetricResult{Key: key, Name: m.Name, Kind: m.Kind, Role: role, Direction: m.Direction, Format: m.Format, Results: []ArmStat{}}
 
 	base, cv := baseline(m.Format, g.rng)
-	z := normalQuantile(1 - g.e.Analysis.Alpha/2)
+	zFixed := normalQuantile(1 - g.e.Analysis.Alpha/2)
+	z := zFixed
 	if g.e.Analysis.Test == "sequential" {
 		z *= 1.25
 	}
+	spread := 0.5 + g.rng.Float64()
 
 	for _, v := range g.e.Variants {
 		if v == g.e.Control {
 			continue
 		}
-		lift := lifts[v]
+		lift := lifts[v] * spread
 		if role == "guardrail" {
 			lift = -math.Abs(lift) * 0.3
 			if m.Direction == "decrease" {
@@ -151,7 +153,8 @@ func (g sampleGen) metric(key, role string, catalog map[string]Metric, lifts map
 			CILow:        round(lift-z*se, 6),
 			CIHigh:       round(lift+z*se, 6),
 		}
-		stat.PValue = round(twoSidedP(lift/se), 6)
+		// Scaled so p < alpha exactly when the (possibly widened) interval excludes zero.
+		stat.PValue = round(twoSidedP(lift/se*zFixed/z), 6)
 		stat.AdjustedP = stat.PValue
 		stat.Significant = stat.CILow > 0 || stat.CIHigh < 0
 

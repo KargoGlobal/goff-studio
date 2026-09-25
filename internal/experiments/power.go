@@ -32,29 +32,29 @@ type PowerResult struct {
 }
 
 func (r PowerRequest) Validate() error {
-	var p Problems
+	var p problems
 	if r.BaselineMean == 0 {
-		p.add("the baseline mean cannot be zero, lift is relative to it")
+		p.addf("the baseline mean cannot be zero, lift is relative to it")
 	}
 	if r.Variance <= 0 {
-		p.add("the variance must be positive")
+		p.addf("the variance must be positive")
 	}
 	if r.NPerDay <= 0 {
-		p.add("daily units must be positive")
+		p.addf("daily units must be positive")
 	}
 	if r.Arms < 2 {
-		p.add("an experiment has at least two arms")
+		p.addf("an experiment has at least two arms")
 	}
 	if r.Alpha <= 0 || r.Alpha >= 0.5 {
-		p.add("alpha must be between 0 and 0.5")
+		p.addf("alpha must be between 0 and 0.5")
 	}
 	if r.Power <= 0 || r.Power >= 1 {
-		p.add("power must be between 0 and 1")
+		p.addf("power must be between 0 and 1")
 	}
 	if r.CUPEDRho2 < 0 || r.CUPEDRho2 >= 1 {
-		p.add("the CUPED variance reduction must be at least 0 and below 1")
+		p.addf("the CUPED variance reduction must be at least 0 and below 1")
 	}
-	return p.Err()
+	return p.err()
 }
 
 // Estimate is a two-sample z-test power calculation on relative lift, used
@@ -86,7 +86,8 @@ func Estimate(r PowerRequest) (PowerResult, error) {
 		out.Curve = append(out.Curve, PowerPoint{Days: d, MDE: round(mdeAt(d), 6)})
 	}
 	if r.TargetMDE > 0 {
-		need := 2 * varAdj * math.Pow(z/(r.TargetMDE*baseline), 2)
+		k := z / (r.TargetMDE * baseline)
+		need := 2 * varAdj * k * k
 		d := int(math.Ceil(need * float64(r.Arms) / r.NPerDay))
 		if d < 1 {
 			d = 1

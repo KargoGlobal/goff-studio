@@ -120,7 +120,7 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request, sess auth
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "private, max-age=60")
-	_, _ = w.Write(raw)
+	_, _ = w.Write(raw) //nolint:gosec // JSON from the analysis service or json.Marshal, served as application/json
 }
 
 func (s *Server) handlePower(w http.ResponseWriter, r *http.Request, sess auth.Session) {
@@ -135,7 +135,7 @@ func (s *Server) handlePower(w http.ResponseWriter, r *http.Request, sess auth.S
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(raw)
+	_, _ = w.Write(raw) //nolint:gosec // JSON from the analysis service or json.Marshal, served as application/json
 }
 
 func (s *Server) handleListMetrics(w http.ResponseWriter, r *http.Request, sess auth.Session) {

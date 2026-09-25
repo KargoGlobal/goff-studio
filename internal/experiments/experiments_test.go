@@ -39,7 +39,7 @@ func valid() Experiment {
 		},
 		Segments: []string{"auction_type"},
 	}
-	e.Normalize()
+	e = e.Normalized()
 	return e
 }
 
@@ -55,14 +55,14 @@ func TestValidExperimentPasses(t *testing.T) {
 
 func TestNormalizeFillsContractDefaults(t *testing.T) {
 	var e Experiment
-	e.Normalize()
+	e = e.Normalized()
 	if e.Status != StatusDraft || e.Unit.Type != "request" || e.Unit.Key != "targetingKey" ||
 		e.Analysis.Test != "sequential" || e.Analysis.Alpha != 0.05 || e.Analysis.Power != 0.8 || e.Analysis.Correction != "none" {
 		t.Errorf("defaults not applied: %+v", e)
 	}
 }
 
-func TestExperimentValidationProblems(t *testing.T) {
+func TestExperimentValidationValidationError(t *testing.T) {
 	cases := []struct {
 		name   string
 		mutate func(*Experiment)
@@ -281,6 +281,9 @@ func TestSampleIsDeterministicAndLabelled(t *testing.T) {
 		for _, r := range m.Results {
 			if r.CILow > r.Lift || r.CIHigh < r.Lift {
 				t.Errorf("%s/%s: lift %v outside CI [%v, %v]", m.Key, r.Variant, r.Lift, r.CILow, r.CIHigh)
+			}
+			if (r.PValue < e.Analysis.Alpha) != r.Significant {
+				t.Errorf("%s/%s: p = %v disagrees with significant = %v", m.Key, r.Variant, r.PValue, r.Significant)
 			}
 			if r.CUPED == nil {
 				t.Errorf("%s/%s: CUPED requested but missing", m.Key, r.Variant)

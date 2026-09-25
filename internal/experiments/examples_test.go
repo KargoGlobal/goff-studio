@@ -26,7 +26,7 @@ func TestExamplesAreValid(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", p, err)
 		}
-		m.Normalize()
+		m = m.Normalized()
 		if err := ValidateMetric(m); err != nil {
 			t.Errorf("%s: %v", p, err)
 		}
@@ -61,7 +61,7 @@ func TestExamplesAreValid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.Normalize()
+	e = e.Normalized()
 	if err := ValidateExperiment(e, shape, cat); err != nil {
 		t.Error(err)
 	}

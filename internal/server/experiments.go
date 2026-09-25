@@ -172,7 +172,7 @@ func (r *requestScope) catalog(ctx context.Context) (map[string]experiments.Metr
 		if err != nil || m.Key == "" {
 			continue
 		}
-		m.Normalize()
+		m = m.Normalized()
 		r.metric[m.Key] = m
 	}
 	return r.metric, nil
@@ -368,7 +368,7 @@ type preparedChange struct {
 
 func (s *Service) prepareExperiment(ctx context.Context, sess auth.Session, req ExperimentChange) (*preparedChange, error) {
 	e := req.Experiment
-	e.Normalize()
+	e = e.Normalized()
 	if req.Create {
 		req.Key = e.Key
 	} else if e.Key != req.Key {
@@ -620,7 +620,7 @@ func (s *Service) ListMetrics(ctx context.Context, sess auth.Session) (*MetricLi
 			out.Broken = append(out.Broken, goff.Broken{File: f.Path, Reason: "the file could not be read as a metric"})
 			continue
 		}
-		m.Normalize()
+		m = m.Normalized()
 		out.Metrics = append(out.Metrics, MetricView{Metric: m, FileSHA: f.Version, Actions: s.metricActions(sess, m.Key)})
 	}
 	sort.Slice(out.Metrics, func(i, j int) bool { return out.Metrics[i].Key < out.Metrics[j].Key })
@@ -645,7 +645,7 @@ func (s *Service) GetMetric(ctx context.Context, sess auth.Session, key string) 
 	if err != nil {
 		return nil, invalid("%s could not be read: %v", f.Path, err)
 	}
-	m.Normalize()
+	m = m.Normalized()
 	return &MetricView{Metric: m, FileSHA: f.Version, Actions: s.metricActions(sess, m.Key)}, nil
 }
 
@@ -658,7 +658,7 @@ type MetricChange struct {
 
 func (s *Service) prepareMetric(ctx context.Context, sess auth.Session, req MetricChange) (*preparedChange, error) {
 	m := req.Metric
-	m.Normalize()
+	m = m.Normalized()
 	if !req.Create && m.Key != req.Key {
 		return nil, invalid("a metric's key cannot be changed; experiments refer to it by key")
 	}

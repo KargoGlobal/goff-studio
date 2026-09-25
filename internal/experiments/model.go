@@ -136,8 +136,8 @@ func encode(v any) ([]byte, error) {
 func (e Experiment) YAML() ([]byte, error) { return encode(e) }
 func (m Metric) YAML() ([]byte, error)     { return encode(m) }
 
-// Normalize fills the contract defaults so the file on disk is explicit.
-func (e *Experiment) Normalize() {
+// Normalized fills the contract defaults so the file on disk is explicit.
+func (e Experiment) Normalized() Experiment {
 	if e.Status == "" {
 		e.Status = StatusDraft
 	}
@@ -164,9 +164,10 @@ func (e *Experiment) Normalize() {
 	}
 	e.Start = e.Start.UTC()
 	e.End = e.End.UTC()
+	return e
 }
 
-func (m *Metric) Normalize() {
+func (m Metric) Normalized() Metric {
 	if m.Kind == "" {
 		m.Kind = "mean"
 	}
@@ -176,6 +177,7 @@ func (m *Metric) Normalize() {
 	if m.Direction == "" {
 		m.Direction = "increase"
 	}
+	return m
 }
 
 // MetricKeys lists every metric the experiment references, primary first.
