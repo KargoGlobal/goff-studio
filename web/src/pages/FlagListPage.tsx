@@ -187,7 +187,7 @@ export function FlagListPage({ environments: _environments }: { environments: En
           <tbody className="divide-y divide-[color:var(--color-line)]">
             {flags.map((flag) => {
               return (
-                <tr key={flag.key} className="transition-colors hover:bg-canvas/40">
+                <tr key={flag.key} className="transition-colors hover:bg-[color:var(--color-row-hover)]">
                   <td className="px-4 py-3 align-top">
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-[15px] font-medium text-ink">

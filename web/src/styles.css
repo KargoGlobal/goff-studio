@@ -49,6 +49,10 @@
    * from --color-line so eggshell/tan surfaces don't bleed into toggles. */
   --color-toggle-off: #9aa5a4;
 
+  /* Row hover / interactive highlight on white surfaces. Distinct from
+   * --color-canvas so we can tune "hover" without touching inset fills. */
+  --color-row-hover: #dff1f4;
+
   /* Sidebar = the sage-mint from the marketing site.
    * Active row is a darker shade of the same hue. */
   --color-sidebar: rgb(135, 168, 167);
@@ -99,6 +103,9 @@
     --color-brand-contrast: #0f2320;
 
     --color-toggle-off: #4a5553;
+
+    /* Matches the previous `hover:bg-canvas/40` effect (canvas #1b1b1d @ 40%). */
+    --color-row-hover: rgba(27, 27, 29, 0.4);
 
     --color-sidebar: #4a5f5e;
     --color-sidebar-ink: #f1f3f2;
