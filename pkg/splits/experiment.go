@@ -5,6 +5,7 @@ package splits
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -20,38 +21,38 @@ const (
 )
 
 type Experiment struct {
-	Version     int                    `json:"version"`
-	Hash        string                 `json:"hash"`
-	TotalShards int                    `json:"totalShards"`
-	Unit        Unit                   `json:"unit"`
-	Holdout     *Shard                 `json:"holdout"`
-	Allocations map[string]*Allocation `json:"allocations"`
+	Version     int                    `json:"version" yaml:"version"`
+	Hash        string                 `json:"hash" yaml:"hash"`
+	TotalShards int                    `json:"totalShards" yaml:"totalShards"`
+	Unit        Unit                   `json:"unit" yaml:"unit"`
+	Holdout     *Shard                 `json:"holdout" yaml:"holdout"`
+	Allocations map[string]*Allocation `json:"allocations" yaml:"allocations"`
 }
 
 type Unit struct {
-	Type string `json:"type"`
-	Key  string `json:"key"`
+	Type string `json:"type" yaml:"type"`
+	Key  string `json:"key" yaml:"key"`
 }
 
 type Allocation struct {
-	ExperimentKey string     `json:"experimentKey,omitempty"`
-	DoLog         *bool      `json:"doLog,omitempty"`
-	StartAt       *time.Time `json:"startAt"`
-	EndAt         *time.Time `json:"endAt"`
-	PassThrough   *bool      `json:"passThrough,omitempty"`
-	Layer         *Shard     `json:"layer"`
-	Splits        []Split    `json:"splits"`
+	ExperimentKey string     `json:"experimentKey,omitempty" yaml:"experimentKey,omitempty"`
+	DoLog         *bool      `json:"doLog,omitempty" yaml:"doLog,omitempty"`
+	StartAt       *time.Time `json:"startAt" yaml:"startAt"`
+	EndAt         *time.Time `json:"endAt" yaml:"endAt"`
+	PassThrough   *bool      `json:"passThrough,omitempty" yaml:"passThrough,omitempty"`
+	Layer         *Shard     `json:"layer" yaml:"layer"`
+	Splits        []Split    `json:"splits" yaml:"splits"`
 }
 
 type Split struct {
-	Variation    string            `json:"variation"`
-	ExtraLogging map[string]string `json:"extraLogging,omitempty"`
-	Shards       []Shard           `json:"shards"`
+	Variation    string            `json:"variation" yaml:"variation"`
+	ExtraLogging map[string]string `json:"extraLogging,omitempty" yaml:"extraLogging,omitempty"`
+	Shards       []Shard           `json:"shards" yaml:"shards"`
 }
 
 type Shard struct {
-	Salt   string  `json:"salt"`
-	Ranges []Range `json:"ranges"`
+	Salt   string  `json:"salt" yaml:"salt"`
+	Ranges []Range `json:"ranges" yaml:"ranges"`
 }
 
 // Range is half-open: Start <= shard < End.
@@ -62,6 +63,13 @@ type Range struct {
 
 func (r Range) MarshalJSON() ([]byte, error) {
 	return json.Marshal([2]int{r.Start, r.End})
+}
+
+func (r Range) MarshalYAML() (any, error) {
+	return &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Style: yaml.FlowStyle, Content: []*yaml.Node{
+		{Kind: yaml.ScalarNode, Tag: "!!int", Value: strconv.Itoa(r.Start)},
+		{Kind: yaml.ScalarNode, Tag: "!!int", Value: strconv.Itoa(r.End)},
+	}}, nil
 }
 
 func (r *Range) UnmarshalJSON(b []byte) error {
