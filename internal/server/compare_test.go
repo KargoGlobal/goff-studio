@@ -168,6 +168,55 @@ func TestCompareRefusesAnEnvironmentTheUserCannotView(t *testing.T) {
 	}
 }
 
+func TestCompareDoesNotCallEditVariationsAlonePromotable(t *testing.T) {
+	rules := []permissions.Rule{{
+		Group:   "flags-admins",
+		Allow:   []string{"*"},
+		Actions: []string{"view", "edit_variations"},
+	}}
+
+	srv, sealer := testServer(t, twoEnvRepo(), rules)
+
+	rec := request(t, srv, sealer, admin(), http.MethodGet,
+		compareURL("new-checkout", "dev", "production"), "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+
+	var got CompareResult
+	decode(t, rec, &got)
+	if got.To.Writable {
+		t.Error("promotion saves with edit_rules, so edit_variations alone must not enable it")
+	}
+}
+
+func TestCompareCallsAMissingTargetWritableWhenTheUserMayCreate(t *testing.T) {
+	repo := twoEnvRepo()
+	repo.files["dev/growth.goff.yaml"] = growthFile
+	repo.shas["dev/growth.goff.yaml"] = "sha-dev-growth"
+	delete(repo.files, "production/growth.goff.yaml")
+	repo.files["production/growth.goff.yaml"] = "{}\n"
+	srv, sealer := testServer(t, repo, adminRules())
+
+	rec := request(t, srv, sealer, admin(), http.MethodGet,
+		compareURL("banner-test", "dev", "production"), "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+
+	var got CompareResult
+	decode(t, rec, &got)
+	if got.To.Present {
+		t.Fatalf("banner-test should be absent from production: %+v", got.To)
+	}
+	if !got.To.Writable {
+		t.Error("promotion creates a missing flag, so create permission should enable it")
+	}
+	if got.To.Team != "growth" {
+		t.Errorf("a missing target should borrow the source team to name its file, got %q", got.To.Team)
+	}
+}
+
 func TestCompareMarksWhetherTheTargetIsWritable(t *testing.T) {
 	rules := []permissions.Rule{{
 		Group:   "flags-admins",

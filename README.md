@@ -294,8 +294,10 @@ touches only that flag. Comments, key order, and quoting all survive.
   environments leaves the target's own on/off state alone, and a flag that does not
   exist in the target yet is created disabled. The state is copyable, but only when
   it is ticked explicitly. A progressive rollout is frozen into the percentage split
-  it has reached, because the source environment's ramp dates mean nothing in the
-  target; this matches what LaunchDarkly does. Promoting rules that serve a
+  it has reached *at the moment you promote*, interpolated between its two steps,
+  because the source environment's ramp dates mean nothing in the target. Freezing
+  at the end allocation instead would silently fast-forward a half-finished rollout
+  to 100% in production. Promoting rules that serve a
   variation the target lacks is refused before anything is written.
 - **`experimentation` is a scheduled kill switch, not a targeting rule.** GOFF
   evaluates `IsDisable() || isExperimentationOver(date)` in one condition
@@ -389,7 +391,7 @@ diff; live preview; and per-flag history.
 Light and dark mode, keyboard accessible, protected environments called out and
 requiring typed confirmation.
 
-479 tests pass: 330 Go tests plus 14 in the S3 module, 78 frontend tests, and 57
+486 tests pass: 337 Go tests plus 14 in the S3 module, 78 frontend tests, and 57
 Playwright tests driving the real binary against fake OIDC and GitHub servers.
 `make lint` runs `gofmt`, `go vet` and `golangci-lint` with the same linter set
 go-feature-flag uses on itself. A `Dockerfile`, a Helm chart under

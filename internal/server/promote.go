@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/go-feature-flag/studio/internal/auth"
 	"github.com/go-feature-flag/studio/internal/goff"
@@ -145,7 +146,7 @@ func promoteMutator(source goff.Flag, fields []string) func(*goff.Flag) {
 			target.Default = source.Default
 		}
 		if want[FieldRules] {
-			target.Rules = frozenRules(source.Rules)
+			target.Rules = frozenRules(source.Rules, time.Now())
 		}
 		if want[FieldExperimentation] {
 			target.Experimentation = source.Experimentation
@@ -159,15 +160,12 @@ func promoteMutator(source goff.Flag, fields []string) func(*goff.Flag) {
 	}
 }
 
-// A ramp's dates mean nothing in the target, so it is frozen at the allocation it reached.
-func frozenRules(rules []goff.Rule) []goff.Rule {
+// A ramp's dates mean nothing in the target, so it is frozen where it has reached by now.
+func frozenRules(rules []goff.Rule, now time.Time) []goff.Rule {
 	out := make([]goff.Rule, 0, len(rules))
 	for _, r := range rules {
 		if r.Progressive != nil {
-			r.Outcome = goff.Outcome{Percentage: map[string]float64{
-				r.Progressive.End.Variation:     r.Progressive.End.Percentage,
-				r.Progressive.Initial.Variation: 100 - r.Progressive.End.Percentage,
-			}}
+			r.Outcome = frozenOutcome(*r.Progressive, now)
 			r.Progressive = nil
 		}
 		out = append(out, r)
@@ -176,6 +174,34 @@ func frozenRules(rules []goff.Rule) []goff.Rule {
 		return nil
 	}
 	return out
+}
+
+func frozenOutcome(p goff.ProgressiveRollout, now time.Time) goff.Outcome {
+	reached := reachedPercentage(p, now)
+	if p.Initial.Variation == p.End.Variation {
+		return goff.Outcome{Percentage: map[string]float64{p.End.Variation: reached}}
+	}
+	return goff.Outcome{Percentage: map[string]float64{
+		p.End.Variation:     reached,
+		p.Initial.Variation: 100 - reached,
+	}}
+}
+
+func reachedPercentage(p goff.ProgressiveRollout, now time.Time) float64 {
+	start, errStart := time.Parse(time.RFC3339, p.Initial.Date)
+	end, errEnd := time.Parse(time.RFC3339, p.End.Date)
+	if errStart != nil || errEnd != nil || !end.After(start) {
+		return p.End.Percentage
+	}
+	if now.Before(start) {
+		return p.Initial.Percentage
+	}
+	if now.After(end) {
+		return p.End.Percentage
+	}
+
+	elapsed := now.Sub(start).Seconds() / end.Sub(start).Seconds()
+	return p.Initial.Percentage + (p.End.Percentage-p.Initial.Percentage)*elapsed
 }
 
 // team names the target's own file, so the target's value always wins.
@@ -198,17 +224,12 @@ func mergedMetadata(source, target map[string]any) map[string]any {
 
 // Refuses a copy whose rules would serve a variation the target does not have.
 func checkPromotable(source, target goff.Flag, fields []string) error {
-	promotingVariations := false
-	promotingRules := false
+	want := map[string]bool{}
 	for _, f := range fields {
-		switch f {
-		case FieldVariations:
-			promotingVariations = true
-		case FieldRules:
-			promotingRules = true
-		}
+		want[f] = true
 	}
-	if !promotingRules || promotingVariations {
+	// Promoting the variations too means the target will have whatever they reference.
+	if want[FieldVariations] || (!want[FieldRules] && !want[FieldDefault]) {
 		return nil
 	}
 
@@ -217,9 +238,19 @@ func checkPromotable(source, target goff.Flag, fields []string) error {
 		available[v.Name] = true
 	}
 
+	var promoted []goff.Outcome
+	if want[FieldRules] {
+		for _, r := range frozenRules(source.Rules, time.Now()) {
+			promoted = append(promoted, r.Outcome)
+		}
+	}
+	if want[FieldDefault] {
+		promoted = append(promoted, source.Default)
+	}
+
 	missing := map[string]bool{}
-	for _, r := range frozenRules(source.Rules) {
-		for _, name := range outcomeVariations(r.Outcome) {
+	for _, o := range promoted {
+		for _, name := range outcomeVariations(o) {
 			if !available[name] {
 				missing[name] = true
 			}
@@ -228,9 +259,14 @@ func checkPromotable(source, target goff.Flag, fields []string) error {
 	if len(missing) == 0 {
 		return nil
 	}
+	what := "the targeting"
+	if want[FieldDefault] && !want[FieldRules] {
+		what = "the default rule"
+	}
 	return invalid(
-		"the rules in %s serve %s, which %s does not have; promote variations as well",
-		source.Environment, strings.Join(sorted(mapKeys(missing)), " and "), target.Environment)
+		"%s in %s serves %s, which %s does not have; promote variations as well",
+		what, source.Environment,
+		strings.Join(sorted(mapKeys(missing)), " and "), target.Environment)
 }
 
 func outcomeVariations(o goff.Outcome) []string {

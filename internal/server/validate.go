@@ -36,12 +36,12 @@ func hasControlChars(s string) bool {
 
 // A name reaching a YAML seed or a path segment must not be able to break out of either.
 func validName(kind, value string) error {
+	if hasControlChars(value) {
+		return invalid("a %s cannot contain line breaks or control characters", kind)
+	}
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		return invalid("a %s is required", kind)
-	}
-	if hasControlChars(trimmed) {
-		return invalid("a %s cannot contain line breaks or control characters", kind)
 	}
 	if len(trimmed) > MaxNameLength {
 		return invalid("a %s cannot be longer than %d characters", kind, MaxNameLength)

@@ -16,7 +16,7 @@ test('the compare view shows which settings differ between environments', async 
   await expect(page.getByText('Not defined in this environment.')).toBeHidden()
 })
 
-test('an identical flag reports no drift', async ({ page }) => {
+test('a flag missing from the target is shown as absent, not as off', async ({ page }) => {
   await page.goto('/env/production/flags/banner-test/compare')
 
   await expect(page.getByText('Not defined in this environment.')).toBeVisible()

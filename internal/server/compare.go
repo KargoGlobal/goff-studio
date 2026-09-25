@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-feature-flag/studio/internal/auth"
 	"github.com/go-feature-flag/studio/internal/goff"
+	"github.com/go-feature-flag/studio/internal/permissions"
 )
 
 const (
@@ -67,6 +68,16 @@ func (s *Service) Compare(ctx context.Context, sess auth.Session, key, from, to 
 		return nil, ErrNotFound
 	}
 
+	if !target.Present && source.Present {
+		target.Team = source.Team
+		target.Writable = s.perms.Allowed(permissions.Request{
+			Groups:      sess.Groups,
+			Environment: target.Environment,
+			File:        teamFile(target.Environment, source.Team),
+			Action:      permissions.Create,
+		})
+	}
+
 	out := &CompareResult{Key: key, From: *source, To: *target}
 	if source.Present && target.Present {
 		out.Differs = diffFields(*source.Flag, *target.Flag)
@@ -118,11 +129,7 @@ func (s *Service) compareSide(ctx context.Context, sess auth.Session, key, env s
 	side.FileSHA = view.FileSHA
 	side.Team = teamNameOf(view.File)
 	side.Flag = &flag
-	for _, a := range view.Actions {
-		if a == "edit_rules" || a == "edit_variations" {
-			side.Writable = true
-		}
-	}
+	side.Writable = allows(view.Actions, permissions.EditRules)
 	return side, nil
 }
 
