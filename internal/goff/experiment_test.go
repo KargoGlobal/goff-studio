@@ -1,6 +1,7 @@
 package goff
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -233,7 +234,7 @@ func TestCreatingAnExperimentWritesTheContractShape(t *testing.T) {
 	if !strings.HasSuffix(string(out), want) {
 		t.Errorf("unexpected shape:\n%s", out)
 	}
-	if !strings.HasPrefix(string(out), string(original[:strings.Index(string(original), "plain:")])) {
+	if !bytes.HasPrefix(out, original[:bytes.Index(original, []byte("plain:"))]) {
 		t.Error("the other flag changed")
 	}
 	back := flagNamed(t, out, "plain")

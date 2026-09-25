@@ -16,7 +16,7 @@ func ShardOf(salt, subject string, totalShards int) int {
 	input = append(input, '-')
 	input = append(input, subject...)
 	sum := md5.Sum(input) //nolint:gosec // see import
-	return int(binary.BigEndian.Uint32(sum[:4]) % uint32(totalShards))
+	return int(int64(binary.BigEndian.Uint32(sum[:4])) % int64(totalShards))
 }
 
 func (s Shard) contains(value int) bool {

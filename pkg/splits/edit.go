@@ -38,7 +38,7 @@ func (a *Allocation) Layout() (Layout, bool) {
 	if a == nil || len(a.Splits) == 0 {
 		return Layout{}, false
 	}
-	for exposureIdx := 0; exposureIdx < 2; exposureIdx++ {
+	for exposureIdx := range 2 {
 		if l, ok := layoutWithExposureAt(a, exposureIdx); ok {
 			return l, true
 		}

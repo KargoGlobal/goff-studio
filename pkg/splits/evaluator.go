@@ -145,7 +145,7 @@ type Evaluator struct {
 	salts       []string
 	holdout     *compiledShard
 	unitAttr    []string
-	totalShards uint32
+	totalShards int
 	now         func() time.Time
 }
 
@@ -160,7 +160,7 @@ func New(f Flag, exp *Experiment) (*Evaluator, error) {
 	if err := Validate(exp, &f).Err(); err != nil {
 		return nil, fmt.Errorf("experiment for %s: %w", f.Key, err)
 	}
-	e.totalShards = uint32(exp.TotalShards)
+	e.totalShards = exp.TotalShards
 	if exp.Unit.Key != "" && exp.Unit.Key != TargetingKey {
 		e.unitAttr = strings.Split(exp.Unit.Key, ".")
 	}
@@ -234,8 +234,8 @@ type evaluation struct {
 	goffCtx    ffcontext.Context
 	unit       string
 	hasUnit    bool
-	shards     [16]int32
-	overflow   []int32
+	shards     [16]int
+	overflow   []int
 }
 
 var ctxPool = sync.Pool{New: func() any { return make(map[string]any, 16) }}
@@ -353,15 +353,15 @@ func (ev *evaluation) shardValue(salt int) int {
 	cache := ev.shards[:]
 	if len(ev.e.salts) > len(ev.shards) {
 		if ev.overflow == nil {
-			ev.overflow = make([]int32, len(ev.e.salts))
+			ev.overflow = make([]int, len(ev.e.salts))
 		}
 		cache = ev.overflow
 	}
 	if v := cache[salt]; v != 0 {
-		return int(v - 1)
+		return v - 1
 	}
-	v := ShardOf(ev.e.salts[salt], ev.unit, int(ev.e.totalShards))
-	cache[salt] = int32(v + 1)
+	v := ShardOf(ev.e.salts[salt], ev.unit, ev.e.totalShards)
+	cache[salt] = v + 1
 	return v
 }
 
