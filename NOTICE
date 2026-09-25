@@ -42,6 +42,12 @@ permission covers use of the mark in this project's interface; it is not a
 transfer of trademark rights and does not itself constitute the donation or
 endorsement described above.
 
+web/public/favicon.ico and web/public/apple-touch-icon.png are resized
+derivatives of that same logo, generated from gff-logo.png solely to serve as
+this application's browser and home-screen icon. They are covered by the same
+permission and the same limits: they are not a separate mark, and their presence
+does not imply endorsement.
+
 A software licence grants copyright permissions, not trademark rights. Nothing in
 the LICENSE file should be read as permission to use the GO Feature Flag name or
 logo beyond the nominative and permitted uses described above.

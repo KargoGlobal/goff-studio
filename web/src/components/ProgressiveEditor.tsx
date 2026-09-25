@@ -1,30 +1,11 @@
 import { useState } from 'react'
 import type { ProgressiveRollout, RolloutStep } from '@/lib/api'
 import { Button, Input } from '@/components/ui/primitives'
-
-const DATE_HINT = 'YYYY-MM-DDTHH:MM:SSZ'
-
-function toLocalInput(iso: string): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
-function toISO(local: string): string {
-  if (!local) return ''
-  const d = new Date(local)
-  if (Number.isNaN(d.getTime())) return ''
-  return d.toISOString().replace(/\.\d{3}Z$/, 'Z')
-}
+import { DateTimeInput } from '@/components/DateTimeInput'
+import { DATE_HINT, formatWhen } from '@/lib/dates'
 
 export function describeProgressive(p: ProgressiveRollout): string {
-  const when = (iso: string) => {
-    const d = new Date(iso)
-    return Number.isNaN(d.getTime()) ? iso : d.toLocaleString()
-  }
-  return `${p.initial.percentage}% ${p.initial.variation} on ${when(p.initial.date)}, ramping to ${p.end.percentage}% ${p.end.variation} by ${when(p.end.date)}`
+  return `${p.initial.percentage}% ${p.initial.variation} on ${formatWhen(p.initial.date)}, ramping to ${p.end.percentage}% ${p.end.variation} by ${formatWhen(p.end.date)}`
 }
 
 export function ProgressiveEditor({
@@ -112,14 +93,12 @@ export function ProgressiveEditor({
             />
             <span className="text-[12.5px] text-ink-muted">%</span>
           </div>
-          <Input
-            type="datetime-local"
-            aria-label={`${label} date`}
-            value={toLocalInput(value.date)}
-            onChange={(e) =>
-              setDraft((prev) => ({ ...prev, [label]: { ...value, date: toISO(e.target.value) } }))
+          <DateTimeInput
+            label={`${label} date`}
+            value={value.date}
+            onChange={(iso) =>
+              setDraft((prev) => ({ ...prev, [label]: { ...value, date: iso } }))
             }
-            className="h-8 w-52 font-mono"
           />
         </div>
       </div>

@@ -35,6 +35,11 @@ type ProgressiveRollout struct {
 	End     RolloutStep `json:"end"`
 }
 
+type Experimentation struct {
+	Start string `json:"start,omitempty"`
+	End   string `json:"end,omitempty"`
+}
+
 type Rule struct {
 	Name        string              `json:"name"`
 	Query       string              `json:"query"`
@@ -46,17 +51,18 @@ type Rule struct {
 }
 
 type Flag struct {
-	Key         string         `json:"key"`
-	File        string         `json:"file"`
-	Environment string         `json:"environment"`
-	Type        ValueType      `json:"type"`
-	Enabled     bool           `json:"enabled"`
-	Variations  []Variation    `json:"variations"`
-	Rules       []Rule         `json:"rules"`
-	Default     Outcome        `json:"default"`
-	Metadata    map[string]any `json:"metadata,omitempty"`
-	Team        string         `json:"team"`
-	Preserved   []string       `json:"preserved,omitempty"`
+	Key             string           `json:"key"`
+	File            string           `json:"file"`
+	Environment     string           `json:"environment"`
+	Type            ValueType        `json:"type"`
+	Enabled         bool             `json:"enabled"`
+	Variations      []Variation      `json:"variations"`
+	Rules           []Rule           `json:"rules"`
+	Default         Outcome          `json:"default"`
+	Experimentation *Experimentation `json:"experimentation,omitempty"`
+	Metadata        map[string]any   `json:"metadata,omitempty"`
+	Team            string           `json:"team"`
+	Preserved       []string         `json:"preserved,omitempty"`
 
 	internal      flag.InternalFlag
 	rawRules      map[string]*yaml.Node

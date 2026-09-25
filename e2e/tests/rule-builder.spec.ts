@@ -36,7 +36,7 @@ test('the rule builder loads the existing query as editable conditions', async (
   expect(await chipValues(page, 1)).toEqual(['42'])
 
   await expect(whoMatches(page)).toContainText(
-    'Users where tier equals gold or account_id equals 42',
+    'If tier equals gold or account_id equals 42',
   )
 })
 
@@ -44,7 +44,7 @@ test('editing a condition value commits the rebuilt query string', async ({ page
   await setChip(page, 'platinum', 0)
 
   await expect(whoMatches(page)).toContainText(
-    'Users where tier equals platinum or account_id equals 42',
+    'If tier equals platinum or account_id equals 42',
   )
 
   await page.getByRole('button', { name: /^Review conditions for/ }).click()
@@ -90,7 +90,7 @@ test('removing a condition narrows the committed query', async ({ page }) => {
   await page.locator('button[title="Remove condition"]').last().click()
 
   await expect(page.getByLabel('Attribute')).toHaveCount(1)
-  await expect(whoMatches(page)).toContainText('Users where tier equals gold')
+  await expect(whoMatches(page)).toContainText('If tier equals gold')
 
   await page.getByRole('button', { name: /^Review conditions for/ }).click()
   await confirmReview(page)

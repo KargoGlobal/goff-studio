@@ -194,6 +194,24 @@ export function useSetProgressive(env: string) {
   })
 }
 
+export function useSetExperimentation(env: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      flag,
+      start,
+      end,
+      clear,
+    }: {
+      flag: Flag
+      start?: string
+      end?: string
+      clear?: boolean
+    }) => api.setExperimentation(env, flag.key, { start, end, clear, fileSha: flag.fileSha }),
+    onSettled: () => invalidateFlag(qc, env),
+  })
+}
+
 export function useRenameFlag(env: string) {
   const qc = useQueryClient()
   return useMutation({

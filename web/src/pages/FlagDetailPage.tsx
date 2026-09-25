@@ -20,6 +20,7 @@ import {
   type EvalResult,
   type Flag,
   type NewVariation,
+  type Experimentation,
   type Outcome,
   type ProgressiveRollout,
 } from '@/lib/api'
@@ -31,6 +32,7 @@ import {
   useDeleteFlag,
   useRenameFlag,
   useSetProgressive,
+  useSetExperimentation,
   useDeleteRule,
   useEditRule,
   useFlag,
@@ -42,11 +44,16 @@ import {
 import { Badge, Button, Card, Code, Input, Spinner, Toggle } from '@/components/ui/primitives'
 import { ReviewDialog } from '@/components/ReviewDialog'
 import { useToast } from '@/components/ui/Toast'
-import { describeOutcome, describeCondition } from '@/lib/describe'
+import { describeOutcome } from '@/lib/describe'
 import { RuleBuilder } from '@/components/RuleBuilder'
 import { VariationsEditor } from '@/components/VariationsEditor'
 import { ProgressiveEditor } from '@/components/ProgressiveEditor'
+import { ExperimentationEditor } from '@/components/ExperimentationEditor'
 import { groupFromCondition, queryFromGroup } from '@/lib/query'
+import { tokensFromCondition } from '@/lib/tokens'
+import { ConditionView } from '@/components/ConditionView'
+import { ScheduleBadge } from '@/components/ScheduleBadge'
+import { describeEffectiveState, effectiveState } from '@/lib/schedule'
 import type { RuleGroupType } from 'react-querybuilder'
 
 type Pending =
@@ -61,6 +68,8 @@ type Pending =
   | { kind: 'variations'; variations: NewVariation[]; defaultVariation: string }
   | { kind: 'progressive'; ruleName: string; rollout: ProgressiveRollout }
   | { kind: 'progressiveClear'; ruleName: string; variation: string }
+  | { kind: 'experimentation'; window: Experimentation }
+  | { kind: 'experimentationClear' }
   | { kind: 'rename'; newKey: string }
   | { kind: 'deleteFlag' }
 
@@ -89,6 +98,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
   const deleteFlag = useDeleteFlag(env)
   const renameFlag = useRenameFlag(env)
   const setProgressive = useSetProgressive(env)
+  const setExperimentation = useSetExperimentation(env)
 
   const [pending, setPending] = useState<Pending | null>(null)
   const [diff, setDiff] = useState<DiffResult | undefined>()
@@ -121,6 +131,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
   }
 
   const can = (action: string) => flag.actions.includes(action as never)
+  const state = effectiveState(flag)
   const saving =
     setState.isPending ||
     editRule.isPending ||
@@ -131,7 +142,8 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
     setRollout.isPending ||
     deleteFlag.isPending ||
     renameFlag.isPending ||
-    setProgressive.isPending
+    setProgressive.isPending ||
+    setExperimentation.isPending
 
   async function openReview(next: Pending) {
     setPending(next)
@@ -196,6 +208,13 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
           ruleName: next.ruleName,
           variation: next.variation,
         })
+      case 'experimentation':
+        return api.diffGeneric(env, key, {
+          change: 'experimentation',
+          experimentation: next.window,
+        })
+      case 'experimentationClear':
+        return api.diffGeneric(env, key, { change: 'experimentationClear' })
       case 'rename':
         return api.diffGeneric(env, key, { change: 'rename', name: next.newKey })
       case 'deleteFlag':
@@ -287,6 +306,14 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
           clear: true,
           variation: change.variation,
         })
+      case 'experimentation':
+        return setExperimentation.mutateAsync({
+          flag: target,
+          start: change.window.start,
+          end: change.window.end,
+        })
+      case 'experimentationClear':
+        return setExperimentation.mutateAsync({ flag: target, clear: true })
       case 'rename':
         return renameFlag.mutateAsync({ flag: target, newKey: change.newKey })
       case 'deleteFlag':
@@ -387,6 +414,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
               Delete
             </Button>
           )}
+          <ScheduleBadge flag={flag} />
           {!can('toggle') && <Lock className="h-3.5 w-3.5 text-ink-muted" />}
           <Toggle
             checked={flag.enabled}
@@ -396,6 +424,16 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
           />
         </div>
       </div>
+
+      {state !== 'on' && state !== 'off' && (
+        <div
+          role="status"
+          className="rounded-lg border border-warn bg-warn-soft px-3 py-2 text-[13px] text-warn"
+        >
+          This flag is turned on, but its schedule is closed, so every user gets the default value.{' '}
+          {describeEffectiveState(state, flag.experimentation)}.
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
@@ -447,6 +485,22 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                     <> · Managed in the file: {flag.preserved?.join(', ')}</>
                   )}
                 </p>
+
+                <div className="mt-3 border-t pt-3">
+                  <h3 className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-ink-muted">
+                    Schedule
+                  </h3>
+                  <p className="mb-2.5 text-[12px] text-ink-muted">
+                    Turns the flag off outside a time window. Outside it the flag is off and
+                    everyone gets the default value, exactly as if you had toggled it off.
+                  </p>
+                  <ExperimentationEditor
+                    window={flag.experimentation}
+                    disabled={!can('rollout')}
+                    onSave={(next) => void openReview({ kind: 'experimentation', window: next })}
+                    onRemove={() => void openReview({ kind: 'experimentationClear' })}
+                  />
+                </div>
               </>
             )}
           </Card>
@@ -575,7 +629,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                               Custom rule: <Code>{rule.query}</Code>
                             </>
                           ) : (
-                            <>Users where {describeCondition(rule.condition)}</>
+                            <ConditionView tokens={tokensFromCondition(rule.condition)} />
                           )}
                         </p>
                         {can('edit_rules') && (

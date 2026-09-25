@@ -243,10 +243,9 @@ in between.
 | `variations` | `version` |
 | `targeting` | `trackEvents` |
 | `defaultRule` | `bucketingKey` |
-| `disable` | `experimentation` |
-| `metadata` | `scheduledRollout` |
-| | per-rule `progressiveRollout` |
-| | any field a future GO Feature Flag release adds |
+| `disable` | `scheduledRollout` |
+| `experimentation` | per-rule `progressiveRollout` |
+| `metadata` | any field a future GO Feature Flag release adds |
 
 Preserved fields surface as read-only in the UI, and the adapter has tests
 proving they survive an edit.
@@ -269,6 +268,13 @@ touches only that flag. Comments, key order, and quoting all survive.
   falling through to the next rule. Once a rule's query matches, evaluation stops
   there. To let users miss a rule entirely, put a control variation in the split.
   Measured against v1.55.3 with 2000 targeting keys per case.
+- **`experimentation` is a scheduled kill switch, not a targeting rule.** GOFF
+  evaluates `IsDisable() || isExperimentationOver(date)` in one condition
+  (`flag/internal_flag.go`), and both return `ReasonDisabled`. Outside the window
+  the flag is off and everyone gets the default value; evaluation does *not* fall
+  through to targeting. Studio therefore presents it as **Schedule** next to the
+  on/off state, and a flag whose window has closed is badged `scheduled` or
+  `expired` rather than reported as on.
 - **`yaml.v3` cannot round-trip byte-for-byte.** It drops the blank line before a
   comment even on an untouched re-encode. Studio edits the node tree for
   correctness, then splices only the changed flag's lines back into the original
@@ -323,6 +329,7 @@ All `/api` routes require a session cookie and return `401` without one.
 | `POST` | `/api/environments/{env}/flags/{key}/key` | rename a flag |
 | `POST` | `/api/environments/{env}/flags/{key}/rollout` | set percentages |
 | `POST` | `/api/environments/{env}/flags/{key}/progressive` | set or clear a progressive rollout |
+| `POST` | `/api/environments/{env}/flags/{key}/experimentation` | set or clear the experimentation window |
 | `POST` | `/api/environments/{env}/flags/{key}/rule` | set a rule's targeting query |
 | `POST` | `/api/environments/{env}/flags/{key}/rules` | add a rule |
 | `DELETE` | `/api/environments/{env}/flags/{key}/rules/{rule}` | delete a rule |
@@ -343,12 +350,13 @@ Working today: the HTTP API, GOFF adapter, OIDC auth, permissions, and the write
 path across all three storage backends. The React UI covers the flag list with
 search, team filter and inline toggles; flag detail with variations, percentage
 sliders and a visual rule builder including negated and nested condition groups;
-creating, renaming and deleting flags and teams; editing progressive rollouts;
-review-before-save with a real file diff; live preview; and per-flag history.
+creating, renaming and deleting flags and teams; editing progressive rollouts and
+the schedule (`experimentation`); review-before-save with a real file diff; live
+preview; and per-flag history.
 Light and dark mode, keyboard accessible, protected environments called out and
 requiring typed confirmation.
 
-382 tests pass: 273 Go tests plus 14 in the S3 module, 42 frontend tests, and 53
+437 tests pass: 292 Go tests plus 14 in the S3 module, 78 frontend tests, and 53
 Playwright tests driving the real binary against fake OIDC and GitHub servers.
 `make lint` runs `gofmt`, `go vet` and `golangci-lint` with the same linter set
 go-feature-flag uses on itself. A `Dockerfile`, a Helm chart under
@@ -359,7 +367,8 @@ Known gaps:
 - **Scheduled rollout is view-only.** Steps are preserved byte-for-byte and
   listed under "advanced fields", but Studio will not edit them. A step is a full
   flag overlay, so a partial editor risks dropping fields.
-- **`experimentation` (start and end dates) is view-only**, for the same reason.
+- **`bucketingKey` is view-only.** It is preserved, but you cannot set it from the
+  UI.
 - **No cross-environment view or promote.** You cannot yet compare dev against
   production side by side, or copy a flag between environments.
 - **Rules reorder with up/down buttons**, not drag and drop.

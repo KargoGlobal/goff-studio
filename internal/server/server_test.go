@@ -42,6 +42,17 @@ const growthFile = `banner-test:
     variation: "on"
 `
 
+const timedFile = `timed:
+  variations:
+    on: true
+    off: false
+  defaultRule:
+    variation: "off"
+  experimentation:
+    start: 2026-10-01T00:00:00Z
+    end: 2026-11-01T00:00:00Z
+`
+
 const rampFile = `ramped:
   variations:
     on: true

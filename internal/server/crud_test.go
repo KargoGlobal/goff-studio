@@ -1507,3 +1507,194 @@ func TestProgressiveRolloutNeedsRolloutPermission(t *testing.T) {
 		t.Error("a forbidden rollout edit must not write")
 	}
 }
+
+func timedRepo() *repoState {
+	repo := newRepo()
+	repo.files["production/growth.goff.yaml"] = timedFile
+	return repo
+}
+
+func TestExperimentationIsReadable(t *testing.T) {
+	srv, sealer := testServer(t, timedRepo(), adminRules())
+
+	rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/environments/production/flags/timed", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+
+	var view FlagView
+	decode(t, rec, &view)
+	if view.Experimentation == nil {
+		t.Fatal("an experimentation window must reach the UI")
+	}
+	if view.Experimentation.Start != "2026-10-01T00:00:00Z" {
+		t.Errorf("start = %q, want RFC3339 UTC", view.Experimentation.Start)
+	}
+	if view.Experimentation.End != "2026-11-01T00:00:00Z" {
+		t.Errorf("end = %q, want RFC3339 UTC", view.Experimentation.End)
+	}
+	if strings.Contains(strings.Join(view.Preserved, ","), "experimentation") {
+		t.Errorf("experimentation is editable, it must not be preserved: %v", view.Preserved)
+	}
+}
+
+func TestExperimentationCanBeSet(t *testing.T) {
+	repo := newRepo()
+	srv, sealer := testServer(t, repo, adminRules())
+
+	body := `{"start":"2027-01-01T00:00:00Z","end":"2027-03-01T00:00:00Z"}`
+	rec := request(t, srv, sealer, admin(), http.MethodPost,
+		"/api/environments/production/flags/banner-test/experimentation", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+
+	stored := repo.files["production/growth.goff.yaml"]
+	for _, want := range []string{"experimentation:", "2027-01-01T00:00:00Z", "2027-03-01T00:00:00Z"} {
+		if !strings.Contains(stored, want) {
+			t.Errorf("missing %q in:\n%s", want, stored)
+		}
+	}
+}
+
+func TestExperimentationCanBeEdited(t *testing.T) {
+	repo := timedRepo()
+	srv, sealer := testServer(t, repo, adminRules())
+
+	body := `{"start":"2027-01-01T00:00:00Z","end":"2027-03-01T00:00:00Z"}`
+	rec := request(t, srv, sealer, admin(), http.MethodPost,
+		"/api/environments/production/flags/timed/experimentation", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+
+	stored := repo.files["production/growth.goff.yaml"]
+	if strings.Contains(stored, "2026-10-01") {
+		t.Errorf("the old window should be gone:\n%s", stored)
+	}
+	if !strings.Contains(stored, "2027-03-01T00:00:00Z") {
+		t.Errorf("the new window did not land:\n%s", stored)
+	}
+}
+
+func TestExperimentationAcceptsAnOpenEndedWindow(t *testing.T) {
+	repo := timedRepo()
+	srv, sealer := testServer(t, repo, adminRules())
+
+	rec := request(t, srv, sealer, admin(), http.MethodPost,
+		"/api/environments/production/flags/timed/experimentation",
+		`{"end":"2027-03-01T00:00:00Z"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+
+	stored := repo.files["production/growth.goff.yaml"]
+	if strings.Contains(stored, "start:") {
+		t.Errorf("an omitted start must not be written:\n%s", stored)
+	}
+	if !strings.Contains(stored, "end: 2027-03-01T00:00:00Z") {
+		t.Errorf("end did not land:\n%s", stored)
+	}
+}
+
+func TestExperimentationCanBeRemoved(t *testing.T) {
+	repo := timedRepo()
+	srv, sealer := testServer(t, repo, adminRules())
+
+	rec := request(t, srv, sealer, admin(), http.MethodPost,
+		"/api/environments/production/flags/timed/experimentation", `{"clear":true}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+
+	stored := repo.files["production/growth.goff.yaml"]
+	if strings.Contains(stored, "experimentation") {
+		t.Errorf("the window should be gone:\n%s", stored)
+	}
+	if !strings.Contains(stored, "variation: \"off\"") {
+		t.Errorf("clearing a window must not damage the flag:\n%s", stored)
+	}
+}
+
+func TestExperimentationRejectsBadInput(t *testing.T) {
+	srv, sealer := testServer(t, timedRepo(), adminRules())
+
+	cases := map[string]string{
+		"both empty":       `{}`,
+		"end before start": `{"start":"2027-03-01T00:00:00Z","end":"2027-01-01T00:00:00Z"}`,
+		"equal bounds":     `{"start":"2027-01-01T00:00:00Z","end":"2027-01-01T00:00:00Z"}`,
+		"bad start":        `{"start":"tomorrow","end":"2027-03-01T00:00:00Z"}`,
+		"bad end":          `{"start":"2027-01-01T00:00:00Z","end":"whenever"}`,
+	}
+
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			rec := request(t, srv, sealer, admin(), http.MethodPost,
+				"/api/environments/production/flags/timed/experimentation", body)
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("status %d, want 400: %s", rec.Code, rec.Body)
+			}
+		})
+	}
+}
+
+func TestExperimentationNeedsRolloutPermission(t *testing.T) {
+	rules := []permissions.Rule{{
+		Group:        "flags-admins",
+		Allow:        []string{"growth"},
+		Environments: []string{"production"},
+		Actions:      []string{"view", "toggle"},
+	}}
+
+	repo := timedRepo()
+	srv, sealer := testServer(t, repo, rules)
+	before := repo.files["production/growth.goff.yaml"]
+
+	rec := request(t, srv, sealer, admin(), http.MethodPost,
+		"/api/environments/production/flags/timed/experimentation",
+		`{"start":"2027-01-01T00:00:00Z","end":"2027-03-01T00:00:00Z"}`)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status %d, want 403: %s", rec.Code, rec.Body)
+	}
+	if repo.files["production/growth.goff.yaml"] != before {
+		t.Error("a forbidden window edit must not write")
+	}
+}
+
+func TestExperimentationDiffDoesNotWrite(t *testing.T) {
+	repo := timedRepo()
+	srv, sealer := testServer(t, repo, adminRules())
+	before := repo.files["production/growth.goff.yaml"]
+
+	body := `{"change":"experimentation","experimentation":{"start":"2027-01-01T00:00:00Z","end":"2027-03-01T00:00:00Z"}}`
+	rec := request(t, srv, sealer, admin(), http.MethodPost,
+		"/api/environments/production/flags/timed/diff", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+
+	var got DiffResult
+	decode(t, rec, &got)
+	if !strings.Contains(got.Diff, "2027-01-01T00:00:00Z") {
+		t.Errorf("the diff should show the new window: %q", got.Diff)
+	}
+	if repo.files["production/growth.goff.yaml"] != before {
+		t.Error("a diff must not write")
+	}
+}
+
+func TestExperimentationClearDiffShowsRemoval(t *testing.T) {
+	srv, sealer := testServer(t, timedRepo(), adminRules())
+
+	rec := request(t, srv, sealer, admin(), http.MethodPost,
+		"/api/environments/production/flags/timed/diff", `{"change":"experimentationClear"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+
+	var got DiffResult
+	decode(t, rec, &got)
+	if !strings.Contains(got.Diff, "-  experimentation:") {
+		t.Errorf("the diff should remove the window: %q", got.Diff)
+	}
+}

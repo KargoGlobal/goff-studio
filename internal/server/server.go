@@ -51,6 +51,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/environments/{env}/flags/{key}/state", s.withSession(s.handleToggle))
 	mux.HandleFunc("POST /api/environments/{env}/flags/{key}/rollout", s.withSession(s.handleRollout))
 	mux.HandleFunc("POST /api/environments/{env}/flags/{key}/progressive", s.withSession(s.handleProgressive))
+	mux.HandleFunc("POST /api/environments/{env}/flags/{key}/experimentation", s.withSession(s.handleExperimentation))
 	mux.HandleFunc("POST /api/environments/{env}/flags/{key}/preview", s.withSession(s.handlePreview))
 	mux.HandleFunc("GET /api/environments/{env}/flags/{key}/history", s.withSession(s.handleHistory))
 	mux.HandleFunc("POST /api/environments/{env}/flags/{key}/diff", s.withSession(s.handleDiff))
@@ -334,6 +335,7 @@ type diffBody struct {
 	Name        string             `json:"name"`
 	Variation   string             `json:"variation"`
 	Progressive *progressiveSteps  `json:"progressive"`
+	Window      *experimentWindow  `json:"experimentation"`
 	Order       []string           `json:"order"`
 }
 
@@ -751,6 +753,103 @@ func (s *Server) handleProgressive(w http.ResponseWriter, r *http.Request, sess 
 	writeJSON(w, http.StatusOK, result)
 }
 
+type experimentWindow struct {
+	Start string `json:"start"`
+	End   string `json:"end"`
+}
+
+type experimentationBody struct {
+	Start   string `json:"start"`
+	End     string `json:"end"`
+	Clear   bool   `json:"clear"`
+	FileSHA string `json:"fileSha"`
+}
+
+func (w *experimentWindow) toExperimentation() *goff.Experimentation {
+	if w == nil {
+		return nil
+	}
+	return &goff.Experimentation{Start: strings.TrimSpace(w.Start), End: strings.TrimSpace(w.End)}
+}
+
+func applyExperimentation(next *goff.Experimentation) func(*goff.Flag) {
+	return func(f *goff.Flag) { f.Experimentation = next }
+}
+
+func (s *Server) handleExperimentation(w http.ResponseWriter, r *http.Request, sess auth.Session) {
+	var body experimentationBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "could not read the request")
+		return
+	}
+
+	var next *goff.Experimentation
+	summary := "removed the experimentation window"
+	if !body.Clear {
+		next = &goff.Experimentation{
+			Start: strings.TrimSpace(body.Start),
+			End:   strings.TrimSpace(body.End),
+		}
+		if err := validateExperimentation(*next); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		summary = "updated the experimentation window"
+	}
+
+	env, key := r.PathValue("env"), r.PathValue("key")
+
+	view, err := s.svc.Get(r.Context(), sess, env, key)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	result, err := s.svc.Save(r.Context(), sess, SaveRequest{
+		Environment: env,
+		Key:         key,
+		File:        view.File,
+		FileSHA:     body.FileSHA,
+		LoadedFlag:  s.snapshotFor(env, key, body.FileSHA),
+		Action:      permissions.Rollout,
+		Summary:     summary,
+		Mutate:      applyExperimentation(next),
+	})
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// GOFF treats both bounds as optional, but a window with neither is meaningless.
+func validateExperimentation(e goff.Experimentation) error {
+	if e.Start == "" && e.End == "" {
+		return fmt.Errorf("an experimentation window needs a start date, an end date, or both")
+	}
+
+	var start, end time.Time
+	for _, bound := range []struct {
+		label string
+		raw   string
+		into  *time.Time
+	}{{"start", e.Start, &start}, {"end", e.End, &end}} {
+		if bound.raw == "" {
+			continue
+		}
+		parsed, err := parseDate(bound.label, bound.raw)
+		if err != nil {
+			return err
+		}
+		*bound.into = parsed
+	}
+
+	if start.IsZero() || end.IsZero() {
+		return nil
+	}
+	return validateOrder(start, end, "start")
+}
+
 func ruleExists(rules []goff.Rule, name string) bool {
 	for _, r := range rules {
 		if r.Name == name {
@@ -758,6 +857,21 @@ func ruleExists(rules []goff.Rule, name string) bool {
 		}
 	}
 	return false
+}
+
+func parseDate(label, raw string) (time.Time, error) {
+	parsed, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("the %s date must look like 2026-01-31T09:00:00Z", label)
+	}
+	return parsed, nil
+}
+
+func validateOrder(start, end time.Time, startLabel string) error {
+	if !end.After(start) {
+		return fmt.Errorf("the end date must be after the %s date", startLabel)
+	}
+	return nil
 }
 
 func validateProgressive(p goff.ProgressiveRollout) error {
@@ -771,17 +885,14 @@ func validateProgressive(p goff.ProgressiveRollout) error {
 		if strings.TrimSpace(step.Date) == "" {
 			return fmt.Errorf("the %s step needs a date", label)
 		}
-		if _, err := time.Parse(time.RFC3339, step.Date); err != nil {
-			return fmt.Errorf("the %s date must look like 2026-01-31T09:00:00Z", label)
+		if _, err := parseDate(label, step.Date); err != nil {
+			return err
 		}
 	}
 
 	start, _ := time.Parse(time.RFC3339, p.Initial.Date)
 	end, _ := time.Parse(time.RFC3339, p.End.Date)
-	if !end.After(start) {
-		return fmt.Errorf("the end date must be after the initial date")
-	}
-	return nil
+	return validateOrder(start, end, "initial")
 }
 
 func hasVariation(variations []goff.Variation, name string) bool {
@@ -993,6 +1104,21 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request, sess auth.Se
 		mutate = applyProgressive(body.RuleName, nil, strings.TrimSpace(body.Variation))
 		description = fmt.Sprintf("Remove the progressive rollout on %s, serving %s instead",
 			body.RuleName, body.Variation)
+	case "experimentation":
+		next := body.Window.toExperimentation()
+		if next == nil {
+			writeError(w, http.StatusBadRequest, "an experimentation window is required")
+			return
+		}
+		if err := validateExperimentation(*next); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		mutate = applyExperimentation(next)
+		description = fmt.Sprintf("Update the experimentation window on %s", key)
+	case "experimentationClear":
+		mutate = applyExperimentation(nil)
+		description = fmt.Sprintf("Remove the experimentation window on %s", key)
 	default:
 		writeError(w, http.StatusBadRequest, "unknown change type")
 		return

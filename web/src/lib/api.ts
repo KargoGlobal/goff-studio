@@ -59,6 +59,11 @@ export interface ProgressiveRollout {
   end: RolloutStep
 }
 
+export interface Experimentation {
+  start?: string
+  end?: string
+}
+
 export interface Rule {
   name: string
   query: string
@@ -78,6 +83,7 @@ export interface Flag {
   variations: Variation[] | null
   rules: Rule[] | null
   default: Outcome
+  experimentation?: Experimentation
   metadata?: Record<string, unknown>
   team: string
   preserved?: string[]
@@ -281,6 +287,16 @@ export const api = {
   ) =>
     request<SaveResult>(
       `/api/environments/${env}/flags/${encodeURIComponent(key)}/progressive`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    ),
+
+  setExperimentation: (
+    env: string,
+    key: string,
+    payload: { start?: string; end?: string; clear?: boolean; fileSha: string },
+  ) =>
+    request<SaveResult>(
+      `/api/environments/${env}/flags/${encodeURIComponent(key)}/experimentation`,
       { method: 'POST', body: JSON.stringify(payload) },
     ),
 

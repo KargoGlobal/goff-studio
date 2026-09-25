@@ -6,6 +6,7 @@ import { useFlags, useSetState } from '@/hooks/useFlags'
 import { Badge, Button, Card, Code, Input, Spinner, Toggle } from '@/components/ui/primitives'
 import { ReviewDialog } from '@/components/ReviewDialog'
 import { useToast } from '@/components/ui/Toast'
+import { ScheduleBadge } from '@/components/ScheduleBadge'
 
 function fileLabel(path: string) {
   const base = path.split('/').pop() ?? path
@@ -194,6 +195,7 @@ export function FlagListPage({ environments }: { environments: Environment[] }) 
                         advanced fields
                       </Badge>
                     )}
+                    <ScheduleBadge flag={flag} className="ml-2" />
                   </td>
                   <td className="px-4 py-3 align-top">
                     {flag.team ? (

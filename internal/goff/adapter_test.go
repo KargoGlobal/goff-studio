@@ -636,3 +636,149 @@ func TestEditingARuleKeepsFieldsStudioCannotModel(t *testing.T) {
 		t.Errorf("result does not validate: %v", err)
 	}
 }
+
+func TestExperimentationIsReadableAndEditable(t *testing.T) {
+	a := New()
+	flags, _, err := a.Parse("f.yaml", golden(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var f Flag
+	for _, candidate := range flags {
+		if candidate.Key == "model-choice" {
+			f = candidate
+		}
+	}
+	if f.Key == "" {
+		t.Fatal("model-choice not found")
+	}
+
+	if f.Experimentation == nil {
+		t.Fatal("an experimentation window must be readable")
+	}
+	if f.Experimentation.Start != "2026-10-01T00:00:00Z" {
+		t.Errorf("start = %q", f.Experimentation.Start)
+	}
+	if f.Experimentation.End != "2026-11-01T00:00:00Z" {
+		t.Errorf("end = %q", f.Experimentation.End)
+	}
+	if strings.Contains(strings.Join(f.Preserved, ","), "experimentation") {
+		t.Errorf("experimentation is editable now, it must not be preserved: %v", f.Preserved)
+	}
+}
+
+func TestSerializeWritesAndClearsExperimentation(t *testing.T) {
+	a := New()
+	src := []byte(`timed:
+  variations:
+    on: true
+    off: false
+  defaultRule:
+    variation: "off"
+`)
+
+	flags, _, err := a.Parse("f.yaml", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := flags[0]
+	if f.Experimentation != nil {
+		t.Fatalf("no window expected, got %+v", f.Experimentation)
+	}
+
+	f.Experimentation = &Experimentation{Start: "2026-01-01T00:00:00Z", End: "2026-02-01T00:00:00Z"}
+	added, err := a.Serialize(src, "timed", f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(added), "experimentation:") {
+		t.Fatalf("window was not written:\n%s", added)
+	}
+	if !strings.Contains(string(added), "start: 2026-01-01T00:00:00Z") {
+		t.Errorf("start was not written unquoted:\n%s", added)
+	}
+	if err := a.Validate(added); err != nil {
+		t.Fatalf("GOFF rejected the window we wrote: %v", err)
+	}
+
+	reparsed, _, err := a.Parse("f.yaml", added)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reparsed[0].Experimentation; got == nil || got.End != "2026-02-01T00:00:00Z" {
+		t.Fatalf("window did not round-trip: %+v", got)
+	}
+
+	cleared := reparsed[0]
+	cleared.Experimentation = nil
+	out, err := a.Serialize(added, "timed", cleared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "experimentation") {
+		t.Errorf("window was not removed:\n%s", out)
+	}
+	if err := a.Validate(out); err != nil {
+		t.Errorf("result does not validate: %v", err)
+	}
+}
+
+func TestSerializeWritesAnOpenEndedExperimentation(t *testing.T) {
+	a := New()
+	src := []byte(`timed:
+  variations:
+    on: true
+    off: false
+  defaultRule:
+    variation: "off"
+`)
+
+	flags, _, _ := a.Parse("f.yaml", src)
+	f := flags[0]
+	f.Experimentation = &Experimentation{End: "2026-02-01T00:00:00Z"}
+
+	out, err := a.Serialize(src, "timed", f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "start:") {
+		t.Errorf("an empty start must be omitted, not written blank:\n%s", out)
+	}
+	if !strings.Contains(string(out), "end: 2026-02-01T00:00:00Z") {
+		t.Errorf("end was not written:\n%s", out)
+	}
+	if err := a.Validate(out); err != nil {
+		t.Errorf("result does not validate: %v", err)
+	}
+}
+
+func TestUnrelatedEditKeepsExperimentation(t *testing.T) {
+	a := New()
+	src := []byte(`timed:
+  variations:
+    on: true
+    off: false
+  defaultRule:
+    variation: "off"
+  experimentation:
+    start: 2026-01-01T00:00:00Z
+    end: 2026-02-01T00:00:00Z
+`)
+
+	flags, _, err := a.Parse("f.yaml", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f := flags[0]
+	f.Enabled = false
+
+	out, err := a.Serialize(src, "timed", f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "start: 2026-01-01T00:00:00Z") {
+		t.Errorf("toggling the flag dropped the window:\n%s", out)
+	}
+}

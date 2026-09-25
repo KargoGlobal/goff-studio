@@ -1,7 +1,9 @@
 import { useMemo } from 'react'
 import { QueryBuilder, type Field, type RuleGroupType } from 'react-querybuilder'
 import 'react-querybuilder/dist/query-builder.css'
-import { arityOf, VISIBLE_OPERATORS, describeGroup, fieldsFrom, queryFromGroup } from '@/lib/query'
+import { arityOf, VISIBLE_OPERATORS, fieldsFrom, queryFromGroup } from '@/lib/query'
+import { tokensFromGroup } from '@/lib/tokens'
+import { ConditionView } from '@/components/ConditionView'
 import { ChipInput } from '@/components/ChipInput'
 import { Code } from '@/components/ui/primitives'
 
@@ -20,7 +22,7 @@ export function RuleBuilder({
 }) {
   // A blank first field keeps a new condition empty but still renders every control.
   const fields: Field[] = useMemo(() => fieldsFrom(['', ...attributes]), [attributes])
-  const description = describeGroup(value)
+  const tokens = tokensFromGroup(value)
   const query = queryFromGroup(value)
 
   return (
@@ -79,9 +81,11 @@ export function RuleBuilder({
         <p className="text-[11px] font-medium uppercase tracking-wide text-ink-muted">
           Who this matches
         </p>
-        <p className="mt-1 text-[13px] text-ink">
-          {description ? `Users where ${description}` : 'Nobody yet, add a condition above.'}
-        </p>
+        <ConditionView
+          tokens={tokens}
+          className="mt-1 text-ink"
+          empty="Nobody yet, add a condition above."
+        />
         {query && (
           <details className="mt-2">
             <summary className="cursor-pointer text-[11.5px] text-ink-muted hover:text-ink">

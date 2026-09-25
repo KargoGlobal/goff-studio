@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { RuleGroupType } from 'react-querybuilder'
-import { VISIBLE_OPERATORS, describeGroup, groupFromCondition, queryFromGroup } from './query'
+import { VISIBLE_OPERATORS, groupFromCondition, queryFromGroup } from './query'
+import { tokensFromGroup, tokensToText } from './tokens'
+
+const describeGroup = (g: RuleGroupType) => tokensToText(tokensFromGroup(g))
 
 function group(combinator: 'and' | 'or', ...rules: RuleGroupType['rules']): RuleGroupType {
   return { combinator, rules }

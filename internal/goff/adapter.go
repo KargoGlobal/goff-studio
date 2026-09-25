@@ -94,6 +94,14 @@ func (a *Adapter) Serialize(existing []byte, key string, f Flag) ([]byte, error)
 		return nil, err
 	}
 
+	if f.Experimentation != nil {
+		if err := doc.SetField(key, "experimentation", experimentationBody(*f.Experimentation)); err != nil {
+			return nil, err
+		}
+	} else if err := doc.DeleteField(key, "experimentation"); err != nil {
+		return nil, err
+	}
+
 	if len(f.Metadata) > 0 {
 		if err := doc.SetField(key, "metadata", f.Metadata); err != nil {
 			return nil, err
@@ -227,6 +235,22 @@ func progressiveBody(p ProgressiveRollout) *yaml.Node {
 	return node
 }
 
+func experimentationBody(e Experimentation) *yaml.Node {
+	node := &yaml.Node{Kind: yaml.MappingNode, Tag: tagMap}
+	for _, field := range []struct {
+		name  string
+		value string
+	}{{"start", e.Start}, {"end", e.End}} {
+		if field.value == "" {
+			continue
+		}
+		node.Content = append(node.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: tagStr, Value: field.name},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: field.value})
+	}
+	return node
+}
+
 func rolloutStepBody(s RolloutStep) *yaml.Node {
 	node := &yaml.Node{Kind: yaml.MappingNode, Tag: tagMap}
 	add := func(k string, v *yaml.Node) {
@@ -278,6 +302,9 @@ func newFlagBody(f Flag) *yaml.Node {
 	add("defaultRule", outcomeBody(f.Default))
 	if !f.Enabled {
 		add("disable", &yaml.Node{Kind: yaml.ScalarNode, Tag: tagBool, Value: "true"})
+	}
+	if f.Experimentation != nil {
+		add("experimentation", experimentationBody(*f.Experimentation))
 	}
 	if len(f.Metadata) > 0 {
 		meta := &yaml.Node{}
@@ -387,6 +414,8 @@ func fromInternal(key, path string, internal flag.InternalFlag) Flag {
 		f.Default = outcomeOf(internal.DefaultRule)
 	}
 
+	f.Experimentation = experimentationOf(internal.Experimentation)
+
 	if internal.Metadata != nil {
 		f.Metadata = *internal.Metadata
 	}
@@ -425,6 +454,20 @@ func fromInternalRule(r flag.Rule) Rule {
 	return out
 }
 
+func utcRFC3339(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
+func experimentationOf(e *flag.ExperimentationRollout) *Experimentation {
+	if e == nil {
+		return nil
+	}
+	return &Experimentation{Start: utcRFC3339(e.Start), End: utcRFC3339(e.End)}
+}
+
 func progressiveOf(p *flag.ProgressiveRollout) *ProgressiveRollout {
 	if p == nil {
 		return nil
@@ -439,14 +482,11 @@ func rolloutStepOf(s *flag.ProgressiveRolloutStep) RolloutStep {
 	if s == nil {
 		return RolloutStep{}
 	}
-	out := RolloutStep{
+	return RolloutStep{
 		Variation:  deref(s.Variation, ""),
 		Percentage: deref(s.Percentage, 0),
+		Date:       utcRFC3339(s.Date),
 	}
-	if s.Date != nil {
-		out.Date = s.Date.UTC().Format(time.RFC3339)
-	}
-	return out
 }
 
 func outcomeOf(r *flag.Rule) Outcome {
@@ -467,9 +507,6 @@ func preservedFields(internal flag.InternalFlag) []string {
 	var out []string
 	if internal.Version != nil {
 		out = append(out, "version")
-	}
-	if internal.Experimentation != nil {
-		out = append(out, "experimentation")
 	}
 	if internal.Scheduled != nil && len(*internal.Scheduled) > 0 {
 		out = append(out, "scheduledRollout")
