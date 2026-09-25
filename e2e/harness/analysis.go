@@ -12,7 +12,7 @@ var seedMetrics = map[string]string{
 	"click_rate": `key: click_rate
 name: Click rate
 kind: mean
-numerator: kraken_click_yn
+numerator: click_yn
 format: percent
 direction: increase
 description: Share of served impressions that were clicked.

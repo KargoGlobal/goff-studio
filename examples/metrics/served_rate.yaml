@@ -1,7 +1,7 @@
-key: kraken_served_rate
+key: served_rate
 name: Served rate
 kind: mean
-numerator: kraken_served_yn
+numerator: served_yn
 format: percent
 direction: increase
 description: Share of bid requests that ended in a served impression.

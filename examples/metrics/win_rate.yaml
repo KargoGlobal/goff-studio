@@ -1,7 +1,7 @@
-key: kraken_win_rate
+key: win_rate
 name: Exchange win rate
 kind: mean
-numerator: kraken_won_yn
+numerator: won_yn
 format: percent
 direction: increase
 description: Share of bid requests the exchange won.
