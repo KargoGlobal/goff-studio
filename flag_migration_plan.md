@@ -152,9 +152,9 @@ The features below prioritise guardrails against these two failure modes.
           │                                                     │ exposure events (only exposed subjects)
           │                                                     ▼
           │                                  Kinesis ─► arion ─► Snowflake: exp_exposure ─► exp_unit_agg ─► exp_suffstats
-          │                                                                                                   │ hourly
-          │                                                                         Snowpark job (gbstats kernel) ▼
-          └───────────────────────────────────────────────────────────────────────────────────────── exp_results
+          │                                                                                                   │
+          │                                             Archimedes experiment_analysis (SPCS, next to Snowflake)
+          └──────────────── results API (cached) ◄──────────────────────────────────────────────────── exp_results
                                                                                                           │
                                                                                           Omni "Experiments" topic + template
 ```
@@ -182,6 +182,14 @@ Decisions, and why each is the simplest option:
 - **Analysis runs in Snowflake on small pre-aggregated tables.** Raw exposure and outcome rows
   are reduced once, incrementally, to per-unit and then per-variant sufficient statistics.
   Every statistic is computed from those thousands of rows, never from the raw tables.
+- **CUPED and the rest of the statistics run in Archimedes.** Archimedes is Kargo's governed
+  analytics service on Snowpark Container Services. It already runs deterministic,
+  policy-checked statistical analyses, including experiment design and geo experiments, and it
+  exposes them over an API and MCP. Its runtime sits inside the Snowflake account next to the
+  summary tables. It reads only those tables, so a results request computes in milliseconds.
+  Studio's backend calls its results API with a service identity and caches the response.
+  Putting the kernel there, rather than in a stored procedure or in Studio, keeps one audited
+  implementation that Studio, Omni write-backs and analysts asking through MCP all share.
 - **The statistics kernel is adopted, not written.** GrowthBook's `gbstats` package
   (MIT licence, pinned version) already implements ratio metrics, CUPED including ratio
   metrics, sequential confidence intervals, sample-ratio checks and power. It takes
@@ -446,8 +454,9 @@ Notation: arm k, unit i, outcome Y, ratio denominator D, pre-treatment covariate
 1. An hourly Snowflake task merges the new hour into `exp_exposure`, `exp_outcome_hourly` and
    `exp_unit_agg`, then rebuilds `exp_suffstats`. The watermark is the hour column, which is
    the clustering key.
-2. A Snowpark Python procedure runs the statistics kernel over `exp_suffstats` and writes
-   `exp_results`.
+2. Archimedes' `experiment_analysis` runs the statistics kernel over `exp_suffstats` on request
+   and on a schedule. It serves results to Studio through `GET /v1/experiments/{key}/results`,
+   caches them for five minutes, and writes `exp_results` for Omni.
 3. An XS or S warehouse is enough, because nothing scans raw facts after the first reduction.
 
 ---
@@ -714,7 +723,7 @@ permissions:
 | A2 | P0 | **Fix the assignment dedup key** | Data | S | Dedupe on (flag, allocation, subject) instead of subject, in both the in-batch step and the 12-hour lookback. Ship this now, independent of the migration. |
 | A3 | P0 | **Exposure and outcome tables** | Data | M | `exp_exposure` with first exposure per (flag, allocation, subject), and `exp_outcome_hourly` semi-joined to active exposures. Hourly incremental merge. |
 | A4 | P0 | **Unit aggregates and sufficient statistics** | Data | M | `exp_unit_agg` with a 48-hour attribution window and late-data re-merge, and `exp_suffstats`. Cumulative per-unit handling for entity units. |
-| A5 | P0 | **Statistics job** | Data | M | Snowpark procedure with `gbstats` pinned: means, ratio metrics, sequential intervals, sample-ratio check, guardrails. Writes `exp_results`. **Defaults match today's method:** sequential 95% intervals, CUPED off, no correction, so validation (A8) compares like with like. CUPED, Holm and Benjamini–Hochberg (`statsmodels`) are switched on per experiment once validated. |
+| A5 | P0 | **Statistics engine in Archimedes** | Archimedes | M | A new `experiment_analysis` analysis, governed by Archimedes' existing policy layer: means, ratio metrics, sequential intervals, sample-ratio check, guardrails. Writes `exp_results`. **Defaults match today's method:** sequential 95% intervals, CUPED off, no correction, so validation (A8) compares like with like. CUPED, Holm and Benjamini–Hochberg (`statsmodels`) are switched on per experiment once validated. |
 | A6 | P0 | **Experiment registry** | Config | S | `experiments/*.yaml` in the flags repo: flag, allocation, start and end, arms, baseline, unit, strata, metrics, analysis options. Loaded into `exp_registry`. The pipeline filters on the registry, so nobody hand-edits a shared query per test. An end date is required, capped at 8 weeks unless extended, so finished tests stop consuming compute. Studio edits it later (R6). |
 | A7 | P0 | **Metric catalog** | Config | S | `metrics/*.yaml`: numerator, denominator, source columns, cap, direction, default guardrail threshold. Seeded with the 13 bidder and exchange metrics in use today, with the PMP revenue filter corrected. Metrics are then reviewed in git like flags. |
 | A8 | P0 | **Validation before switch-off** | Data | S | Re-run two concluded experiments through the new pipeline and compare lift and CI with the current platform's results. Good candidates are a regional tmax test (9 arms, 241M subjects) and a PMP deal-ordering test. Add one A/A test. Export the old analyses' results for the record before switch-off. |
