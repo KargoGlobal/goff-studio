@@ -5,6 +5,7 @@ go 1.27.1
 require (
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/go-jose/go-jose/v4 v4.1.5
+	github.com/nikunjy/rules v1.5.0
 	github.com/thomaspoignant/go-feature-flag v1.55.3
 	github.com/thomaspoignant/go-feature-flag/modules/core v0.7.2
 	golang.org/x/oauth2 v0.37.0
@@ -19,6 +20,5 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
-	github.com/nikunjy/rules v1.5.0 // indirect
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 // indirect
 )

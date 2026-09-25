@@ -1,0 +1,63 @@
+# Generated compatibility fixture: legacy shard-compatible bucketing.
+floor-model:
+  variations:
+    control: "control"
+    ended: "ended"
+    future: "future"
+    active: "active"
+  targeting:
+    - name: exp-ended
+      query: 'targetingKey pr'
+      variation: control
+    - name: exp-future
+      query: 'targetingKey pr'
+      variation: control
+    - name: exp-active
+      query: 'targetingKey pr'
+      variation: control
+  defaultRule:
+    variation: control
+  metadata:
+    experiment:
+      version: 1
+      hash: md5-shard
+      totalShards: 10000
+      unit: {type: request, key: targetingKey}
+      holdout: null
+      allocations:
+        exp-ended:
+          experimentKey: floor-model-exp-ended
+          doLog: true
+          startAt: null
+          endAt: 2020-01-01T00:00:00Z
+          passThrough: true
+          layer: null
+          splits:
+            - variation: ended
+              shards: []
+        exp-future:
+          experimentKey: floor-model-exp-future
+          doLog: true
+          startAt: 2099-01-01T00:00:00Z
+          endAt: null
+          passThrough: true
+          layer: null
+          splits:
+            - variation: future
+              shards: []
+        exp-active:
+          experimentKey: floor-model-exp-active
+          doLog: true
+          startAt: 2020-01-01T00:00:00Z
+          endAt: 2099-01-01T00:00:00Z
+          passThrough: true
+          layer: null
+          splits:
+            - variation: control
+              shards:
+                - {salt: "aa01bb", ranges: [[0, 5000]]}
+                - {salt: "cc02dd", ranges: [[0, 5000]]}
+            - variation: active
+              shards:
+                - {salt: "aa01bb", ranges: [[0, 5000]]}
+                - {salt: "cc02dd", ranges: [[5000, 10000]]}

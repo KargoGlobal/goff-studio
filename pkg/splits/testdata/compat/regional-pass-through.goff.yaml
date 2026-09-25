@@ -1,0 +1,79 @@
+# Generated compatibility fixture: legacy shard-compatible bucketing.
+bid-shading:
+  variations:
+    control: "control"
+    low: "low"
+    mid: "mid"
+    high: "high"
+  targeting:
+    - name: exp-east
+      query: 'region in ["region-a", "region-c"]'
+      variation: control
+    - name: exp-east-mobile
+      query: '(region in ["region-a"] and deviceType in ["1", "3"]) or (region in ["region-d"])'
+      variation: control
+    - name: exp-global
+      query: 'targetingKey pr'
+      variation: control
+  defaultRule:
+    variation: control
+  metadata:
+    experiment:
+      version: 1
+      hash: md5-shard
+      totalShards: 10000
+      unit: {type: request, key: targetingKey}
+      holdout: null
+      allocations:
+        exp-east:
+          experimentKey: bid-shading-exp-east
+          doLog: true
+          startAt: null
+          endAt: null
+          passThrough: true
+          layer: null
+          splits:
+            - variation: control
+              shards:
+                - {salt: "4d1c9e", ranges: [[0, 1000]]}
+                - {salt: "77ab01", ranges: [[0, 5000]]}
+            - variation: low
+              shards:
+                - {salt: "4d1c9e", ranges: [[0, 1000]]}
+                - {salt: "77ab01", ranges: [[5000, 10000]]}
+        exp-east-mobile:
+          experimentKey: bid-shading-exp-east-mobile
+          doLog: true
+          startAt: null
+          endAt: null
+          passThrough: true
+          layer: null
+          splits:
+            - variation: control
+              shards:
+                - {salt: "e2f7a0", ranges: [[0, 3000]]}
+                - {salt: "0c55d9", ranges: [[0, 3333]]}
+            - variation: mid
+              shards:
+                - {salt: "e2f7a0", ranges: [[0, 3000]]}
+                - {salt: "0c55d9", ranges: [[3333, 6666]]}
+            - variation: high
+              shards:
+                - {salt: "e2f7a0", ranges: [[0, 3000]]}
+                - {salt: "0c55d9", ranges: [[6666, 10000]]}
+        exp-global:
+          experimentKey: bid-shading-exp-global
+          doLog: true
+          startAt: null
+          endAt: null
+          passThrough: true
+          layer: null
+          splits:
+            - variation: control
+              shards:
+                - {salt: "b81d3c", ranges: [[0, 2000]]}
+                - {salt: "5a90e4", ranges: [[0, 5000]]}
+            - variation: high
+              shards:
+                - {salt: "b81d3c", ranges: [[0, 2000]]}
+                - {salt: "5a90e4", ranges: [[5000, 10000]]}
