@@ -99,7 +99,18 @@ the file's list outright rather than merging into it.
 ### Storage
 
 `storage.backend` picks where flag files live. It defaults to `github`, the only
-backend with history, attribution and review.
+backend with review.
+
+| Backend | History | Attribution | Review |
+| --- | --- | --- | --- |
+| `github` | yes, commits | yes, commit author and trailers | yes, via CODEOWNERS |
+| `s3` | with bucket versioning | with bucket versioning, in object metadata | no |
+| `file` | no | no | no |
+
+Studio reports these as capabilities to the UI: history shows the per-flag
+history panel, attribution means each history entry names who made the change
+and with what message, and review means changes can be gated by CODEOWNERS. The
+UI hides or rewords anything a backend cannot do.
 
 | Config key | Env var | Notes |
 | --- | --- | --- |
@@ -128,9 +139,34 @@ it is for local development.
 | `storage.path` | `GOFF_STUDIO_STORAGE_PATH` | **required**; the directory holding your environment directories |
 
 **`s3`** — needs the separate `goff-studio-s3` binary and image, so the AWS SDK
-stays out of the core build. History needs bucket versioning; Studio checks at
-startup and hides the history panel if it is off. Credentials come from the
-standard AWS chain.
+stays out of the core build. Credentials come from the standard AWS chain.
+
+S3 can be the primary store with no Git repository or sync job behind it. Every
+object Studio writes carries who made the change and why, as S3 user metadata:
+
+| Metadata key | Value |
+| --- | --- |
+| `x-amz-meta-studio-user-name` | the signed-in user's name |
+| `x-amz-meta-studio-user-email` | their email |
+| `x-amz-meta-studio-user-id` | their OIDC subject |
+| `x-amz-meta-studio-message` | the same message a GitHub commit gets, e.g. `[production] growth/new-checkout: enabled` |
+
+S3 metadata must be ASCII and is limited to 2 KB per object, so printable ASCII
+is stored as-is and anything else (accented names, emoji) is stored as an RFC
+2047 encoded word, `=?UTF-8?B?<base64>?=`, which Studio decodes. Name, email and
+id are capped at 256 bytes each, and the message is truncated with `...` to fit
+what remains.
+
+**Turn on bucket versioning.** Metadata lives on each object version, so history
+and attribution need versioning; Studio checks at startup and hides the history
+panel if it is off. With versioning, the history panel lists each version newest
+first with its author, email and message (one `HeadObject` per version shown, a
+few at a time). Versions written before Studio recorded attribution show an
+unknown author. Studio never deletes flag files, so it never creates delete
+markers; a delete made outside Studio appears in history with an unknown author,
+because S3 delete markers cannot carry metadata. For an audit trail that cannot
+be rewritten, also consider S3 Object Lock with a retention period, and a
+lifecycle rule to expire noncurrent versions you no longer need.
 
 | Config key | Env var | Notes |
 | --- | --- | --- |

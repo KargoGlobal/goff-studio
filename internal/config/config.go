@@ -367,7 +367,7 @@ func (c *Config) validateStorage() error {
 		if !storage.Registered("s3") {
 			return fieldErr("storage.backend", envStorage, "s3 is not compiled into this binary; use an image built with the s3 backend, or pick one of: "+strings.Join(storage.Available(), ", "))
 		}
-		c.warnf("storage.backend is s3, so changes have no attribution and no review; Studio's permission config is the only control over who may change a flag")
+		c.warnf("storage.backend is s3, so changes have no review; Studio's permission config is the only control over who may change a flag, and history and attribution need bucket versioning")
 		return nil
 	default:
 		if storage.Registered(backend) {

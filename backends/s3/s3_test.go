@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,12 +28,27 @@ func (e apiError) ErrorCode() string             { return e.code }
 func (e apiError) ErrorMessage() string          { return e.code }
 func (e apiError) ErrorFault() smithy.ErrorFault { return smithy.FaultClient }
 
+type fakeVersion struct {
+	id      string
+	meta    map[string]string
+	when    time.Time
+	deleted bool
+}
+
 type fakeS3 struct {
 	objects    map[string]string
 	versioning bool
 	puts       int
 	mutate     func(reads int)
 	reads      int
+
+	mu          sync.Mutex
+	lastMeta    map[string]map[string]string
+	versions    map[string][]fakeVersion // oldest first
+	heads       int
+	inFlight    atomic.Int32
+	maxInFlight atomic.Int32
+	headErr     map[string]error
 }
 
 func newFake() *fakeS3 {
@@ -80,6 +97,21 @@ func (f *fakeS3) PutObject(_ context.Context, in *awss3.PutObjectInput, _ ...fun
 	buf, _ := io.ReadAll(in.Body)
 	f.objects[key] = string(buf)
 	f.puts++
+	if f.lastMeta == nil {
+		f.lastMeta = map[string]map[string]string{}
+	}
+	f.lastMeta[key] = in.Metadata
+	if f.versioning {
+		if f.versions == nil {
+			f.versions = map[string][]fakeVersion{}
+		}
+		n := len(f.versions[key]) + 1
+		f.versions[key] = append(f.versions[key], fakeVersion{
+			id:   fmt.Sprintf("v%d", n),
+			meta: in.Metadata,
+			when: time.Date(2026, 9, 1, 0, n, 0, 0, time.UTC),
+		})
+	}
 	return &awss3.PutObjectOutput{ETag: aws.String(`"` + tag(string(buf)) + `"`)}, nil
 }
 
@@ -108,10 +140,58 @@ func (f *fakeS3) ListObjectsV2(_ context.Context, in *awss3.ListObjectsV2Input, 
 
 func (f *fakeS3) ListObjectVersions(_ context.Context, in *awss3.ListObjectVersionsInput, _ ...func(*awss3.Options)) (*awss3.ListObjectVersionsOutput, error) {
 	key := aws.ToString(in.Prefix)
-	return &awss3.ListObjectVersionsOutput{Versions: []types.ObjectVersion{
-		{Key: aws.String(key), VersionId: aws.String("v2"), LastModified: aws.Time(time.Now())},
-		{Key: aws.String(key), VersionId: aws.String("v1"), LastModified: aws.Time(time.Now().Add(-time.Hour))},
-	}}, nil
+	recorded, ok := f.versions[key]
+	if !ok {
+		return &awss3.ListObjectVersionsOutput{Versions: []types.ObjectVersion{
+			{Key: aws.String(key), VersionId: aws.String("v2"), LastModified: aws.Time(time.Now())},
+			{Key: aws.String(key), VersionId: aws.String("v1"), LastModified: aws.Time(time.Now().Add(-time.Hour))},
+		}}, nil
+	}
+
+	out := &awss3.ListObjectVersionsOutput{}
+	for i := len(recorded) - 1; i >= 0; i-- {
+		v := recorded[i]
+		if v.deleted {
+			out.DeleteMarkers = append(out.DeleteMarkers, types.DeleteMarkerEntry{
+				Key: aws.String(key), VersionId: aws.String(v.id), LastModified: aws.Time(v.when),
+			})
+			continue
+		}
+		out.Versions = append(out.Versions, types.ObjectVersion{
+			Key: aws.String(key), VersionId: aws.String(v.id), LastModified: aws.Time(v.when),
+		})
+	}
+	return out, nil
+}
+
+func (f *fakeS3) HeadObject(_ context.Context, in *awss3.HeadObjectInput, _ ...func(*awss3.Options)) (*awss3.HeadObjectOutput, error) {
+	n := f.inFlight.Add(1)
+	defer f.inFlight.Add(-1)
+	for {
+		m := f.maxInFlight.Load()
+		if n <= m || f.maxInFlight.CompareAndSwap(m, n) {
+			break
+		}
+	}
+	time.Sleep(2 * time.Millisecond)
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.heads++
+
+	id := aws.ToString(in.VersionId)
+	if err, ok := f.headErr[id]; ok {
+		return nil, err
+	}
+	for _, v := range f.versions[aws.ToString(in.Key)] {
+		if v.id == id {
+			if v.deleted {
+				return nil, apiError{code: "MethodNotAllowed"}
+			}
+			return &awss3.HeadObjectOutput{Metadata: v.meta}, nil
+		}
+	}
+	return &awss3.HeadObjectOutput{}, nil
 }
 
 func (f *fakeS3) GetBucketVersioning(context.Context, *awss3.GetBucketVersioningInput, ...func(*awss3.Options)) (*awss3.GetBucketVersioningOutput, error) {
@@ -374,15 +454,19 @@ func TestHistoryFollowsBucketVersioning(t *testing.T) {
 	}
 }
 
-func TestCapabilitiesNeverClaimAttributionOrReview(t *testing.T) {
+func TestCapabilitiesClaimAttributionOnlyWithVersioningAndNeverReview(t *testing.T) {
 	f := newFake()
-	f.versioning = true
-	caps := backend(t, f).Capabilities()
-
-	if caps.Attribution {
-		t.Error("s3 objects carry no author, so attribution must be false")
+	off := backend(t, f).Capabilities()
+	if off.Attribution {
+		t.Error("without versioning there is no history to show authors in, so attribution must be false")
 	}
-	if caps.Review {
+
+	f.versioning = true
+	on := backend(t, f).Capabilities()
+	if !on.Attribution {
+		t.Error("with versioning every version carries its author, so attribution must be true")
+	}
+	if on.Review || off.Review {
 		t.Error("there is no pull request in front of an s3 write, so review must be false")
 	}
 }

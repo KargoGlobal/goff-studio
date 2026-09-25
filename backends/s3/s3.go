@@ -8,6 +8,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -29,11 +30,12 @@ func init() {
 }
 
 type API interface {
-	GetObject(context.Context, *s3.GetObjectInput, ...func(*s3.Options)) (*s3.GetObjectOutput, error)
-	PutObject(context.Context, *s3.PutObjectInput, ...func(*s3.Options)) (*s3.PutObjectOutput, error)
-	ListObjectsV2(context.Context, *s3.ListObjectsV2Input, ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
-	ListObjectVersions(context.Context, *s3.ListObjectVersionsInput, ...func(*s3.Options)) (*s3.ListObjectVersionsOutput, error)
-	GetBucketVersioning(context.Context, *s3.GetBucketVersioningInput, ...func(*s3.Options)) (*s3.GetBucketVersioningOutput, error)
+	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	HeadObject(ctx context.Context, params *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
+	ListObjectsV2(ctx context.Context, params *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
+	ListObjectVersions(ctx context.Context, params *s3.ListObjectVersionsInput, optFns ...func(*s3.Options)) (*s3.ListObjectVersionsOutput, error)
+	GetBucketVersioning(ctx context.Context, params *s3.GetBucketVersioningInput, optFns ...func(*s3.Options)) (*s3.GetBucketVersioningOutput, error)
 }
 
 type Config struct {
@@ -81,8 +83,11 @@ func NewWithAPI(api API, bucket, prefix string) *Backend {
 
 func (b *Backend) Name() string { return "s3" }
 
+// Capabilities reports history and attribution only when bucket versioning is
+// on: every version carries its author in object metadata, but without
+// versioning there is nothing to show it in. There is never a review step.
 func (b *Backend) Capabilities() storage.Capabilities {
-	return storage.Capabilities{History: b.versioning, Attribution: false, Review: false}
+	return storage.Capabilities{History: b.versioning, Attribution: b.versioning, Review: false}
 }
 
 func (b *Backend) key(path string) (string, error) {
@@ -205,7 +210,9 @@ func (b *Backend) list(ctx context.Context, dir string) (keys []string, prefixes
 	return keys, prefixes, nil
 }
 
-func (b *Backend) Write(ctx context.Context, op storage.ChangeOp, _ storage.Identity) (*storage.Result, error) {
+func (b *Backend) Write(ctx context.Context, op storage.ChangeOp, who storage.Identity) (*storage.Result, error) {
+	meta := attributionMetadata(who, changeMessage(op.Message, op.Key))
+
 	attempts := op.MaxAttempts
 	if attempts <= 0 {
 		attempts = 3
@@ -239,7 +246,7 @@ func (b *Backend) Write(ctx context.Context, op storage.ChangeOp, _ storage.Iden
 			return &storage.Result{Version: current.Version}, nil
 		}
 
-		version, err := b.put(ctx, op.Path, next, current.Version)
+		version, err := b.put(ctx, op.Path, next, current.Version, meta)
 		if err == nil {
 			return &storage.Result{Version: version, Retried: retried}, nil
 		}
@@ -254,7 +261,7 @@ func (b *Backend) Write(ctx context.Context, op storage.ChangeOp, _ storage.Iden
 
 var errPreconditionFailed = errors.New("s3 precondition failed")
 
-func (b *Backend) put(ctx context.Context, path string, content []byte, ifMatch string) (string, error) {
+func (b *Backend) put(ctx context.Context, path string, content []byte, ifMatch string, meta map[string]string) (string, error) {
 	key, err := b.key(path)
 	if err != nil {
 		return "", err
@@ -265,6 +272,7 @@ func (b *Backend) put(ctx context.Context, path string, content []byte, ifMatch 
 		Key:         aws.String(key),
 		Body:        bytes.NewReader(content),
 		ContentType: aws.String("application/yaml"),
+		Metadata:    meta,
 	}
 	if ifMatch != "" {
 		input.IfMatch = aws.String(`"` + ifMatch + `"`)
@@ -280,7 +288,7 @@ func (b *Backend) put(ctx context.Context, path string, content []byte, ifMatch 
 	return etag(out.ETag), nil
 }
 
-func (b *Backend) CreateFile(ctx context.Context, path string, content []byte, _ string, _ storage.Identity) error {
+func (b *Backend) CreateFile(ctx context.Context, path string, content []byte, message string, who storage.Identity) error {
 	key, err := b.key(path)
 	if err != nil {
 		return err
@@ -292,6 +300,7 @@ func (b *Backend) CreateFile(ctx context.Context, path string, content []byte, _
 		Body:        bytes.NewReader(content),
 		ContentType: aws.String("application/yaml"),
 		IfNoneMatch: aws.String("*"),
+		Metadata:    attributionMetadata(who, changeMessage(message, "")),
 	})
 	if err != nil {
 		if isPreconditionFailed(err) {
@@ -302,6 +311,19 @@ func (b *Backend) CreateFile(ctx context.Context, path string, content []byte, _
 	return nil
 }
 
+const (
+	// headConcurrency caps parallel HeadObject calls when reading authors.
+	headConcurrency = 4
+	// maxVersionPages bounds ListObjectVersions calls for one history read.
+	maxVersionPages = 10
+)
+
+// History lists the object's versions, newest first, and reads each version's
+// attribution metadata with one HeadObject per version (at most limit of them,
+// headConcurrency at a time). Versions written before attribution existed, or
+// whose metadata cannot be read, fall back to an "object version" entry with an
+// unknown author. Delete markers carry no metadata, so a delete made outside
+// Studio shows with an unknown author; Studio itself never deletes objects.
 func (b *Backend) History(ctx context.Context, path string, limit int) ([]storage.Commit, error) {
 	if !b.versioning {
 		return nil, nil
@@ -309,33 +331,139 @@ func (b *Backend) History(ctx context.Context, path string, limit int) ([]storag
 	if limit <= 0 {
 		limit = 30
 	}
+	if limit > 1000 {
+		limit = 1000
+	}
 
 	key, err := b.key(path)
 	if err != nil {
 		return nil, err
 	}
 
-	out, err := b.api.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
-		Bucket:  aws.String(b.bucket),
-		Prefix:  aws.String(key),
-		MaxKeys: aws.Int32(int32(limit)),
-	})
+	entries, err := b.versions(ctx, key, limit)
 	if err != nil {
-		return nil, fmt.Errorf("listing versions of s3://%s/%s: %w", b.bucket, key, err)
+		return nil, err
+	}
+	if err := b.attribute(ctx, key, entries); err != nil {
+		return nil, err
 	}
 
-	var commits []storage.Commit
-	for _, v := range out.Versions {
-		if aws.ToString(v.Key) != key {
-			continue
-		}
-		commits = append(commits, storage.Commit{
-			SHA:     aws.ToString(v.VersionId),
-			Message: "object version " + aws.ToString(v.VersionId),
-			When:    aws.ToTime(v.LastModified),
-		})
+	commits := make([]storage.Commit, 0, len(entries))
+	for _, e := range entries {
+		commits = append(commits, e.commit)
 	}
 	return commits, nil
+}
+
+type versionEntry struct {
+	commit    storage.Commit
+	versionID string
+	deleted   bool
+}
+
+const unknownAuthor = "unknown"
+
+func (b *Backend) versions(ctx context.Context, key string, limit int) ([]versionEntry, error) {
+	var entries []versionEntry
+	var keyMarker, versionMarker *string
+
+	for page := 0; page < maxVersionPages && len(entries) < limit; page++ {
+		out, err := b.api.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket:          aws.String(b.bucket),
+			Prefix:          aws.String(key),
+			MaxKeys:         aws.Int32(int32(limit)), //nolint:gosec // History clamps limit to 1..1000
+			KeyMarker:       keyMarker,
+			VersionIdMarker: versionMarker,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("listing versions of s3://%s/%s: %w", b.bucket, key, err)
+		}
+
+		for _, v := range out.Versions {
+			if aws.ToString(v.Key) != key {
+				continue
+			}
+			id := aws.ToString(v.VersionId)
+			entries = append(entries, versionEntry{versionID: id, commit: storage.Commit{
+				SHA:     id,
+				Message: "object version " + id,
+				Author:  unknownAuthor,
+				When:    aws.ToTime(v.LastModified),
+			}})
+		}
+		for _, m := range out.DeleteMarkers {
+			if aws.ToString(m.Key) != key {
+				continue
+			}
+			id := aws.ToString(m.VersionId)
+			entries = append(entries, versionEntry{versionID: id, deleted: true, commit: storage.Commit{
+				SHA:     id,
+				Message: "object deleted (a delete marker records no author)",
+				Author:  unknownAuthor,
+				When:    aws.ToTime(m.LastModified),
+			}})
+		}
+
+		// Keys come back in order, and every key sharing this prefix sorts
+		// after it, so once the listing moves past the key it is done.
+		if !aws.ToBool(out.IsTruncated) || aws.ToString(out.NextKeyMarker) != key {
+			break
+		}
+		keyMarker, versionMarker = out.NextKeyMarker, out.NextVersionIdMarker
+	}
+
+	sort.SliceStable(entries, func(i, j int) bool {
+		return entries[i].commit.When.After(entries[j].commit.When)
+	})
+	if len(entries) > limit {
+		entries = entries[:limit]
+	}
+	return entries, nil
+}
+
+// attribute fills author, email and message from each version's metadata.
+func (b *Backend) attribute(ctx context.Context, key string, entries []versionEntry) error {
+	sem := make(chan struct{}, headConcurrency)
+	var wg sync.WaitGroup
+
+	for i := range entries {
+		if entries[i].deleted {
+			continue
+		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(e *versionEntry) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			out, err := b.api.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket:    aws.String(b.bucket),
+				Key:       aws.String(key),
+				VersionId: aws.String(e.versionID),
+			})
+			if err != nil {
+				return
+			}
+			applyMetadata(&e.commit, out.Metadata)
+		}(&entries[i])
+	}
+	wg.Wait()
+	return ctx.Err()
+}
+
+func applyMetadata(c *storage.Commit, meta map[string]string) {
+	name := metaValue(meta, metaUserName)
+	email := metaValue(meta, metaUserEmail)
+	switch {
+	case name != "":
+		c.Author = name
+	case email != "":
+		c.Author = email
+	}
+	c.Email = email
+	if msg := metaValue(meta, metaMessage); msg != "" {
+		c.Message = msg
+	}
 }
 
 func (b *Backend) Check(ctx context.Context) error {
