@@ -1,12 +1,45 @@
-import { Navigate, Route, Routes, useParams } from 'react-router-dom'
+import { lazy, Suspense, type ReactNode } from 'react'
+import { Navigate, Outlet, Route, Routes, useParams } from 'react-router-dom'
 import { Logo } from '@/components/Logo'
 import { useMe } from '@/hooks/useFlags'
 import { ApiError } from '@/lib/api'
 import { AppShell } from '@/components/AppShell'
 import { FlagListPage } from '@/pages/FlagListPage'
-import { FlagDetailPage } from '@/pages/FlagDetailPage'
-import { CreateFlagPage } from '@/pages/CreateFlagPage'
 import { Button, Card, Spinner } from '@/components/ui/primitives'
+
+// The flag list is the landing page; everything else loads on first visit.
+const FlagDetailPage = lazy(() => import('@/pages/FlagDetailPage').then((m) => ({ default: m.FlagDetailPage })))
+const CreateFlagPage = lazy(() => import('@/pages/CreateFlagPage').then((m) => ({ default: m.CreateFlagPage })))
+const ExperimentListPage = lazy(() =>
+  import('@/pages/experiments/ExperimentListPage').then((m) => ({ default: m.ExperimentListPage })),
+)
+const ExperimentDetailPage = lazy(() =>
+  import('@/pages/experiments/ExperimentDetailPage').then((m) => ({ default: m.ExperimentDetailPage })),
+)
+const ExperimentFormPage = lazy(() =>
+  import('@/pages/experiments/ExperimentFormPage').then((m) => ({ default: m.ExperimentFormPage })),
+)
+const MetricCatalogPage = lazy(() =>
+  import('@/pages/experiments/MetricCatalogPage').then((m) => ({ default: m.MetricCatalogPage })),
+)
+const MetricEditPage = lazy(() =>
+  import('@/pages/experiments/MetricCatalogPage').then((m) => ({ default: m.MetricEditPage })),
+)
+
+function Loading({ children }: { children: ReactNode }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center gap-2 text-ink-muted">
+          <Spinner />
+          <span>Loading…</span>
+        </div>
+      }
+    >
+      {children}
+    </Suspense>
+  )
+}
 
 function SignIn() {
   return (
@@ -45,11 +78,26 @@ function Shell() {
 
   return (
     <AppShell user={me} environments={me.environments} currentEnv={env}>
-      <Routes>
-        <Route path="" element={<FlagListPage environments={me.environments} />} />
-        <Route path="flags/new" element={<CreateFlagPage environments={me.environments} />} />
-        <Route path="flags/:key" element={<FlagDetailPage environments={me.environments} />} />
-      </Routes>
+      <Loading>
+        <Routes>
+          <Route path="" element={<FlagListPage environments={me.environments} />} />
+          <Route path="flags/new" element={<CreateFlagPage environments={me.environments} />} />
+          <Route path="flags/:key" element={<FlagDetailPage environments={me.environments} />} />
+        </Routes>
+      </Loading>
+    </AppShell>
+  )
+}
+
+function ExperimentsLayout() {
+  const { data: me } = useMe()
+  if (!me) return null
+
+  return (
+    <AppShell user={me} environments={me.environments}>
+      <Loading>
+        <Outlet />
+      </Loading>
     </AppShell>
   )
 }
@@ -74,6 +122,15 @@ export function App() {
     <Routes>
       <Route path="/" element={<Navigate to={`/env/${me.environments[0].name}`} replace />} />
       <Route path="/env/:env/*" element={<Shell />} />
+      <Route element={<ExperimentsLayout />}>
+        <Route path="/experiments" element={<ExperimentListPage />} />
+        <Route path="/experiments/new" element={<ExperimentFormPage environments={me.environments} />} />
+        <Route path="/experiments/:key" element={<ExperimentDetailPage />} />
+        <Route path="/experiments/:key/edit" element={<ExperimentFormPage environments={me.environments} />} />
+        <Route path="/metrics" element={<MetricCatalogPage />} />
+        <Route path="/metrics/new" element={<MetricEditPage />} />
+        <Route path="/metrics/:key" element={<MetricEditPage />} />
+      </Route>
       <Route path="*" element={<Navigate to={`/env/${me.environments[0].name}`} replace />} />
     </Routes>
   )
