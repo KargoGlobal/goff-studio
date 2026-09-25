@@ -34,6 +34,7 @@ export default defineConfig({
         E2E_IDP_PORT: ports.idp,
         E2E_GITHUB_PORT: ports.github,
         E2E_DUMP_PORT: ports.dump,
+        E2E_ANALYSIS_PORT: ports.analysis,
       },
     },
     {

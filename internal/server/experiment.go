@@ -261,7 +261,7 @@ func splitsShape(f goff.Flag) *splits.Flag {
 	return out
 }
 
-func (s *Service) SaveExperiment(ctx context.Context, sess auth.Session, req ExperimentRequest) (*SaveResult, error) {
+func (s *Service) SaveFlagExperiment(ctx context.Context, sess auth.Session, req ExperimentRequest) (*SaveResult, error) {
 	view, err := s.Get(ctx, sess, req.Environment, req.Key)
 	if err != nil {
 		return nil, err
@@ -287,7 +287,7 @@ func (s *Service) SaveExperiment(ctx context.Context, sess auth.Session, req Exp
 	})
 }
 
-func (s *Service) DiffExperiment(ctx context.Context, sess auth.Session, req ExperimentRequest) (*DiffResult, error) {
+func (s *Service) DiffFlagExperiment(ctx context.Context, sess auth.Session, req ExperimentRequest) (*DiffResult, error) {
 	view, err := s.Get(ctx, sess, req.Environment, req.Key)
 	if err != nil {
 		return nil, err

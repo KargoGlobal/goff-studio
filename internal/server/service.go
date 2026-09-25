@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-feature-flag/studio/internal/auth"
 	"github.com/go-feature-flag/studio/internal/config"
+	"github.com/go-feature-flag/studio/internal/experiments"
 	"github.com/go-feature-flag/studio/internal/goff"
 	"github.com/go-feature-flag/studio/internal/permissions"
 	"github.com/go-feature-flag/studio/internal/storage"
@@ -23,6 +24,9 @@ type Service struct {
 	repo    storage.Backend
 	adapter *goff.Adapter
 	perms   *permissions.Set
+
+	analysis *experiments.Client
+	clock    func() time.Time
 
 	cacheMu sync.Mutex
 	cache   map[string]cachedFile
@@ -88,7 +92,11 @@ func (s *Service) knownSHA(file, sha string) bool {
 }
 
 func NewService(cfg *config.Config, repo storage.Backend, perms *permissions.Set) *Service {
-	return &Service{cfg: cfg, repo: repo, adapter: goff.New(), perms: perms, salt: splits.NewSalt}
+	svc := &Service{cfg: cfg, repo: repo, adapter: goff.New(), perms: perms, salt: splits.NewSalt}
+	if cfg.AnalysisConfigured() {
+		svc.analysis = experiments.NewClient(cfg.Analysis.BaseURL, cfg.Analysis.Token, nil)
+	}
+	return svc
 }
 
 type FlagView struct {
@@ -1135,7 +1143,7 @@ func (s *Service) Environments(ctx context.Context, sess auth.Session) []config.
 	if s.cfg.DiscoverEnvironments {
 		if dirs, err := s.repo.ListDirectories(ctx, ""); err == nil {
 			for _, name := range dirs {
-				if strings.HasPrefix(name, ".") {
+				if strings.HasPrefix(name, ".") || reservedDirs[name] {
 					continue
 				}
 				if _, configured := known[name]; configured {
@@ -1170,6 +1178,9 @@ func (s *Service) CreateEnvironment(ctx context.Context, sess auth.Session, name
 	name = strings.Trim(strings.TrimSpace(name), "/")
 	if name == "" {
 		return fmt.Errorf("%w: an environment needs a name", ErrInvalid)
+	}
+	if reservedDirs[name] {
+		return fmt.Errorf("%w: %q holds experiment data, pick another name", ErrInvalid, name)
 	}
 	if strings.ContainsAny(name, "/\\ \t") || strings.HasPrefix(name, ".") {
 		return fmt.Errorf("%w: %q is not a valid directory name; use letters, numbers and dashes", ErrInvalid, name)

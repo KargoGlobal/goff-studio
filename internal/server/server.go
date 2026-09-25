@@ -63,6 +63,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/environments/{env}/attributes", s.withSession(s.handleAttributes))
 	mux.HandleFunc("POST /api/environments", s.withSession(s.handleCreateEnvironment))
 	mux.HandleFunc("POST /api/environments/{env}/teams", s.withSession(s.handleCreateTeam))
+	s.experimentRoutes(mux)
 
 	if s.assets != nil {
 		mux.Handle("/", s.spa())
@@ -1005,7 +1006,7 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request, sess auth.Se
 		}
 		req := *body.Edit
 		req.Environment, req.Key = env, key
-		result, err := s.svc.DiffExperiment(r.Context(), sess, req)
+		result, err := s.svc.DiffFlagExperiment(r.Context(), sess, req)
 		s.writeDiff(w, result, err)
 		return
 	case "variations":
@@ -1464,7 +1465,7 @@ func (s *Server) handleExperiment(w http.ResponseWriter, r *http.Request, sess a
 	}
 	req.Environment, req.Key = r.PathValue("env"), r.PathValue("key")
 
-	result, err := s.svc.SaveExperiment(r.Context(), sess, req)
+	result, err := s.svc.SaveFlagExperiment(r.Context(), sess, req)
 	if err != nil {
 		writeServiceError(w, err)
 		return

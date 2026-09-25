@@ -222,7 +222,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
       case 'experimentationClear':
         return api.diffGeneric(env, key, { change: 'experimentationClear' })
       case 'experiment':
-        return api.diffExperiment(env, key, next.edit)
+        return api.diffFlagExperiment(env, key, next.edit)
       case 'rename':
         return api.diffGeneric(env, key, { change: 'rename', name: next.newKey })
       case 'deleteFlag':

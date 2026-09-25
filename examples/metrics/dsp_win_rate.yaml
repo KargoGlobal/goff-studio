@@ -1,0 +1,7 @@
+key: dsp_win_rate
+name: DSP win rate
+kind: mean
+numerator: dsp_won_yn
+format: percent
+direction: increase
+description: Share of bid requests where a DSP bid won the auction.

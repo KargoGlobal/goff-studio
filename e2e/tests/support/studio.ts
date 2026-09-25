@@ -19,6 +19,7 @@ export interface RepoDump {
   files: Record<string, string>
   shas: Record<string, string>
   commits: Commit[]
+  analysisCalls: number
   user: { name: string; email: string; subject: string }
 }
 
