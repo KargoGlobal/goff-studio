@@ -16,6 +16,8 @@ provider.
 - An OIDC front door.
 - A permission layer mapping OIDC groups to files, environments, and actions.
 - A writer that produces minimal, reviewable diffs.
+- An editor for salted-shard experiment splits kept in flag metadata, plus
+  `pkg/splits`, the Go evaluator services import to serve them.
 
 ## Quickstart
 
@@ -180,8 +182,8 @@ permissions:
 | --- | --- |
 | `view` | read a flag |
 | `toggle` | turn a flag on or off |
-| `rollout` | change percentage splits |
-| `edit_rules` | change targeting queries |
+| `rollout` | change percentage splits; ramp experiment exposure and set experiment windows |
+| `edit_rules` | change targeting queries; start or re-randomize an experiment |
 | `edit_variations` | change variation values |
 | `create` | add a new flag |
 | `delete` | remove a flag |
@@ -246,9 +248,13 @@ in between.
 | `disable` | `scheduledRollout` |
 | `experimentation` | per-rule `progressiveRollout` |
 | `metadata` | any field a future GO Feature Flag release adds |
+| `metadata.experiment` (only through the experiment endpoints) | `metadata.experiment` on every other edit, byte for byte |
 
 Preserved fields surface as read-only in the UI, and the adapter has tests
-proving they survive an edit.
+proving they survive an edit. Within the flag being edited, any part whose
+value did not change is written back from the original text, so comments,
+alignment and quoting there survive too; if that splice would not read back
+identically, Studio falls back to a plain re-render.
 
 **Minimal-diff guarantee:** a save that touches one flag produces a diff that
 touches only that flag. Comments, key order, and quoting all survive.
@@ -279,6 +285,96 @@ touches only that flag. Comments, key order, and quoting all survive.
   comment even on an untouched re-encode. Studio edits the node tree for
   correctness, then splices only the changed flag's lines back into the original
   text. That is what makes the byte-identical test pass.
+
+## Experiment splits
+
+GO Feature Flag's percentages hash `flag name + key` into one bucket space and
+lay arms out by variation name, so changing the weights of a test with more
+than two arms moves subjects who were already in an arm, and there is no
+pass-through. Studio therefore keeps experiments in a separate block that
+GO Feature Flag stores but ignores, `metadata.experiment`, keyed by rule name.
+Each rule's own `variation` stays what any stock reader serves, and is also
+what a subject who is not exposed would get if pass-through is off.
+
+```yaml
+request-timeout:
+  variations: {control: 200, fast: 150, slow: 250}
+  targeting:
+    - name: exp-region-a
+      query: region in ["region-a"]
+      variation: control
+  defaultRule: {variation: control}
+  metadata:
+    experiment:
+      version: 1
+      hash: md5-shard
+      totalShards: 10000
+      unit: {type: request, key: targetingKey}   # or {type: entity, key: <attribute>}
+      holdout: null                              # or {salt: ..., ranges: [[0, 500]]}
+      allocations:
+        exp-region-a:
+          experimentKey: request-timeout-exp-region-a
+          doLog: true
+          startAt: 2026-10-01T00:00:00Z
+          endAt: null
+          passThrough: true
+          layer: null                            # or {salt: ..., ranges: [[0, 5000]]}
+          splits:
+            - variation: control
+              shards:
+                - {salt: "c1e0a7d25f", ranges: [[0, 100]]}    # exposure: 1%
+                - {salt: "9b3f41e2aa", ranges: [[0, 3334]]}   # arm
+            - variation: fast
+              shards:
+                - {salt: "c1e0a7d25f", ranges: [[0, 100]]}
+                - {salt: "9b3f41e2aa", ranges: [[3334, 6667]]}
+            - variation: slow
+              shards:
+                - {salt: "c1e0a7d25f", ranges: [[0, 100]]}
+                - {salt: "9b3f41e2aa", ranges: [[6667, 10000]]}
+```
+
+- **Bucketing.** `shard = uint32(first 4 bytes of MD5(salt + "-" + subject)) mod
+  totalShards`. Ranges are half-open. A split matches when every one of its
+  shards matches; a shard matches when the value is in any of its ranges. This
+  is the salted-shard scheme some existing experimentation platforms use, so
+  their salts and ranges can be imported and every subject keeps its arm.
+- **Order.** Rules are checked top to bottom. For a rule with an allocation:
+  the query must match, then the window, holdout and layer, then the first
+  matching split wins. With no split, `passThrough: true` continues to the next
+  rule and `false` serves the rule's own variation without logging.
+- **Queries** use GO Feature Flag's own query parser. The one difference is that
+  `in` lists inside an experiment rule compare values as strings, so a numeric
+  attribute `3` matches `["3"]`. The subject key is also available as `id`
+  unless the caller sets one.
+- **Result.** The evaluator returns the variation, experiment key, allocation
+  (the rule name, or `default`), whether to log the exposure, any
+  `extraLogging`, and a reason: `SPLIT`, `PASS_THROUGH`, `HOLDOUT`,
+  `OUTSIDE_WINDOW`, `STOCK`, `DEFAULT` or `DISABLED`.
+
+Exposure and arm sit on separate salts, which is what makes ramps safe. The
+flag page shows an Experiment panel on every rule that has an allocation, and
+each change goes through the usual review dialog:
+
+| Change | Permission | What it does |
+| --- | --- | --- |
+| Ramp exposure | `rollout` | Adds shard values to the exposure salt's ranges. Nobody already exposed moves; exposure cannot go down this way. |
+| Start or stop | `rollout` | Sets or clears `startAt` / `endAt`. |
+| Start an experiment | `edit_rules` | Lays arms out on two fresh salts from `crypto/rand`, weights apportioned exactly across the shards. |
+| Re-randomize | `edit_rules` | New salts, optionally new arms or a lower exposure. Everyone is reassigned, so it needs explicit confirmation. |
+
+Preview uses the same evaluator for any flag with an experiment block.
+Services embed it from `pkg/splits`:
+
+```go
+exp, err := splits.FromMetadata(internalFlag.GetMetadata())
+ev, err := splits.New(splits.FromGOFF("request-timeout", internalFlag), exp)
+a := ev.Evaluate(subjectKey, attributes) // a.Variation, a.DoLog, a.ExperimentKey, ...
+```
+
+A nine-arm rule evaluates in roughly half a microsecond (Apple M5), and
+golden fixtures produced by an existing implementation of the same scheme
+agree for all 120,000 subjects in `pkg/splits/testdata/compat`.
 
 ## Development
 
@@ -330,11 +426,12 @@ All `/api` routes require a session cookie and return `401` without one.
 | `POST` | `/api/environments/{env}/flags/{key}/rollout` | set percentages |
 | `POST` | `/api/environments/{env}/flags/{key}/progressive` | set or clear a progressive rollout |
 | `POST` | `/api/environments/{env}/flags/{key}/experimentation` | set or clear the experimentation window |
+| `POST` | `/api/environments/{env}/flags/{key}/experiment` | ramp, start, re-randomize or schedule an experiment allocation (`op`: `exposure`, `create`, `rerandomize`, `window`) |
 | `POST` | `/api/environments/{env}/flags/{key}/rule` | set a rule's targeting query |
 | `POST` | `/api/environments/{env}/flags/{key}/rules` | add a rule |
 | `DELETE` | `/api/environments/{env}/flags/{key}/rules/{rule}` | delete a rule |
 | `PUT` | `/api/environments/{env}/flags/{key}/rules/order` | reorder rules |
-| `POST` | `/api/environments/{env}/flags/{key}/preview` | evaluate against the live engine |
+| `POST` | `/api/environments/{env}/flags/{key}/preview` | evaluate against the live engine, or the split evaluator when the flag has an experiment block |
 | `POST` | `/api/environments/{env}/flags/{key}/diff` | plain-language description + unified diff, no write |
 | `GET` | `/api/environments/{env}/flags/{key}/history` | commits touching this flag |
 | `GET` | `/api/environments/{env}/attributes` | attribute names seen in existing rules |
@@ -351,12 +448,13 @@ path across all three storage backends. The React UI covers the flag list with
 search, team filter and inline toggles; flag detail with variations, percentage
 sliders and a visual rule builder including negated and nested condition groups;
 creating, renaming and deleting flags and teams; editing progressive rollouts and
-the schedule (`experimentation`); review-before-save with a real file diff; live
-preview; and per-flag history.
+the schedule (`experimentation`); experiment splits (ramp, start, stop,
+re-randomize); review-before-save with a real file diff; live preview; and
+per-flag history.
 Light and dark mode, keyboard accessible, protected environments called out and
 requiring typed confirmation.
 
-437 tests pass: 292 Go tests plus 14 in the S3 module, 78 frontend tests, and 53
+503 tests pass: 343 Go tests plus 14 in the S3 module, 88 frontend tests, and 58
 Playwright tests driving the real binary against fake OIDC and GitHub servers.
 `make lint` runs `gofmt`, `go vet` and `golangci-lint` with the same linter set
 go-feature-flag uses on itself. A `Dockerfile`, a Helm chart under
