@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   api,
+  type ExperimentEdit,
   type Flag,
   type FlagList,
   type NewVariation,
@@ -208,6 +209,15 @@ export function useSetExperimentation(env: string) {
       end?: string
       clear?: boolean
     }) => api.setExperimentation(env, flag.key, { start, end, clear, fileSha: flag.fileSha }),
+    onSettled: () => invalidateFlag(qc, env),
+  })
+}
+
+export function useSetExperiment(env: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ flag, edit }: { flag: Flag; edit: ExperimentEdit }) =>
+      api.setExperiment(env, flag.key, edit, flag.fileSha),
     onSettled: () => invalidateFlag(qc, env),
   })
 }

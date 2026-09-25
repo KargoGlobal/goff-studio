@@ -78,6 +78,42 @@ const rampFixture = `ramped:
     variation: "off"
   metadata:
     team: platform
+
+request-timeout:
+  variations:
+    control: 200
+    fast: 150
+  targeting:
+    - name: exp-region-a
+      query: region in ["region-a"]
+      variation: control
+  defaultRule:
+    variation: control
+  metadata:
+    team: platform
+    experiment:
+      version: 1
+      hash: md5-shard
+      totalShards: 10000
+      unit: {type: request, key: targetingKey}
+      holdout: null
+      allocations:
+        exp-region-a:
+          experimentKey: request-timeout-exp-region-a
+          doLog: true
+          startAt: null
+          endAt: null
+          passThrough: true
+          layer: null
+          splits:
+            - variation: control
+              shards:
+                - {salt: "c1e0a7d25f", ranges: [[0, 100]]}
+                - {salt: "9b3f41e2aa", ranges: [[0, 5000]]}
+            - variation: fast
+              shards:
+                - {salt: "c1e0a7d25f", ranges: [[0, 100]]}
+                - {salt: "9b3f41e2aa", ranges: [[5000, 10000]]}
 `
 
 type commit struct {

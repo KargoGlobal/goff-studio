@@ -72,7 +72,69 @@ export interface Rule {
   disabled?: boolean
   outcome: Outcome
   progressive?: ProgressiveRollout
+  hasAllocation?: boolean
 }
+
+/** Half-open [start, end) range of shard values. */
+export type ShardRange = [number, number]
+
+export interface Shard {
+  salt: string
+  ranges: ShardRange[]
+}
+
+export interface Split {
+  variation: string
+  extraLogging?: Record<string, string>
+  shards: Shard[]
+}
+
+export interface Allocation {
+  experimentKey?: string
+  doLog?: boolean
+  startAt: string | null
+  endAt: string | null
+  passThrough?: boolean
+  layer: Shard | null
+  splits: Split[]
+}
+
+export interface ExperimentUnit {
+  type: 'request' | 'entity'
+  key: string
+}
+
+export interface Experiment {
+  version: number
+  hash: string
+  totalShards: number
+  unit: ExperimentUnit
+  holdout: Shard | null
+  allocations: Record<string, Allocation>
+}
+
+export interface Arm {
+  variation: string
+  weight: number
+}
+
+export type ExperimentEdit =
+  | { op: 'exposure'; ruleName: string; exposurePercent: number }
+  | {
+      op: 'create'
+      ruleName: string
+      exposurePercent: number
+      arms: Arm[]
+      experimentKey?: string
+    }
+  | {
+      op: 'rerandomize'
+      ruleName: string
+      confirm: true
+      exposurePercent?: number
+      arms?: Arm[]
+    }
+  | { op: 'window'; ruleName: string; startAt?: string; endAt?: string }
 
 export interface Flag {
   key: string
@@ -87,6 +149,8 @@ export interface Flag {
   metadata?: Record<string, unknown>
   team: string
   preserved?: string[]
+  experiment: Experiment | null
+  experimentError?: string
   actions: Action[]
   summary: string
   fileSha: string
@@ -120,6 +184,10 @@ export interface EvalResult {
   value: unknown
   reason: string
   error?: string
+  experimentKey?: string
+  allocation?: string
+  doLog?: boolean
+  extraLogging?: Record<string, string>
 }
 
 export interface Commit {
@@ -350,6 +418,18 @@ export const api = {
     request<SaveResult>(`/api/environments/${env}/flags/${encodeURIComponent(key)}/rule`, {
       method: 'POST',
       body: JSON.stringify({ ...payload, fileSha }),
+    }),
+
+  setExperiment: (env: string, key: string, edit: ExperimentEdit, fileSha: string) =>
+    request<SaveResult>(`/api/environments/${env}/flags/${encodeURIComponent(key)}/experiment`, {
+      method: 'POST',
+      body: JSON.stringify({ ...edit, fileSha }),
+    }),
+
+  diffExperiment: (env: string, key: string, edit: ExperimentEdit) =>
+    request<DiffResult>(`/api/environments/${env}/flags/${encodeURIComponent(key)}/diff`, {
+      method: 'POST',
+      body: JSON.stringify({ change: 'experiment', edit }),
     }),
 
   diffGeneric: (env: string, key: string, body: Record<string, unknown>) =>

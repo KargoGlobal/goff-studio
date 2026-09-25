@@ -27,10 +27,11 @@ test('the flag list shows every flag in the repo', async ({ page }) => {
   await page.goto(listPath())
 
   await expect(page.getByRole('heading', { name: 'Feature flags' })).toBeVisible()
-  await expect(page.getByText('3 flags in Production')).toBeVisible()
+  await expect(page.getByText('4 flags in Production')).toBeVisible()
 
   await expect(page.getByRole('link', { name: 'new-checkout', exact: true })).toBeVisible()
   await expect(page.getByRole('link', { name: 'banner-test', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'request-timeout', exact: true })).toBeVisible()
 
   await expect(page.getByRole('switch', { name: 'Turn new-checkout off' })).toBeVisible()
   await expect(page.getByRole('switch', { name: 'Turn banner-test off' })).toBeVisible()
