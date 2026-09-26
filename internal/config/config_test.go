@@ -864,3 +864,33 @@ func TestAnalysisTokenWithoutURLWarns(t *testing.T) {
 		t.Errorf("expected a warning about the unused token, got %v", cfg.Warnings())
 	}
 }
+
+func TestAnalysisProviderValidation(t *testing.T) {
+	cases := []struct {
+		name, provider, url, wantErr string
+	}{
+		{"sample alone", "sample", "", ""},
+		{"builtin alone", "builtin", "", ""},
+		{"http with a URL", "http", "https://analysis.example.com", ""},
+		{"http without a URL", "http", "", "analysis.baseURL"},
+		{"sample with a URL", "sample", "https://analysis.example.com", "analysis.provider"},
+		{"unknown provider", "magic", "", "builtin, sample, http"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("GOFF_STUDIO_ANALYSIS_PROVIDER", tc.provider)
+			t.Setenv("GOFF_STUDIO_ANALYSIS_BASE_URL", tc.url)
+			if tc.wantErr != "" {
+				assertMentions(t, loadErr(t, base(t)), tc.wantErr)
+				return
+			}
+			cfg, err := Load(write(t, base(t)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Analysis.Provider != tc.provider {
+				t.Errorf("provider = %q", cfg.Analysis.Provider)
+			}
+		})
+	}
+}

@@ -15,6 +15,7 @@ import (
 	"github.com/go-feature-flag/studio/internal/config"
 	"github.com/go-feature-flag/studio/internal/permissions"
 	"github.com/go-feature-flag/studio/internal/storage"
+	"github.com/go-feature-flag/studio/pkg/analysis"
 )
 
 var experimentNow = time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
@@ -58,6 +59,8 @@ func experimentServer(t *testing.T, repo *repoState, rules []permissions.Rule) (
 	t.Helper()
 	srv, sealer := testServer(t, repo, rules)
 	srv.svc.clock = func() time.Time { return experimentNow }
+	// These tests read results, so they opt into demo data; the default provider has none.
+	srv.svc.analysis = analysis.NewCache(&analysis.Sample{Now: srv.svc.now})
 	return srv, sealer
 }
 
@@ -621,5 +624,42 @@ func TestUnreachableAnalysisServiceIs502(t *testing.T) {
 	rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/checkout-exp-us-east-1/results", "")
 	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "unreachable") {
 		t.Errorf("got %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestDefaultProviderHasNoResultsButEstimatesPower(t *testing.T) {
+	srv, sealer := testServer(t, experimentRepo(t), experimentRules())
+	srv.svc.clock = func() time.Time { return experimentNow }
+
+	rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/checkout-exp-us-east-1/results", "")
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "no results provider configured") {
+		t.Errorf("results without a provider must say so, not invent numbers: %d %s", rec.Code, rec.Body)
+	}
+
+	rec = request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments", "")
+	var list ExperimentList
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	if list.Provider != "builtin" || list.Sample || len(list.Experiments) == 0 || list.Experiments[0].Results != nil {
+		t.Errorf("list = provider %q sample %v, first results %+v", list.Provider, list.Sample, list.Experiments[0].Results)
+	}
+
+	body := `{"baseline_mean":0.4,"variance":0.24,"n_per_day":100000,"arms":2,"alpha":0.05,"power":0.8,"days":14}`
+	rec = request(t, srv, sealer, admin(), http.MethodPost, "/api/experiments/power", body)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"source":"local"`) {
+		t.Errorf("builtin power: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestSampleReadoutsNameTheirProvider(t *testing.T) {
+	srv, sealer := experimentServer(t, experimentRepo(t), experimentRules())
+	rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/checkout-exp-us-east-1/results", "")
+	var res analysis.Results
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.Method.Provider != "sample" || !res.Sample {
+		t.Errorf("method.provider = %q, sample = %v", res.Method.Provider, res.Sample)
 	}
 }

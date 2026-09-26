@@ -1,4 +1,4 @@
-package experiments
+package analysis
 
 import (
 	"context"
@@ -29,17 +29,17 @@ func TestResultsAreProxiedAndCached(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL+"/", "secret", srv.Client())
+	c := NewCache(NewHTTP(srv.URL+"/", "secret", srv.Client()))
 	now := time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC)
 	c.now = func() time.Time { return now }
 
 	for range 3 {
-		body, err := c.Results(context.Background(), "exp-1", "2026-10-10")
+		res, err := c.Results(context.Background(), ResultsRequest{Key: "exp-1", AsOf: "2026-10-10"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if string(body) != `{"experiment_key":"exp-1","status":"ok"}` {
-			t.Errorf("body = %s", body)
+		if res.ExperimentKey != "exp-1" || res.Status != "ok" || res.Method.Provider != "http" {
+			t.Errorf("results = %+v", res)
 		}
 	}
 	if calls.Load() != 1 {
@@ -47,7 +47,7 @@ func TestResultsAreProxiedAndCached(t *testing.T) {
 	}
 
 	now = now.Add(ResultsTTL + time.Second)
-	if _, err := c.Results(context.Background(), "exp-1", "2026-10-10"); err != nil {
+	if _, err := c.Results(context.Background(), ResultsRequest{Key: "exp-1", AsOf: "2026-10-10"}); err != nil {
 		t.Fatal(err)
 	}
 	if calls.Load() != 2 {
@@ -63,14 +63,14 @@ func TestCacheIsKeyedByAsOf(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "", srv.Client())
-	_, _ = c.Results(context.Background(), "exp-1", "")
-	_, _ = c.Results(context.Background(), "exp-1", "2026-10-01")
-	_, _ = c.Results(context.Background(), "exp-2", "")
+	c := NewCache(NewHTTP(srv.URL, "", srv.Client()))
+	_, _ = c.Results(context.Background(), ResultsRequest{Key: "exp-1", AsOf: ""})
+	_, _ = c.Results(context.Background(), ResultsRequest{Key: "exp-1", AsOf: "2026-10-01"})
+	_, _ = c.Results(context.Background(), ResultsRequest{Key: "exp-2", AsOf: ""})
 	if calls.Load() != 3 {
 		t.Errorf("calls = %d, want 3", calls.Load())
 	}
-	if _, ok := c.Cached("exp-1", ""); !ok {
+	if _, ok := c.cached("exp-1" + "|" + ""); !ok {
 		t.Error("exp-1 should be cached")
 	}
 }
@@ -91,12 +91,12 @@ func TestUpstreamErrors(t *testing.T) {
 			w.WriteHeader(tc.status)
 			_, _ = w.Write([]byte(`{"error":"boom"}`))
 		}))
-		c := NewClient(srv.URL, "", srv.Client())
-		_, err := c.Results(context.Background(), "exp-1", "")
+		c := NewCache(NewHTTP(srv.URL, "", srv.Client()))
+		_, err := c.Results(context.Background(), ResultsRequest{Key: "exp-1", AsOf: ""})
 		if !tc.check(err) {
 			t.Errorf("status %d gave %v", tc.status, err)
 		}
-		if _, ok := c.Cached("exp-1", ""); ok {
+		if _, ok := c.cached("exp-1" + "|" + ""); ok {
 			t.Errorf("status %d must not be cached", tc.status)
 		}
 		srv.Close()
@@ -114,10 +114,10 @@ func TestSlowServiceTimesOut(t *testing.T) {
 	defer srv.Close()
 	defer close(release)
 
-	c := NewClient(srv.URL, "", srv.Client())
+	c := NewHTTP(srv.URL, "", srv.Client())
 	c.timeout = 50 * time.Millisecond
 	start := time.Now()
-	_, err := c.Results(context.Background(), "exp-1", "")
+	_, err := c.Results(context.Background(), ResultsRequest{Key: "exp-1", AsOf: ""})
 	if !errors.Is(err, ErrTimeout) {
 		t.Errorf("err = %v, want ErrTimeout", err)
 	}
@@ -127,14 +127,16 @@ func TestSlowServiceTimesOut(t *testing.T) {
 }
 
 func TestNonJSONIsRejected(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`<html>proxy error</html>`))
-	}))
-	defer srv.Close()
-	c := NewClient(srv.URL, "", srv.Client())
-	var up *UpstreamError
-	if _, err := c.Results(context.Background(), "exp-1", ""); !errors.As(err, &up) {
-		t.Errorf("err = %v", err)
+	for _, body := range []string{`<html>proxy error</html>`, `{"status": 42}`} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(body))
+		}))
+		c := NewHTTP(srv.URL, "", srv.Client())
+		var up *UpstreamError
+		if _, err := c.Results(context.Background(), ResultsRequest{Key: "exp-1"}); !errors.As(err, &up) {
+			t.Errorf("%s: err = %v", body, err)
+		}
+		srv.Close()
 	}
 }
 
@@ -151,8 +153,8 @@ func TestPowerIsTranslated(t *testing.T) {
 			`"mde_by_week":[{"days":7,"mde_pct":0.25},{"days":14,"mde_pct":0.175}],"days_to_target":2}`))
 	}))
 	defer srv.Close()
-	c := NewClient(srv.URL, "", srv.Client())
-	body, err := c.Power(context.Background(), PowerRequest{
+	c := NewHTTP(srv.URL, "", srv.Client())
+	res, err := c.Power(context.Background(), PowerRequest{
 		BaselineMean: 0.4, Variance: 0.24, NPerDay: 2e6, Arms: 3, Alpha: 0.05, Power: 0.8, Days: 14, TargetMDE: 0.005,
 	})
 	if err != nil {
@@ -160,10 +162,6 @@ func TestPowerIsTranslated(t *testing.T) {
 	}
 	if got["target_mde_pct"] != 0.5 || got["arms"] != float64(3) {
 		t.Errorf("request sent = %v, want target_mde_pct 0.5 and arms 3", got)
-	}
-	var res PowerResult
-	if err := json.Unmarshal(body, &res); err != nil {
-		t.Fatal(err)
 	}
 	if math.Abs(res.MDE-0.00175) > 1e-12 || res.Days != 14 || res.NPerArm != 9333333 || res.Source != "analysis" {
 		t.Errorf("result = %+v", res)
@@ -181,8 +179,8 @@ func TestUnreachableServiceIsNotATimeout(t *testing.T) {
 	addr := srv.URL
 	srv.Close()
 
-	c := NewClient(addr, "", nil)
-	_, err := c.Results(context.Background(), "exp-1", "")
+	c := NewHTTP(addr, "", nil)
+	_, err := c.Results(context.Background(), ResultsRequest{Key: "exp-1", AsOf: ""})
 	if !errors.Is(err, ErrUnreachable) || errors.Is(err, ErrTimeout) {
 		t.Errorf("err = %v, want ErrUnreachable", err)
 	}
@@ -195,9 +193,9 @@ func TestOnlyFinishedResultsAreCached(t *testing.T) {
 			calls.Add(1)
 			_, _ = w.Write([]byte(`{"status":"` + status + `"}`))
 		}))
-		c := NewClient(srv.URL, "", srv.Client())
+		c := NewCache(NewHTTP(srv.URL, "", srv.Client()))
 		for range 2 {
-			if _, err := c.Results(context.Background(), "exp-1", ""); err != nil {
+			if _, err := c.Results(context.Background(), ResultsRequest{Key: "exp-1", AsOf: ""}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -221,13 +219,13 @@ func TestConcurrentRequestsShareOneFetch(t *testing.T) {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}))
 	defer srv.Close()
-	c := NewClient(srv.URL, "", srv.Client())
+	c := NewCache(NewHTTP(srv.URL, "", srv.Client()))
 
 	const n = 20
 	errs := make(chan error, n)
 	for range n {
 		go func() {
-			_, err := c.Results(context.Background(), "exp-1", "2026-10-10")
+			_, err := c.Results(context.Background(), ResultsRequest{Key: "exp-1", AsOf: "2026-10-10"})
 			errs <- err
 		}()
 	}
@@ -251,7 +249,7 @@ func TestPowerNotFoundIsNotAboutResults(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer srv.Close()
-	c := NewClient(srv.URL, "", srv.Client())
+	c := NewHTTP(srv.URL, "", srv.Client())
 	_, err := c.Power(context.Background(), PowerRequest{BaselineMean: 0.4, Variance: 0.24, NPerDay: 1000, Arms: 2, Alpha: 0.05, Power: 0.8})
 	if !errors.Is(err, ErrNoPower) || errors.Is(err, ErrNoResults) {
 		t.Errorf("err = %v, want ErrNoPower", err)

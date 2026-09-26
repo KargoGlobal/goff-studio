@@ -1,4 +1,4 @@
-package experiments
+package analysis
 
 import (
 	"fmt"

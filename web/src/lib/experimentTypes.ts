@@ -74,6 +74,7 @@ export interface ExperimentView extends Experiment {
 export interface ExperimentList {
   experiments: ExperimentView[]
   broken: Broken[]
+  provider: string
   sample: boolean
 }
 
@@ -164,6 +165,8 @@ export interface Results {
   message: string | null
   unit: string
   method: {
+    /** The analysis provider that produced this readout, set by Studio. */
+    provider?: string
     test: string
     alpha: number
     cuped: boolean

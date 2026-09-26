@@ -130,7 +130,7 @@ const results: Results = {
   status: 'ok',
   message: null,
   unit: 'request',
-  method: { test: 'sequential', alpha: 0.05, cuped: false, correction: 'none' },
+  method: { provider: 'sample', test: 'sequential', alpha: 0.05, cuped: false, correction: 'none' },
   variants: [],
   srm: { chi2: 0.4, p_value: 0.52, flag: false, max_abs_deviation: 0.001 },
   metrics,
@@ -167,6 +167,12 @@ describe('readoutMarkdown', () => {
     expect(md).toContain('# Experiment readout: Checkout US-East')
     expect(md).toContain('**Sample data.**')
     expect(md).toContain('**Hypothesis:** One-page checkout | raises conversion')
+  })
+
+  it('names the provider that computed the readout', () => {
+    expect(readoutMarkdown(experiment, results)).toContain('· **Computed by:** sample provider')
+    const withoutProvider = { ...results, method: { ...results.method, provider: undefined } }
+    expect(readoutMarkdown(experiment, withoutProvider)).not.toContain('Computed by')
   })
 
   it('includes the decision and the recorded decision', () => {

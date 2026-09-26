@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"log"
 	"path"
 	"reflect"
 	"sort"
@@ -12,10 +13,10 @@ import (
 
 	"github.com/go-feature-flag/studio/internal/auth"
 	"github.com/go-feature-flag/studio/internal/config"
-	"github.com/go-feature-flag/studio/internal/experiments"
 	"github.com/go-feature-flag/studio/internal/goff"
 	"github.com/go-feature-flag/studio/internal/permissions"
 	"github.com/go-feature-flag/studio/internal/storage"
+	"github.com/go-feature-flag/studio/pkg/analysis"
 	"github.com/go-feature-flag/studio/pkg/splits"
 )
 
@@ -25,7 +26,7 @@ type Service struct {
 	adapter *goff.Adapter
 	perms   *permissions.Set
 
-	analysis *experiments.Client
+	analysis *analysis.Cache
 	clock    func() time.Time
 
 	cacheMu sync.Mutex
@@ -93,9 +94,15 @@ func (s *Service) knownSHA(file, sha string) bool {
 
 func NewService(cfg *config.Config, repo storage.Backend, perms *permissions.Set) *Service {
 	svc := &Service{cfg: cfg, repo: repo, adapter: goff.New(), perms: perms, salt: splits.NewSalt}
-	if cfg.AnalysisConfigured() {
-		svc.analysis = experiments.NewClient(cfg.Analysis.BaseURL, cfg.Analysis.Token, nil)
+	provider, err := analysis.New(analysis.Config{
+		Provider: cfg.Analysis.Provider, BaseURL: cfg.Analysis.BaseURL, Token: cfg.Analysis.Token,
+	}, func() time.Time { return svc.now() })
+	if err != nil {
+		// Config validation rejects a bad provider first; this is a last resort.
+		log.Printf("analysis: %v; falling back to the builtin provider", err)
+		provider = analysis.Builtin{}
 	}
+	svc.analysis = analysis.NewCache(provider)
 	return svc
 }
 

@@ -1,7 +1,8 @@
-package experiments
+package analysis
 
-// Results mirrors the analysis service's results document. Sample is set only
-// when Studio generated the document itself because no service is configured.
+// Results is the v1 results document (schema/v1/results.schema.json). Sample
+// is set only by the sample provider. Readouts returned through a Cache are
+// shared between callers and must be treated as read-only.
 type Results struct {
 	ExperimentKey string          `json:"experiment_key"`
 	AsOf          string          `json:"as_of"`
@@ -20,6 +21,9 @@ type Results struct {
 }
 
 type Method struct {
+	// Provider names the provider that produced the readout. Studio sets it;
+	// a service need not send it.
+	Provider   string  `json:"provider,omitempty"`
 	Test       string  `json:"test"`
 	Alpha      float64 `json:"alpha"`
 	CUPED      bool    `json:"cuped"`

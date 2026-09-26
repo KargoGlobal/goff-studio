@@ -1,8 +1,10 @@
-package experiments
+package analysis
 
 import (
+	"errors"
 	"fmt"
 	"math"
+	"strings"
 )
 
 type PowerRequest struct {
@@ -32,29 +34,33 @@ type PowerResult struct {
 }
 
 func (r PowerRequest) Validate() error {
-	var p problems
+	var p []string
+	addf := func(format string, args ...any) { p = append(p, fmt.Sprintf(format, args...)) }
 	if r.BaselineMean == 0 {
-		p.addf("the baseline mean cannot be zero, lift is relative to it")
+		addf("the baseline mean cannot be zero, lift is relative to it")
 	}
 	if r.Variance <= 0 {
-		p.addf("the variance must be positive")
+		addf("the variance must be positive")
 	}
 	if r.NPerDay <= 0 {
-		p.addf("daily units must be positive")
+		addf("daily units must be positive")
 	}
 	if r.Arms < 2 {
-		p.addf("an experiment has at least two arms")
+		addf("an experiment has at least two arms")
 	}
 	if r.Alpha <= 0 || r.Alpha >= 0.5 {
-		p.addf("alpha must be between 0 and 0.5")
+		addf("alpha must be between 0 and 0.5")
 	}
 	if r.Power <= 0 || r.Power >= 1 {
-		p.addf("power must be between 0 and 1")
+		addf("power must be between 0 and 1")
 	}
 	if r.CUPEDRho2 < 0 || r.CUPEDRho2 >= 1 {
-		p.addf("the CUPED variance reduction must be at least 0 and below 1")
+		addf("the CUPED variance reduction must be at least 0 and below 1")
 	}
-	return p.err()
+	if len(p) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(p, "; "))
 }
 
 // Estimate is a two-sample z-test power calculation on relative lift, used

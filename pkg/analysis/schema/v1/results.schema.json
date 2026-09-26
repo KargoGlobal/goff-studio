@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/go-feature-flag/studio/pkg/analysis/schema/v1/results.schema.json",
+  "title": "Experiment results, v1",
+  "description": "Response body of GET /v1/experiments/{key}/results?segments=true[&as_of=YYYY-MM-DD]. Relative quantities (lift, CI bounds, max_abs_deviation, variance_reduction) are fractions: 0.02 is +2%. A service answers 404 when it has no results for the key yet. Unknown fields are allowed and ignored.",
+  "type": "object",
+  "required": ["experiment_key", "as_of", "status", "method", "variants", "srm", "metrics"],
+  "properties": {
+    "experiment_key": { "type": "string", "minLength": 1 },
+    "as_of": { "type": "string", "description": "RFC 3339 timestamp or calendar day the readout covers data up to." },
+    "status": { "enum": ["ok", "insufficient_data", "error"] },
+    "message": { "type": ["string", "null"], "description": "Why the status is not ok, for people." },
+    "unit": { "type": "string", "description": "Randomization unit type, such as request or entity." },
+    "method": { "$ref": "#/$defs/method" },
+    "variants": { "type": "array", "items": { "$ref": "#/$defs/variant" } },
+    "srm": { "$ref": "#/$defs/srm" },
+    "metrics": { "type": "array", "items": { "$ref": "#/$defs/metric" } },
+    "segments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["dimension", "value", "metrics"],
+        "properties": {
+          "dimension": { "type": "string" },
+          "value": { "type": "string" },
+          "metrics": { "type": "array", "items": { "$ref": "#/$defs/metric" } }
+        }
+      }
+    },
+    "timeseries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["date", "metric", "variant", "lift", "ci_low", "ci_high"],
+        "properties": {
+          "date": { "type": "string", "format": "date" },
+          "metric": { "type": "string" },
+          "variant": { "type": "string" },
+          "lift": { "type": "number" },
+          "ci_low": { "type": "number" },
+          "ci_high": { "type": "number" }
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["check", "status", "detail"],
+        "properties": {
+          "check": { "type": "string" },
+          "status": { "enum": ["pass", "warn", "fail"] },
+          "detail": { "type": "string" }
+        }
+      }
+    },
+    "decision": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["recommendation", "reason"],
+          "properties": {
+            "recommendation": { "enum": ["roll_out", "discuss", "do_not_roll_out", "keep_running"] },
+            "variant": { "type": "string" },
+            "reason": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "sample": { "type": "boolean", "description": "Set only by Studio's sample provider." }
+  },
+  "$defs": {
+    "probability": { "type": "number", "minimum": 0, "maximum": 1 },
+    "estimate": { "type": ["number", "null"], "description": "Null when relative lift is undefined (control mean <= 0)." },
+    "method": {
+      "type": "object",
+      "required": ["test", "alpha", "cuped", "correction"],
+      "properties": {
+        "provider": { "type": "string", "description": "Set by Studio to the provider that produced the readout; a service need not send it." },
+        "test": { "enum": ["sequential", "fixed"] },
+        "alpha": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 0.5 },
+        "cuped": { "type": "boolean" },
+        "correction": { "enum": ["none", "holm", "bh"] },
+        "sequential_tuning": { "type": ["object", "null"], "additionalProperties": { "type": "number" } }
+      }
+    },
+    "variant": {
+      "type": "object",
+      "required": ["key", "is_control", "units", "expected_share"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1 },
+        "is_control": { "type": "boolean" },
+        "units": { "type": "integer", "minimum": 0 },
+        "expected_share": { "$ref": "#/$defs/probability" }
+      }
+    },
+    "srm": {
+      "type": "object",
+      "required": ["chi2", "p_value", "flag"],
+      "properties": {
+        "chi2": { "type": "number", "minimum": 0 },
+        "p_value": { "$ref": "#/$defs/probability" },
+        "flag": { "type": "boolean" },
+        "max_abs_deviation": { "type": "number", "minimum": 0 }
+      }
+    },
+    "metric": {
+      "type": "object",
+      "required": ["key", "name", "kind", "role", "direction", "format", "results"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "kind": { "enum": ["mean", "ratio"] },
+        "role": { "enum": ["primary", "secondary", "guardrail"] },
+        "direction": { "enum": ["increase", "decrease"] },
+        "format": { "enum": ["percent", "currency", "number"] },
+        "results": { "type": "array", "items": { "$ref": "#/$defs/arm" } }
+      }
+    },
+    "arm": {
+      "type": "object",
+      "description": "One treatment against control. With CUPED, the top-level estimates are adjusted and raw holds the unadjusted readout; raw and cuped are null otherwise.",
+      "required": ["variant", "value", "control_value", "lift", "ci_low", "ci_high", "p_value", "significant"],
+      "properties": {
+        "variant": { "type": "string", "minLength": 1 },
+        "value": { "type": "number" },
+        "control_value": { "type": "number" },
+        "lift": { "$ref": "#/$defs/estimate" },
+        "ci_low": { "$ref": "#/$defs/estimate" },
+        "ci_high": { "$ref": "#/$defs/estimate" },
+        "p_value": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/probability" }] },
+        "adjusted_p": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/probability" }] },
+        "significant": { "type": "boolean" },
+        "raw": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["value", "control_value", "lift", "ci_low", "ci_high", "p_value"],
+              "properties": {
+                "value": { "type": "number" },
+                "control_value": { "type": "number" },
+                "lift": { "$ref": "#/$defs/estimate" },
+                "ci_low": { "$ref": "#/$defs/estimate" },
+                "ci_high": { "$ref": "#/$defs/estimate" },
+                "p_value": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/probability" }] }
+              }
+            }
+          ]
+        },
+        "cuped": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["value", "lift", "ci_low", "ci_high", "variance_reduction"],
+              "properties": {
+                "value": { "type": "number" },
+                "lift": { "$ref": "#/$defs/estimate" },
+                "ci_low": { "$ref": "#/$defs/estimate" },
+                "ci_high": { "$ref": "#/$defs/estimate" },
+                "variance_reduction": { "type": "number", "minimum": 0, "maximum": 1 }
+              }
+            }
+          ]
+        },
+        "guardrail": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "description": "May carry only pass and reason when there is no usable data.",
+              "required": ["pass"],
+              "properties": {
+                "max_drop_pct": { "type": "number", "minimum": 0 },
+                "pass": { "type": "boolean" },
+                "significant_harm": { "type": "boolean" },
+                "reason": { "type": "string" }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

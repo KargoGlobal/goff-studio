@@ -203,7 +203,7 @@ files written by hand before Studio.
 ## Experiments
 
 Studio also keeps an experiment registry and a metric catalog next to your flags,
-and shows results computed by an external analysis service. Everything lives in
+and shows results from a pluggable analysis provider (see [Analysis providers](#analysis-providers)). Everything lives in
 the same repository and goes through the same review-and-commit path as flags.
 
 ```
@@ -260,14 +260,45 @@ shared: anyone who can see an environment can read it, and writes are checked as
 only rules without an `environments` list (or with `"*"`) grant them, for
 example `{group: analysts, allow: ["metrics/*"], actions: [create, edit_rules]}`.
 
-### Analysis service
+### Analysis providers
+
+Results and power estimates come from one analysis provider, chosen in config.
+Studio stamps the provider's name on every readout as `method.provider`, and the
+UI and markdown export show it.
+
+| Provider | Results | Power estimates | Use it for |
+| --- | --- | --- | --- |
+| `builtin` (default) | none: Studio never sees event data, so the results page says no provider is configured | two-sample z-test in Studio | flags without experiments, or before a service exists |
+| `sample` | generated, deterministic, labelled `"sample": true` and badged in the UI | as `builtin` | trying Studio out; never measurements |
+| `http` | a service implementing the v1 contract below, in any language | the service's `POST /v1/experiments/power` | production |
 
 | Config key | Env var | Notes |
 | --- | --- | --- |
-| `analysis.baseURL` | `GOFF_STUDIO_ANALYSIS_BASE_URL` | optional; without it Studio serves sample results |
+| `analysis.provider` | `GOFF_STUDIO_ANALYSIS_PROVIDER` | `builtin`, `sample` or `http`; a `baseURL` with no provider means `http` |
+| `analysis.baseURL` | `GOFF_STUDIO_ANALYSIS_BASE_URL` | required for `http`, rejected for the others |
 | `analysis.token` | `GOFF_STUDIO_ANALYSIS_TOKEN` | sent as `Authorization: Bearer <token>` |
 
-Studio calls two endpoints on the service:
+The Go contract is [`pkg/analysis`](pkg/analysis): a `Provider` interface with
+`Results` and `Power`, so another in-process provider needs no changes to
+Studio's internals. The wire contract is versioned under `/v1`, with JSON
+Schemas in [`pkg/analysis/schema/v1`](pkg/analysis/schema/v1). To check a
+service against it:
+
+```sh
+ANALYSIS_CONFORMANCE_URL=https://analysis.example.com \
+ANALYSIS_CONFORMANCE_KEYS=checkout-exp-us-east-1 \
+ANALYSIS_CONFORMANCE_TOKEN=... \
+go test ./pkg/analysis -run TestLiveServiceConforms -v
+```
+
+The suite validates every document against the schemas and checks what they
+cannot express: exactly one control, shares summing to one, each lift inside
+its interval, undefined estimates null together, significance agreeing with
+the interval when there is no multiple-testing correction, and a 404 for an
+unknown key. `analysistest.NewReferenceServer` serves the contract from any
+in-process provider, as a working example.
+
+An `http` provider calls two endpoints on the service:
 
 - `GET {baseURL}/v1/experiments/{key}/results?segments=true[&as_of=<date>]`
   returns the results document: `experiment_key`, `as_of`, `status`
@@ -303,9 +334,9 @@ the page. Results and power responses are sent with `Cache-Control: no-cache`,
 so the browser always revalidates. The experiments list never calls the service; it summarises whatever
 is cached, and hovering a row prefetches that row's results.
 
-Without `analysis.baseURL`, results are generated deterministically from the
-registry and labelled `"sample": true`, and the UI badges them as sample data.
-The power calculator falls back to a two-sample z-test estimate in Studio.
+Caching sits in front of every provider, not only `http`, so the same rules
+apply to all three. A list page asks the `sample` provider directly, since it
+does no I/O, and only reads the cache for `http`.
 
 The decision rule: a significant improvement on the primary metric with every
 guardrail passing is `roll_out`; with a guardrail that cannot rule out a drop
@@ -593,7 +624,7 @@ All `/api` routes require a session cookie and return `401` without one.
 | `GET` | `/api/experiments/{key}` | one registry entry |
 | `PUT` | `/api/experiments/{key}` | update a registry entry (needs `fileSha`) |
 | `POST` | `/api/experiments/{key}/diff` | description + unified diff, no write |
-| `GET` | `/api/experiments/{key}/results` | results from the analysis service, or sample results |
+| `GET` | `/api/experiments/{key}/results` | results from the configured analysis provider |
 | `POST` | `/api/experiments/power` | MDE and duration estimate |
 | `GET` | `/api/metrics` | the metric catalog |
 | `POST` | `/api/metrics` | add a metric |

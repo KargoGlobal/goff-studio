@@ -1,6 +1,7 @@
-package experiments
+package analysis
 
 import (
+	"context"
 	"fmt"
 	"hash/fnv"
 	"math"
@@ -16,19 +17,50 @@ var segmentValues = map[string][]string{
 	"country": {"us", "ca"},
 }
 
-// Sample builds deterministic results from the registry alone, so the UI and
-// end-to-end tests work without an analysis service. It is labelled sample.
-func Sample(e Experiment, catalog map[string]Metric, now time.Time) Results {
+// Sample generates deterministic, clearly labelled demo results from the
+// experiment spec alone, so Studio can be tried without an analysis service.
+// It is never the default: set analysis.provider to sample to use it.
+type Sample struct {
+	// Now defaults to time.Now.
+	Now func() time.Time
+}
+
+func (*Sample) Name() string { return "sample" }
+
+// Local reports that Sample never does I/O, so list pages may call it freely.
+func (*Sample) Local() bool { return true }
+
+func (s *Sample) Results(_ context.Context, req ResultsRequest) (*Results, error) {
+	now := time.Now()
+	if s.Now != nil {
+		now = s.Now()
+	}
+	if req.AsOf != "" {
+		if day, err := time.Parse(time.DateOnly, req.AsOf); err == nil {
+			if end := day.Add(24*time.Hour - time.Second); end.Before(now) {
+				now = end
+			}
+		}
+	}
+	res := generate(req.Spec, now)
+	return &res, nil
+}
+
+func (*Sample) Power(ctx context.Context, req PowerRequest) (*PowerResult, error) {
+	return Builtin{}.Power(ctx, req)
+}
+
+func generate(e ExperimentSpec, now time.Time) Results {
 	rng := rand.New(rand.NewPCG(seed(e.Key), 0x5eed)) //nolint:gosec // deterministic sample data, seeded on purpose
 	now = now.UTC()
 
 	out := Results{
 		ExperimentKey: e.Key,
 		Status:        "ok",
-		Unit:          e.Unit.Type,
+		Unit:          e.UnitType,
 		Method: Method{
-			Test: e.Analysis.Test, Alpha: e.Analysis.Alpha,
-			CUPED: e.Analysis.CUPED, Correction: e.Analysis.Correction,
+			Test: e.Test, Alpha: e.Alpha,
+			CUPED: e.CUPED, Correction: e.Correction,
 		},
 		Sample:      true,
 		Metrics:     []MetricResult{},
@@ -73,15 +105,8 @@ func Sample(e Experiment, catalog map[string]Metric, now time.Time) Results {
 		}
 	}
 
-	for _, key := range e.Metrics.Primary {
-		out.Metrics = append(out.Metrics, gen.metric(key, "primary", catalog, lifts, nil))
-	}
-	for _, key := range e.Metrics.Secondary {
-		out.Metrics = append(out.Metrics, gen.metric(key, "secondary", catalog, lifts, nil))
-	}
-	for _, g := range e.Metrics.Guardrails {
-		guard := g
-		out.Metrics = append(out.Metrics, gen.metric(g.Metric, "guardrail", catalog, lifts, &guard))
+	for _, m := range e.Metrics {
+		out.Metrics = append(out.Metrics, gen.metric(m, lifts))
 	}
 
 	for _, dim := range e.Segments {
@@ -93,12 +118,15 @@ func Sample(e Experiment, catalog map[string]Metric, now time.Time) Results {
 			segGen := gen
 			segGen.n = gen.n / float64(len(values))
 			var ms []MetricResult
-			for _, key := range e.Metrics.Primary {
+			for _, m := range e.Metrics {
+				if m.Role != "primary" {
+					continue
+				}
 				shifted := map[string]float64{}
 				for v, l := range lifts {
 					shifted[v] = l * (0.6 + 0.8*float64(i)/float64(len(values)))
 				}
-				ms = append(ms, segGen.metric(key, "primary", catalog, shifted, nil))
+				ms = append(ms, segGen.metric(m, shifted))
 			}
 			out.Segments = append(out.Segments, SegmentResult{Dimension: dim, Value: val, Metrics: ms})
 		}
@@ -112,23 +140,32 @@ func Sample(e Experiment, catalog map[string]Metric, now time.Time) Results {
 }
 
 type sampleGen struct {
-	e    Experiment
+	e    ExperimentSpec
 	rng  *rand.Rand
 	days int
 	n    float64
 }
 
-func (g sampleGen) metric(key, role string, catalog map[string]Metric, lifts map[string]float64, guard *Guardrail) MetricResult {
-	m, ok := catalog[key]
-	if !ok {
-		m = Metric{Key: key, Name: key, Kind: "mean", Format: "number", Direction: "increase"}
+func (g sampleGen) metric(m MetricSpec, lifts map[string]float64) MetricResult {
+	if m.Name == "" {
+		m.Name = m.Key
 	}
-	res := MetricResult{Key: key, Name: m.Name, Kind: m.Kind, Role: role, Direction: m.Direction, Format: m.Format, Results: []ArmStat{}}
+	if m.Kind == "" {
+		m.Kind = "mean"
+	}
+	if m.Format == "" {
+		m.Format = "number"
+	}
+	if m.Direction == "" {
+		m.Direction = "increase"
+	}
+	role := m.Role
+	res := MetricResult{Key: m.Key, Name: m.Name, Kind: m.Kind, Role: role, Direction: m.Direction, Format: m.Format, Results: []ArmStat{}}
 
 	base, cv := baseline(m.Format, g.rng)
-	zFixed := normalQuantile(1 - g.e.Analysis.Alpha/2)
+	zFixed := normalQuantile(1 - g.e.Alpha/2)
 	z := zFixed
-	if g.e.Analysis.Test == "sequential" {
+	if g.e.Test == "sequential" {
 		z *= 1.25
 	}
 	spread := 0.5 + g.rng.Float64()
@@ -153,7 +190,7 @@ func (g sampleGen) metric(key, role string, catalog map[string]Metric, lifts map
 		low, high, p := estimate(se)
 		stat := ArmStat{Variant: v, Value: value, ControlValue: control, Lift: num(round(lift, 6))}
 
-		if g.e.Analysis.CUPED {
+		if g.e.CUPED {
 			// CUPED is the headline readout; the unadjusted one moves to raw.
 			vr := 0.2 + g.rng.Float64()*0.3
 			stat.Raw = &RawStat{Value: value, ControlValue: control, Lift: stat.Lift, CILow: num(low), CIHigh: num(high), PValue: num(p)}
@@ -163,13 +200,17 @@ func (g sampleGen) metric(key, role string, catalog map[string]Metric, lifts map
 		stat.CILow, stat.CIHigh, stat.PValue, stat.AdjustedP = num(low), num(high), num(p), num(p)
 		stat.Significant = low > 0 || high < 0
 
-		if guard != nil {
+		if role == "guardrail" {
+			maxDrop := 0.0
+			if m.MaxDropPct != nil {
+				maxDrop = *m.MaxDropPct
+			}
 			worst := low
 			if m.Direction == "decrease" {
 				worst = -high
 			}
 			harm := stat.Significant && !good(m.Direction, stat.Lift)
-			stat.Guardrail = &GuardrailCheck{MaxDropPct: num(guard.MaxDropPct), Pass: worst*100 > -guard.MaxDropPct, SignificantHarm: &harm}
+			stat.Guardrail = &GuardrailCheck{MaxDropPct: num(maxDrop), Pass: worst*100 > -maxDrop, SignificantHarm: &harm}
 		}
 		res.Results = append(res.Results, stat)
 	}
@@ -220,7 +261,7 @@ func baseline(format string, rng *rand.Rand) (value, cv float64) {
 	}
 }
 
-func diagnostics(r Results, days int, e Experiment) []Diagnostic {
+func diagnostics(r Results, days int, e ExperimentSpec) []Diagnostic {
 	out := []Diagnostic{}
 	if r.SRM.Flag {
 		out = append(out, Diagnostic{Check: "traffic_balance", Status: "fail", Detail: fmt.Sprintf("Sample ratio mismatch (p = %.4g).", r.SRM.PValue)})
@@ -242,10 +283,10 @@ func diagnostics(r Results, days int, e Experiment) []Diagnostic {
 	}
 	if failing > 0 {
 		out = append(out, Diagnostic{Check: "guardrails", Status: "fail", Detail: fmt.Sprintf("%d guardrail check(s) cannot rule out a drop beyond tolerance.", failing)})
-	} else if len(e.Metrics.Guardrails) > 0 {
+	} else if slices.ContainsFunc(e.Metrics, func(m MetricSpec) bool { return m.Role == "guardrail" }) {
 		out = append(out, Diagnostic{Check: "guardrails", Status: "pass", Detail: "Every guardrail is within tolerance."})
 	}
-	if slices.Contains([]string{"entity"}, e.Unit.Type) {
+	if e.UnitType == "entity" {
 		out = append(out, Diagnostic{Check: "unit_clustering", Status: "pass", Detail: "Randomized and analysed by entity; no clustering correction needed."})
 	}
 	out = append(out, Diagnostic{Check: "data_freshness", Status: "pass", Detail: "Sample data is generated on request."})

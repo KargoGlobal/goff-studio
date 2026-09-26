@@ -11,37 +11,39 @@ import (
 
 	"github.com/go-feature-flag/studio/internal/permissions"
 	"github.com/go-feature-flag/studio/internal/storage"
+	"github.com/go-feature-flag/studio/pkg/analysis"
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	envAddr           = "GOFF_STUDIO_ADDR"
-	envBaseURL        = "GOFF_STUDIO_BASE_URL"
-	envSessionSecret  = "GOFF_STUDIO_SESSION_SECRET"
-	envSecureCookies  = "GOFF_STUDIO_SECURE_COOKIES"
-	envDiscoverEnvs   = "GOFF_STUDIO_DISCOVER_ENVIRONMENTS"
-	envStorage        = "GOFF_STUDIO_STORAGE"
-	envStoragePath    = "GOFF_STUDIO_STORAGE_PATH"
-	envStorageBucket  = "GOFF_STUDIO_STORAGE_BUCKET"
-	envStorageRegion  = "GOFF_STUDIO_STORAGE_REGION"
-	envStoragePrefix  = "GOFF_STUDIO_STORAGE_PREFIX"
-	envStorageOptions = "GOFF_STUDIO_STORAGE_OPTIONS"
-	envOIDCIssuerURL  = "GOFF_STUDIO_OIDC_ISSUER_URL"
-	envOIDCClientID   = "GOFF_STUDIO_OIDC_CLIENT_ID"
-	envOIDCSecret     = "GOFF_STUDIO_OIDC_CLIENT_SECRET"
-	envOIDCGroups     = "GOFF_STUDIO_OIDC_GROUPS_CLAIM"
-	envGitHubOwner    = "GOFF_STUDIO_GITHUB_OWNER"
-	envGitHubRepo     = "GOFF_STUDIO_GITHUB_REPO"
-	envGitHubBranch   = "GOFF_STUDIO_GITHUB_BRANCH"
-	envGitHubAppID    = "GOFF_STUDIO_GITHUB_APP_ID"
-	envGitHubInstall  = "GOFF_STUDIO_GITHUB_INSTALLATION_ID"
-	envGitHubKeyPath  = "GOFF_STUDIO_GITHUB_PRIVATE_KEY_PATH"
-	envGitHubDevToken = "GOFF_STUDIO_GITHUB_DEV_TOKEN"
-	envPollSeconds    = "GOFF_STUDIO_EXPECTED_POLL_SECONDS"
-	envEnvironments   = "GOFF_STUDIO_ENVIRONMENTS"
-	envPermissions    = "GOFF_STUDIO_PERMISSIONS"
-	envAnalysisURL    = "GOFF_STUDIO_ANALYSIS_BASE_URL"
-	envAnalysisToken  = "GOFF_STUDIO_ANALYSIS_TOKEN"
+	envAddr             = "GOFF_STUDIO_ADDR"
+	envBaseURL          = "GOFF_STUDIO_BASE_URL"
+	envSessionSecret    = "GOFF_STUDIO_SESSION_SECRET"
+	envSecureCookies    = "GOFF_STUDIO_SECURE_COOKIES"
+	envDiscoverEnvs     = "GOFF_STUDIO_DISCOVER_ENVIRONMENTS"
+	envStorage          = "GOFF_STUDIO_STORAGE"
+	envStoragePath      = "GOFF_STUDIO_STORAGE_PATH"
+	envStorageBucket    = "GOFF_STUDIO_STORAGE_BUCKET"
+	envStorageRegion    = "GOFF_STUDIO_STORAGE_REGION"
+	envStoragePrefix    = "GOFF_STUDIO_STORAGE_PREFIX"
+	envStorageOptions   = "GOFF_STUDIO_STORAGE_OPTIONS"
+	envOIDCIssuerURL    = "GOFF_STUDIO_OIDC_ISSUER_URL"
+	envOIDCClientID     = "GOFF_STUDIO_OIDC_CLIENT_ID"
+	envOIDCSecret       = "GOFF_STUDIO_OIDC_CLIENT_SECRET"
+	envOIDCGroups       = "GOFF_STUDIO_OIDC_GROUPS_CLAIM"
+	envGitHubOwner      = "GOFF_STUDIO_GITHUB_OWNER"
+	envGitHubRepo       = "GOFF_STUDIO_GITHUB_REPO"
+	envGitHubBranch     = "GOFF_STUDIO_GITHUB_BRANCH"
+	envGitHubAppID      = "GOFF_STUDIO_GITHUB_APP_ID"
+	envGitHubInstall    = "GOFF_STUDIO_GITHUB_INSTALLATION_ID"
+	envGitHubKeyPath    = "GOFF_STUDIO_GITHUB_PRIVATE_KEY_PATH"
+	envGitHubDevToken   = "GOFF_STUDIO_GITHUB_DEV_TOKEN"
+	envPollSeconds      = "GOFF_STUDIO_EXPECTED_POLL_SECONDS"
+	envEnvironments     = "GOFF_STUDIO_ENVIRONMENTS"
+	envPermissions      = "GOFF_STUDIO_PERMISSIONS"
+	envAnalysisProvider = "GOFF_STUDIO_ANALYSIS_PROVIDER"
+	envAnalysisURL      = "GOFF_STUDIO_ANALYSIS_BASE_URL"
+	envAnalysisToken    = "GOFF_STUDIO_ANALYSIS_TOKEN"
 )
 
 var environmentName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
@@ -86,11 +88,14 @@ type GitHub struct {
 	DevToken       string `yaml:"devToken"`
 }
 
-// Analysis points at the service that computes experiment results. Unset,
-// Studio serves clearly labelled sample results instead.
+// Analysis selects what computes experiment results: builtin (power
+// estimates only, the default), sample (labelled demo data) or http (a
+// service implementing the v1 contract at BaseURL). A BaseURL with no
+// provider means http.
 type Analysis struct {
-	BaseURL string `yaml:"baseURL"`
-	Token   string `yaml:"token"`
+	Provider string `yaml:"provider"`
+	BaseURL  string `yaml:"baseURL"`
+	Token    string `yaml:"token"`
 }
 
 type Config struct {
@@ -231,6 +236,7 @@ func (c *Config) applyEnv() error {
 
 	integer(envPollSeconds, &c.PollSeconds)
 
+	str(envAnalysisProvider, &c.Analysis.Provider)
 	str(envAnalysisURL, &c.Analysis.BaseURL)
 	str(envAnalysisToken, &c.Analysis.Token)
 
@@ -468,9 +474,25 @@ func (c *Config) validateEnvironments() error {
 }
 
 func (c *Config) validateAnalysis() error {
-	if strings.TrimSpace(c.Analysis.BaseURL) == "" {
+	provider := strings.TrimSpace(c.Analysis.Provider)
+	hasURL := strings.TrimSpace(c.Analysis.BaseURL) != ""
+	switch provider {
+	case "", "http":
+	case "builtin", "sample":
+		if hasURL {
+			return fieldErr("analysis.provider", envAnalysisProvider,
+				fmt.Sprintf("is %q, which does not call a service, but analysis.baseURL is set; use provider http or remove the base URL", provider))
+		}
+	default:
+		return fieldErr("analysis.provider", envAnalysisProvider,
+			fmt.Sprintf("must be one of %s, got %q", strings.Join(analysis.Providers, ", "), provider))
+	}
+	if !hasURL {
+		if provider == "http" {
+			return fieldErr("analysis.baseURL", envAnalysisURL, "is required when analysis.provider is http")
+		}
 		if c.Analysis.Token != "" {
-			c.warnf("analysis.token is set but analysis.baseURL is not (%s), so the token is unused and experiments show sample results", envAnalysisURL)
+			c.warnf("analysis.token is set but analysis.baseURL is not (%s), so the token is unused", envAnalysisURL)
 		}
 		return nil
 	}
@@ -488,6 +510,7 @@ func (c *Config) validateAnalysis() error {
 	return nil
 }
 
+// AnalysisConfigured reports whether results come from an analysis service.
 func (c *Config) AnalysisConfigured() bool {
 	return strings.TrimSpace(c.Analysis.BaseURL) != ""
 }

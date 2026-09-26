@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/go-feature-flag/studio/pkg/analysis/schema/v1/power-request.schema.json",
+  "title": "Power request, v1",
+  "description": "Request body of POST /v1/experiments/power. Effect sizes on the wire are percentages: target_mde_pct 0.5 is a 0.5% relative lift. A service that does not estimate power answers 404.",
+  "type": "object",
+  "required": ["baseline_mean", "variance", "n_per_day", "arms", "alpha", "power", "cuped_rho2"],
+  "properties": {
+    "baseline_mean": { "type": "number", "not": { "const": 0 } },
+    "variance": { "type": "number", "exclusiveMinimum": 0 },
+    "n_per_day": { "type": "number", "exclusiveMinimum": 0 },
+    "arms": { "type": "integer", "minimum": 2 },
+    "alpha": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 0.5 },
+    "power": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 },
+    "cuped_rho2": { "type": "number", "minimum": 0, "exclusiveMaximum": 1 },
+    "days": { "type": "integer", "minimum": 1, "description": "Planned duration; the service picks a default when absent." },
+    "target_mde_pct": { "type": "number", "exclusiveMinimum": 0, "description": "When present, the service reports days_to_target." }
+  }
+}

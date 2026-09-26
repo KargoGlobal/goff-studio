@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/go-feature-flag/studio/pkg/analysis/schema/v1/power-result.schema.json",
+  "title": "Power result, v1",
+  "description": "Response body of POST /v1/experiments/power. mde_pct is the minimum detectable relative effect in percent at the planned duration.",
+  "type": "object",
+  "required": ["days", "n_per_arm", "mde_pct", "mde_by_week", "days_to_target"],
+  "properties": {
+    "days": { "type": "integer", "minimum": 1 },
+    "n_per_arm": { "type": "number", "minimum": 0 },
+    "mde_pct": { "type": "number", "exclusiveMinimum": 0 },
+    "mde_by_week": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["days", "mde_pct"],
+        "properties": {
+          "days": { "type": "integer", "minimum": 1 },
+          "mde_pct": { "type": "number", "exclusiveMinimum": 0 }
+        }
+      }
+    },
+    "days_to_target": { "type": ["integer", "null"], "minimum": 1 }
+  }
+}

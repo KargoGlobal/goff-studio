@@ -66,9 +66,11 @@ environments:
     protected: true
     order: 3
 
-# Experiment results come from an analysis service (see README.md, "Experiments").
-# Leave this out and Studio shows clearly labelled sample results instead.
+# Experiment results come from an analysis provider (see README.md, "Analysis providers").
+# Leave this out for builtin: power estimates only, no results. Use provider: sample
+# for labelled demo data, or http with a baseURL for a real analysis service.
 # analysis:
+#   provider: http
 #   baseURL: https://analysis.internal.example.com
 #   # Supply via GOFF_STUDIO_ANALYSIS_TOKEN rather than committing it.
 #   token: from-your-analysis-service

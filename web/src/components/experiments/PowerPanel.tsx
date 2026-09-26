@@ -128,7 +128,7 @@ export function PowerPanel({ experiment, catalog }: { experiment: Experiment; ca
               )}
             </p>
             {data.source === 'local' && (
-              <p className="mt-1 text-[11.5px] text-ink-muted">Estimated in Studio (two-sample z-test); no analysis service configured.</p>
+              <p className="mt-1 text-[11.5px] text-ink-muted">Estimated in Studio (two-sample z-test) by the builtin provider.</p>
             )}
           </>
         ) : (

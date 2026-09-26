@@ -17,6 +17,7 @@ import (
 	"github.com/go-feature-flag/studio/internal/goff"
 	"github.com/go-feature-flag/studio/internal/permissions"
 	"github.com/go-feature-flag/studio/internal/storage"
+	"github.com/go-feature-flag/studio/pkg/analysis"
 )
 
 var (
@@ -53,7 +54,9 @@ type ResultSummary struct {
 type ExperimentList struct {
 	Experiments []ExperimentView `json:"experiments"`
 	Broken      []goff.Broken    `json:"broken"`
-	Sample      bool             `json:"sample"`
+	// Provider names the analysis provider; Sample is true when it is "sample".
+	Provider string `json:"provider"`
+	Sample   bool   `json:"sample"`
 }
 
 type MetricView struct {
@@ -268,7 +271,8 @@ func (s *Service) ListExperiments(ctx context.Context, sess auth.Session) (*Expe
 		return nil, err
 	}
 	sc := s.scope(sess)
-	out := &ExperimentList{Experiments: []ExperimentView{}, Broken: []goff.Broken{}, Sample: s.analysis == nil}
+	out := &ExperimentList{Experiments: []ExperimentView{}, Broken: []goff.Broken{},
+		Provider: s.analysis.Name(), Sample: s.analysis.Name() == "sample"}
 
 	for _, f := range files {
 		e, err := experiments.ParseExperiment(f.Content)
@@ -290,25 +294,21 @@ func (s *Service) ListExperiments(ctx context.Context, sess auth.Session) (*Expe
 	return out, nil
 }
 
-// summary never calls the analysis service: it uses a cached document or sample data.
+// summary never waits on a remote analysis service: it uses a cached readout,
+// or asks a provider that computes in-process.
 func (s *Service) summary(ctx context.Context, sc *requestScope, e experiments.Experiment) *ResultSummary {
-	var res experiments.Results
-	if s.analysis != nil {
-		raw, ok := s.analysis.Cached(e.Key, "")
-		if !ok || json.Unmarshal(raw, &res) != nil {
-			return nil
-		}
-	} else {
-		catalog, err := sc.catalog(ctx)
-		if err != nil {
-			return nil
-		}
-		res = experiments.Sample(e, catalog, s.now())
+	catalog, err := sc.catalog(ctx)
+	if err != nil {
+		return nil
+	}
+	res, ok := s.analysis.Peek(ctx, analysis.ResultsRequest{Key: e.Key, Spec: e.Spec(catalog)})
+	if !ok {
+		return nil
 	}
 	return summarize(res)
 }
 
-func summarize(res experiments.Results) *ResultSummary {
+func summarize(res *analysis.Results) *ResultSummary {
 	out := &ResultSummary{Status: res.Status, AsOf: res.AsOf, SRMFlag: res.SRM.Flag, Sample: res.Sample}
 	if res.Decision != nil {
 		out.Recommendation = res.Decision.Recommendation
@@ -541,8 +541,7 @@ func describeExperimentChange(old, next experiments.Experiment) string {
 	return strings.Join(changes, ", ")
 }
 
-// ExperimentResults returns the results document as JSON, from the analysis
-// service when configured and generated sample data otherwise.
+// ExperimentResults returns the configured provider's results document as JSON.
 func (s *Service) ExperimentResults(ctx context.Context, sess auth.Session, key, asOf string) ([]byte, error) {
 	if _, err := s.GetExperiment(ctx, sess, key); err != nil {
 		return nil, err
@@ -551,10 +550,6 @@ func (s *Service) ExperimentResults(ctx context.Context, sess auth.Session, key,
 	if err != nil {
 		return nil, err
 	}
-	if s.analysis != nil {
-		return s.analysis.Results(ctx, key, asOf)
-	}
-
 	_, e, err := s.loadExperiment(ctx, key)
 	if err != nil {
 		return nil, err
@@ -563,13 +558,11 @@ func (s *Service) ExperimentResults(ctx context.Context, sess auth.Session, key,
 	if err != nil {
 		return nil, err
 	}
-	now := s.now()
-	if asOf != "" {
-		if t, err := parseAsOf(asOf); err == nil && t.Before(now) {
-			now = t
-		}
+	res, err := s.analysis.Results(ctx, analysis.ResultsRequest{Key: key, AsOf: asOf, Spec: e.Spec(catalog)})
+	if err != nil {
+		return nil, err
 	}
-	return json.Marshal(experiments.Sample(e, catalog, now))
+	return json.Marshal(res)
 }
 
 // normalizeAsOf reduces as_of to a calendar day no later than today, which
@@ -599,19 +592,16 @@ func parseAsOf(raw string) (time.Time, error) {
 	return time.Parse(time.RFC3339, raw)
 }
 
-func (s *Service) Power(ctx context.Context, sess auth.Session, req experiments.PowerRequest) ([]byte, error) {
+func (s *Service) Power(ctx context.Context, sess auth.Session, req analysis.PowerRequest) ([]byte, error) {
 	if len(s.Environments(ctx, sess)) == 0 {
 		return nil, ErrForbidden
 	}
 	if err := req.Validate(); err != nil {
 		return nil, invalid("%s", err.Error())
 	}
-	if s.analysis != nil {
-		return s.analysis.Power(ctx, req)
-	}
-	est, err := experiments.Estimate(req)
+	est, err := s.analysis.Power(ctx, req)
 	if err != nil {
-		return nil, invalid("%s", err.Error())
+		return nil, err
 	}
 	return json.Marshal(est)
 }

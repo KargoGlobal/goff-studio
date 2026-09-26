@@ -216,7 +216,7 @@ export function readoutMarkdown(e: Experiment, r: Results): string {
 
   out.push(`# Experiment readout: ${e.name}`)
   out.push('')
-  if (r.sample) out.push('> **Sample data.** No analysis service is configured; these numbers are generated for illustration.\n')
+  if (r.sample) out.push('> **Sample data.** Studio is using the sample analysis provider; these numbers are generated for illustration.\n')
   out.push(`- **Key:** \`${e.key}\``)
   out.push(`- **Hypothesis:** ${e.hypothesis}`)
   out.push(`- **Owner:** ${e.owner}${e.ticket ? ` · **Ticket:** ${e.ticket}` : ''}`)
@@ -226,7 +226,7 @@ export function readoutMarkdown(e: Experiment, r: Results): string {
     `- **Method:** ${r.method?.test ?? e.analysis.test}, alpha ${r.method?.alpha ?? e.analysis.alpha}` +
       `${(r.method?.cuped ?? e.analysis.cuped) ? ', CUPED' : ''}, correction ${r.method?.correction ?? e.analysis.correction}`,
   )
-  out.push(`- **Data as of:** ${r.as_of}`)
+  out.push(`- **Data as of:** ${r.as_of}${r.method?.provider ? ` · **Computed by:** ${r.method.provider} provider` : ''}`)
   out.push('')
 
   out.push('## Decision')

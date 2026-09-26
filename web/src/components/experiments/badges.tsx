@@ -28,7 +28,7 @@ export function SRMBadge({ flag }: { flag: boolean }) {
 
 export function SampleBadge() {
   return (
-    <Badge tone="warn" title="No analysis service is configured; these numbers are generated sample data.">
+    <Badge tone="warn" title="Studio is using the sample analysis provider; these numbers are generated demo data.">
       sample data
     </Badge>
   )

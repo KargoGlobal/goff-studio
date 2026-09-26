@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-feature-flag/studio/internal/auth"
 	"github.com/go-feature-flag/studio/internal/experiments"
+	"github.com/go-feature-flag/studio/pkg/analysis"
 )
 
 type experimentBody struct {
@@ -125,7 +126,7 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request, sess auth
 }
 
 func (s *Server) handlePower(w http.ResponseWriter, r *http.Request, sess auth.Session) {
-	var req experiments.PowerRequest
+	var req analysis.PowerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "could not read the request")
 		return
@@ -215,7 +216,7 @@ func (s *Server) handleDiffMetric(w http.ResponseWriter, r *http.Request, sess a
 }
 
 func writeExperimentError(w http.ResponseWriter, err error) {
-	var upstream *experiments.UpstreamError
+	var upstream *analysis.UpstreamError
 	switch {
 	case errors.Is(err, ErrExperimentNotFound), errors.Is(err, ErrMetricNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
@@ -225,14 +226,16 @@ func writeExperimentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "your view of this is out of date, please reload")
 	case errors.Is(err, errStorageConflict):
 		writeError(w, http.StatusConflict, "someone else just changed this, please reload and try again")
-	case errors.Is(err, experiments.ErrNoResults):
+	case errors.Is(err, analysis.ErrResultsUnsupported):
+		writeError(w, http.StatusNotFound, "Studio has no results provider configured. Set analysis.provider to http and analysis.baseURL to your analysis service, or to sample for demo data.")
+	case errors.Is(err, analysis.ErrNoResults):
 		writeError(w, http.StatusNotFound, "There are no results for this experiment yet. They appear once the first day of data is processed.")
-	case errors.Is(err, experiments.ErrNoPower):
+	case errors.Is(err, analysis.ErrNoPower):
 		writeError(w, http.StatusBadGateway, "The analysis service does not offer power estimates right now.")
-	case errors.Is(err, experiments.ErrTimeout):
+	case errors.Is(err, analysis.ErrTimeout):
 		log.Printf("analysis service: %v", err)
 		writeError(w, http.StatusGatewayTimeout, "The analysis service did not answer in time. Try again in a minute.")
-	case errors.Is(err, experiments.ErrUnreachable):
+	case errors.Is(err, analysis.ErrUnreachable):
 		log.Printf("analysis service: %v", err)
 		writeError(w, http.StatusBadGateway, "The analysis service is unreachable. Try again in a minute.")
 	case errors.As(err, &upstream):
