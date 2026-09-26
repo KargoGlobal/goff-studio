@@ -156,13 +156,17 @@ export function AppShell({
       </aside>
 
       <main className="min-w-0 flex-1 overflow-y-auto bg-[color:var(--color-page)] text-[color:var(--color-page-ink)]">
-        {active?.protected && (
+        {active?.protected ? (
           <div className="flex items-center gap-2 border-b border-[color:var(--color-flare)]/40 bg-[color:var(--color-flare-soft)] px-6 py-2 text-[12.5px] text-[color:var(--color-flare)]">
             <ShieldAlert className="h-3.5 w-3.5" />
             <span>
               You are editing <strong>{active.display}</strong>. Changes go live for real users.
             </span>
           </div>
+        ) : (
+          // Spacer matches the banner's rendered height so pages don't shift up
+          // when moving between protected and non-protected environments.
+          <div className="h-9" aria-hidden />
         )}
         <div key={location.pathname} className="px-6 py-6">
           {children}

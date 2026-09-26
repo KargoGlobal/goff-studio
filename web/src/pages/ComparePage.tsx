@@ -29,9 +29,11 @@ const SAFE_FIELDS = ['variations', 'default', 'rules', 'experimentation', 'metad
 
 function SideCard({ side, label }: { side: CompareSide; label: string }) {
   return (
-    <Card className="flex-1 p-3">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-ink-muted">{label}</p>
-      <p className="mt-0.5 flex items-center gap-2 text-[13px] font-medium text-ink">
+    <Card className="flex-1 p-5">
+      <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-sidebar-active)]">
+        {label}
+      </p>
+      <p className="mt-1.5 flex items-center gap-2 text-lg font-semibold text-ink">
         {side.display}
         {side.present && (
           <>
@@ -42,11 +44,11 @@ function SideCard({ side, label }: { side: CompareSide; label: string }) {
       </p>
       {side.present ? (
         <>
-          <p className="mt-1.5 text-[12.5px] text-ink-soft">{side.summary}</p>
-          {side.team && <p className="mt-1 text-[11.5px] text-ink-muted">Team: {side.team}</p>}
+          <p className="mt-2 text-sm text-ink-soft">{side.summary}</p>
+          {side.team && <p className="mt-1 text-[13px] text-ink-muted">Team: {side.team}</p>}
         </>
       ) : (
-        <p className="mt-1.5 text-[12.5px] text-ink-muted">Not defined in this environment.</p>
+        <p className="mt-2 text-sm text-ink-muted">Not defined in this environment.</p>
       )}
     </Card>
   )
@@ -106,11 +108,15 @@ export function ComparePage({ environments }: { environments: Environment[] }) {
 
   if (others.length === 0) {
     return (
-      <div className="space-y-3">
-        <Link to={`/env/${env}/flags/${encodeURIComponent(key)}`} className="text-[13px] text-brand">
+      <div className="space-y-4">
+        <Link
+          to={`/env/${env}/flags/${encodeURIComponent(key)}`}
+          className="inline-flex items-center gap-2 text-lg font-semibold text-ink-muted transition-colors hover:text-ink"
+        >
+          <ArrowLeft className="h-6 w-6" />
           Back to {key}
         </Link>
-        <p className="text-[13px] text-ink-muted">
+        <p className="text-base text-ink-muted">
           You only have access to one environment, so there is nothing to compare.
         </p>
       </div>
@@ -118,20 +124,20 @@ export function ComparePage({ environments }: { environments: Environment[] }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div>
         <Link
           to={`/env/${env}/flags/${encodeURIComponent(key)}`}
-          className="inline-flex items-center gap-1.5 text-[13px] text-ink-muted hover:text-ink"
+          className="inline-flex items-center gap-2 text-lg font-semibold text-ink-muted transition-colors hover:text-ink"
         >
-          <ArrowLeft className="h-3.5 w-3.5" />
+          <ArrowLeft className="h-6 w-6" />
           Back to {key}
         </Link>
-        <h1 className="mt-1 font-mono text-lg font-semibold text-ink">{key}</h1>
+        <h1 className="mt-2 font-mono text-3xl font-bold tracking-tight text-ink">{key}</h1>
       </div>
 
-      <div className="flex items-center gap-2">
-        <span className="text-[13px] text-ink-muted">Compare with</span>
+      <div className="flex items-center gap-3">
+        <span className="text-sm font-medium text-ink-soft">Compare with</span>
         <div className="w-56">
           <Select
             value={target}
@@ -144,31 +150,29 @@ export function ComparePage({ environments }: { environments: Environment[] }) {
 
       {isLoading && <Spinner />}
       {error && (
-        <p className="text-[13px] text-danger">
+        <p className="text-sm text-danger">
           {error instanceof ApiError ? error.message : 'Could not compare these environments'}
         </p>
       )}
 
       {data && (
         <>
-          <div className="flex items-stretch gap-2">
+          <div className="flex items-stretch gap-3">
             <SideCard side={data.from} label="Source" />
-            <div className="flex items-center text-ink-muted">
-              <ArrowRight className="h-4 w-4" />
+            <div className="flex items-center text-brand">
+              <ArrowRight className="h-6 w-6" />
             </div>
             <SideCard side={data.to} label="Target" />
           </div>
 
-          <Card className="p-4">
-            <h2 className="text-[13px] font-semibold uppercase tracking-wide text-ink-muted">
-              Differences
-            </h2>
+          <Card className="p-6">
+            <h2 className="text-xl font-semibold tracking-tight text-ink">Differences</h2>
             {data.differs.length === 0 ? (
-              <p className="mt-1.5 text-[13px] text-ink-soft">
+              <p className="mt-2 text-sm text-ink-soft">
                 These environments already match.
               </p>
             ) : (
-              <div className="mt-2 flex flex-wrap gap-1.5">
+              <div className="mt-3 flex flex-wrap gap-2">
                 {data.differs.map((f) => (
                   <Badge key={f} tone="warn">
                     {FIELD_LABELS[f] ?? f}
@@ -178,44 +182,44 @@ export function ComparePage({ environments }: { environments: Environment[] }) {
             )}
 
             {data.diff && (
-              <details className="mt-3">
-                <summary className="cursor-pointer text-[12.5px] text-ink-muted hover:text-ink">
+              <details className="mt-4">
+                <summary className="cursor-pointer text-sm font-medium text-ink-muted transition-colors hover:text-ink">
                   Show the difference
                 </summary>
-                <pre className="mt-2 overflow-x-auto rounded-md border border-[color:var(--color-brand)] bg-surface p-2.5 text-[12px] leading-relaxed">
+                <pre className="mt-2 overflow-x-auto rounded-md border border-[color:var(--color-brand)] bg-surface p-3 font-mono text-[13px] leading-relaxed">
                   {data.diff}
                 </pre>
               </details>
             )}
           </Card>
 
-          <Card className="p-4">
-            <h2 className="text-[13px] font-semibold uppercase tracking-wide text-ink-muted">
+          <Card className="p-6">
+            <h2 className="text-xl font-semibold tracking-tight text-ink">
               Promote to {data.to.display}
             </h2>
-            <p className="mt-1 text-[12px] text-ink-muted">
+            <p className="mt-1.5 text-[13px] text-ink-muted">
               Copies the settings you pick from {data.from.display}. A flag that does not exist yet
               is created turned off.
             </p>
 
             {data.blockers.length > 0 && (
-              <p role="alert" className="mt-2 text-[12.5px] text-danger">
+              <p role="alert" className="mt-3 rounded-md border border-danger bg-danger-soft px-3 py-2 text-sm text-ink">
                 {data.blockers.join('; ')}
               </p>
             )}
 
-            <div className="mt-3 space-y-1.5">
+            <div className="mt-4 space-y-2">
               {Object.keys(FIELD_LABELS).map((field) => (
-                <label key={field} className="flex items-center gap-2 text-[13px] text-ink">
+                <label key={field} className="flex items-center gap-2.5 text-base text-ink">
                   <input
                     type="checkbox"
                     checked={fields.includes(field)}
                     onChange={() => toggle(field)}
-                    className="h-3.5 w-3.5"
+                    className="h-4 w-4 accent-[var(--color-brand)]"
                   />
                   {FIELD_LABELS[field]}
                   {field === 'enabled' && (
-                    <span className="text-[11.5px] text-warn">
+                    <span className="text-[13px] text-warn">
                       changes whether the flag is live
                     </span>
                   )}
@@ -224,9 +228,8 @@ export function ComparePage({ environments }: { environments: Environment[] }) {
               ))}
             </div>
 
-            <div className="mt-3 flex items-center gap-2">
+            <div className="mt-5 flex items-center gap-3">
               <Button
-                size="sm"
                 disabled={
                   fields.length === 0 || data.blockers.length > 0 || !data.to.writable
                 }
@@ -235,7 +238,7 @@ export function ComparePage({ environments }: { environments: Environment[] }) {
                 Review promotion
               </Button>
               {!data.to.writable && (
-                <span className="text-[12px] text-ink-muted">
+                <span className="text-sm text-ink-muted">
                   You cannot write to {data.to.display}.
                 </span>
               )}
