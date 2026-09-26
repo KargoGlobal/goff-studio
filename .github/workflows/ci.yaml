@@ -120,6 +120,8 @@ jobs:
         with:
           name: playwright-results
           path: e2e/.test-results/
+          # .test-results is a dot-directory, which upload-artifact skips by default.
+          include-hidden-files: true
           retention-days: 7
 
   docker:
@@ -143,6 +145,8 @@ jobs:
       - name: Smoke test the image with a mounted config
         run: |
           mkdir -p ci-flags-file/dev
+          # The image runs as distroless nonroot (65532); the bind mount must be writable by it.
+          sudo chown -R 65532:65532 ci-flags-file
           cat > studio.ci.yaml <<'EOF'
           server:
             addr: ":8080"
@@ -169,6 +173,7 @@ jobs:
       - name: Smoke test the image with env vars only
         run: |
           mkdir -p ci-flags/dev
+          sudo chown -R 65532:65532 ci-flags
           docker run -d --name goff-ci-env -p 8081:8080 \
             -e GOFF_STUDIO_SESSION_SECRET=0123456789abcdef0123456789abcdef \
             -e GOFF_STUDIO_OIDC_ISSUER_URL=https://accounts.google.com \
