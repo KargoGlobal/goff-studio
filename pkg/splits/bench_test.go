@@ -22,7 +22,7 @@ func nineArmEvaluator(b *testing.B, exposure int) *Evaluator {
 	e := experimentWith(nil)
 	e.Allocations = map[string]*Allocation{"exp-us-east-1": {Splits: splits}}
 	ev, err := New(Flag{
-		Key:        "tmax",
+		Key:        "checkout",
 		Variations: arms,
 		Rules:      []Rule{{Name: "exp-us-east-1", Query: `serverRegion in ["us-east-1"]`, Variation: "control"}},
 		Default:    Rule{Variation: "control"},
@@ -35,7 +35,7 @@ func nineArmEvaluator(b *testing.B, exposure int) *Evaluator {
 
 func benchmarkNineArm(b *testing.B, exposure int) {
 	ev := nineArmEvaluator(b, exposure)
-	attrs := map[string]any{"serverRegion": "us-east-1", "deviceType": 3.0, "auctionType": "PMP"}
+	attrs := map[string]any{"serverRegion": "us-east-1", "deviceType": 3.0, "plan": "pro"}
 	subjects := make([]string, 1024)
 	for i := range subjects {
 		subjects[i] = "req-" + strconv.Itoa(i)

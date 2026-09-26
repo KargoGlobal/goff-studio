@@ -13,8 +13,8 @@ func TestExamplesAreValid(t *testing.T) {
 	root := filepath.Join("..", "..", "examples")
 
 	paths, err := filepath.Glob(filepath.Join(root, "metrics", "*.yaml"))
-	if err != nil || len(paths) != 12 {
-		t.Fatalf("want the 12 seed metrics, got %d (%v)", len(paths), err)
+	if err != nil || len(paths) != 9 {
+		t.Fatalf("want the 9 seed metrics, got %d (%v)", len(paths), err)
 	}
 	cat := map[string]Metric{}
 	for _, p := range paths {
@@ -36,7 +36,7 @@ func TestExamplesAreValid(t *testing.T) {
 		cat[m.Key] = m
 	}
 
-	flagFile := filepath.Join(root, "production", "bidder.goff.yaml")
+	flagFile := filepath.Join(root, "production", "checkout.goff.yaml")
 	rawFlags, err := os.ReadFile(flagFile)
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +53,7 @@ func TestExamplesAreValid(t *testing.T) {
 		shape.Rules = append(shape.Rules, r.Name)
 	}
 
-	raw, err := os.ReadFile(filepath.Join(root, "experiments", "tmax-exp-us-east-1.yaml"))
+	raw, err := os.ReadFile(filepath.Join(root, "experiments", "checkout-exp-us-east-1.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

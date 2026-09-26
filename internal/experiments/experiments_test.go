@@ -11,9 +11,9 @@ import (
 func catalog() map[string]Metric {
 	out := map[string]Metric{}
 	for _, m := range []Metric{
-		{Key: "dsp_bid_rate", Name: "DSP bid rate", Kind: "mean", Numerator: "dsp_bid_yn", Format: "percent", Direction: "increase"},
-		{Key: "dsp_win_rate", Name: "DSP win rate", Kind: "mean", Numerator: "dsp_won_yn", Format: "percent", Direction: "increase"},
-		{Key: "avg_bid_cpm", Name: "Average bid CPM", Kind: "ratio", Numerator: "dsp_bid_price", Denominator: "dsp_bid_count", Format: "currency", Direction: "increase"},
+		{Key: "conversion_rate", Name: "Conversion rate", Kind: "mean", Numerator: "converted_yn", Format: "percent", Direction: "increase"},
+		{Key: "add_to_cart_rate", Name: "Add-to-cart rate", Kind: "mean", Numerator: "added_to_cart_yn", Format: "percent", Direction: "increase"},
+		{Key: "avg_order_value", Name: "Average order value", Kind: "ratio", Numerator: "order_value", Denominator: "order_count", Format: "currency", Direction: "increase"},
 	} {
 		out[m.Key] = m
 	}
@@ -22,30 +22,30 @@ func catalog() map[string]Metric {
 
 func valid() Experiment {
 	e := Experiment{
-		Key:         "tmax-exp-us-east-1",
-		Name:        "TMAX US-East",
-		Owner:       "bidder",
-		Hypothesis:  "Lower tmax raises bid rate",
-		Flag:        "tmax",
+		Key:         "checkout-exp-us-east-1",
+		Name:        "Checkout US-East",
+		Owner:       "checkout",
+		Hypothesis:  "One-page checkout raises conversion",
+		Flag:        "checkout",
 		Environment: "production",
 		Allocations: []string{"exp-us-east-1"},
 		Control:     "control",
-		Variants:    []string{"control", "tmax150", "tmax225"},
+		Variants:    []string{"control", "one_page", "express"},
 		Start:       time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
 		End:         time.Date(2026, 10, 29, 0, 0, 0, 0, time.UTC),
 		Metrics: MetricSet{
-			Primary:    []string{"dsp_bid_rate"},
-			Secondary:  []string{"dsp_win_rate"},
-			Guardrails: []Guardrail{{Metric: "avg_bid_cpm", MaxDropPct: 2}},
+			Primary:    []string{"conversion_rate"},
+			Secondary:  []string{"add_to_cart_rate"},
+			Guardrails: []Guardrail{{Metric: "avg_order_value", MaxDropPct: 2}},
 		},
-		Segments: []string{"auction_type"},
+		Segments: []string{"plan"},
 	}
 	e = e.Normalized()
 	return e
 }
 
 func shape() *FlagShape {
-	return &FlagShape{Variations: []string{"control", "tmax150", "tmax225"}, Rules: []string{"exp-us-east-1"}}
+	return &FlagShape{Variations: []string{"control", "one_page", "express"}, Rules: []string{"exp-us-east-1"}}
 }
 
 func TestValidExperimentPasses(t *testing.T) {
@@ -74,9 +74,9 @@ func TestExperimentValidationValidationError(t *testing.T) {
 		{"no end", func(e *Experiment) { e.End = time.Time{} }, shape(), "end date"},
 		{"end before start", func(e *Experiment) { e.End = e.Start.Add(-time.Hour) }, shape(), "after the start"},
 		{"too long", func(e *Experiment) { e.End = e.Start.Add(MaxDuration + time.Hour) }, shape(), "8 weeks"},
-		{"unknown variant", func(e *Experiment) { e.Variants = append(e.Variants, "tmax999") }, shape(), `"tmax999" is not a variation`},
+		{"unknown variant", func(e *Experiment) { e.Variants = append(e.Variants, "mystery_arm") }, shape(), `"mystery_arm" is not a variation`},
 		{"unknown rule", func(e *Experiment) { e.Allocations = []string{"nope"} }, shape(), `allocation "nope"`},
-		{"control not a variant", func(e *Experiment) { e.Control = "tmax999" }, shape(), "control"},
+		{"control not a variant", func(e *Experiment) { e.Control = "mystery_arm" }, shape(), "control"},
 		{"one arm", func(e *Experiment) { e.Variants = []string{"control"} }, shape(), "at least one other"},
 		{"unknown metric", func(e *Experiment) { e.Metrics.Secondary = []string{"mystery"} }, shape(), `"mystery" is not in the metric catalog`},
 		{"no primary", func(e *Experiment) { e.Metrics.Primary = nil }, shape(), "primary"},
@@ -86,7 +86,7 @@ func TestExperimentValidationValidationError(t *testing.T) {
 		{"bad correction", func(e *Experiment) { e.Analysis.Correction = "bonf" }, shape(), "holm"},
 		{"bad status", func(e *Experiment) { e.Status = "paused" }, shape(), "status"},
 		{"bad unit", func(e *Experiment) { e.Unit.Type = "session" }, shape(), "unit type"},
-		{"missing flag", func(*Experiment) {}, nil, `no flag "tmax"`},
+		{"missing flag", func(*Experiment) {}, nil, `no flag "checkout"`},
 		{"bad decision", func(e *Experiment) { e.Decision = &Decision{Outcome: "ship"} }, shape(), "decision"},
 		{"decision variant", func(e *Experiment) { e.Decision = &Decision{Outcome: "roll_out", Variant: "x"} }, shape(), "not a variant"},
 	}
@@ -234,13 +234,13 @@ func TestDecide(t *testing.T) {
 	before, after := end.Add(-time.Hour), end.Add(time.Hour)
 	win := MetricResult{Name: "Bid rate", Role: "primary", Direction: "increase", Results: []ArmStat{arm("b", 0.03, 0.01, 0.05, nil)}}
 	flat := MetricResult{Name: "Bid rate", Role: "primary", Direction: "increase", Results: []ArmStat{arm("b", 0.01, -0.01, 0.03, nil)}}
-	guardOK := MetricResult{Name: "CPM", Role: "guardrail", Direction: "increase", Results: []ArmStat{arm("b", -0.001, -0.01, 0.008, &GuardrailCheck{MaxDropPct: num(2), Pass: true})}}
-	guardWide := MetricResult{Name: "CPM", Role: "guardrail", Direction: "increase", Results: []ArmStat{arm("b", -0.005, -0.04, 0.03, &GuardrailCheck{MaxDropPct: num(2), Pass: false})}}
-	guardHurt := MetricResult{Name: "CPM", Role: "guardrail", Direction: "increase", Results: []ArmStat{arm("b", -0.05, -0.07, -0.03, &GuardrailCheck{MaxDropPct: num(2), Pass: false})}}
+	guardOK := MetricResult{Name: "Order value", Role: "guardrail", Direction: "increase", Results: []ArmStat{arm("b", -0.001, -0.01, 0.008, &GuardrailCheck{MaxDropPct: num(2), Pass: true})}}
+	guardWide := MetricResult{Name: "Order value", Role: "guardrail", Direction: "increase", Results: []ArmStat{arm("b", -0.005, -0.04, 0.03, &GuardrailCheck{MaxDropPct: num(2), Pass: false})}}
+	guardHurt := MetricResult{Name: "Order value", Role: "guardrail", Direction: "increase", Results: []ArmStat{arm("b", -0.05, -0.07, -0.03, &GuardrailCheck{MaxDropPct: num(2), Pass: false})}}
 	undefined := MetricResult{Name: "Bid rate", Role: "primary", Direction: "increase", Results: []ArmStat{{Variant: "b"}}}
 	no, yes := false, true
-	guardNoData := MetricResult{Name: "CPM", Role: "guardrail", Direction: "increase", Results: []ArmStat{{Variant: "b", Guardrail: &GuardrailCheck{Pass: false, SignificantHarm: &no, Reason: "no usable data"}}}}
-	guardHarmFlag := MetricResult{Name: "CPM", Role: "guardrail", Direction: "increase", Results: []ArmStat{arm("b", -0.001, -0.01, 0.008, &GuardrailCheck{MaxDropPct: num(2), Pass: false, SignificantHarm: &yes})}}
+	guardNoData := MetricResult{Name: "Order value", Role: "guardrail", Direction: "increase", Results: []ArmStat{{Variant: "b", Guardrail: &GuardrailCheck{Pass: false, SignificantHarm: &no, Reason: "no usable data"}}}}
+	guardHarmFlag := MetricResult{Name: "Order value", Role: "guardrail", Direction: "increase", Results: []ArmStat{arm("b", -0.001, -0.01, 0.008, &GuardrailCheck{MaxDropPct: num(2), Pass: false, SignificantHarm: &yes})}}
 	lowerIsBetter := MetricResult{Name: "Timeouts", Role: "primary", Direction: "decrease", Results: []ArmStat{arm("b", -0.1, -0.15, -0.05, nil)}}
 
 	cases := []struct {
@@ -309,7 +309,7 @@ func TestSampleIsDeterministicAndLabelled(t *testing.T) {
 		}
 	}
 	if len(a.Segments) != 2 {
-		t.Errorf("auction_type should give two segments, got %d", len(a.Segments))
+		t.Errorf("plan should give two segments, got %d", len(a.Segments))
 	}
 	if len(a.Timeseries) != 10*2 {
 		t.Errorf("timeseries should have a point per day per treatment, got %d", len(a.Timeseries))

@@ -1,0 +1,7 @@
+key: conversion_rate
+name: Conversion rate
+kind: mean
+numerator: converted_yn
+format: percent
+direction: increase
+description: Share of users who completed a purchase.

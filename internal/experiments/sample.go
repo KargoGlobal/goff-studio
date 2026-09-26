@@ -10,10 +10,10 @@ import (
 )
 
 var segmentValues = map[string][]string{
-	"auction_type": {"open", "pmp"},
-	"media_type":   {"display", "video"},
-	"device":       {"desktop", "mobile", "ctv"},
-	"country":      {"us", "ca"},
+	"plan":    {"free", "pro"},
+	"channel": {"web", "app"},
+	"device":  {"desktop", "mobile", "ctv"},
+	"country": {"us", "ca"},
 }
 
 // Sample builds deterministic results from the registry alone, so the UI and

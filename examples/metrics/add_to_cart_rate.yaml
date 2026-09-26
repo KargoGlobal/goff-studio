@@ -1,0 +1,7 @@
+key: add_to_cart_rate
+name: Add-to-cart rate
+kind: mean
+numerator: added_to_cart_yn
+format: percent
+direction: increase
+description: Share of users who added an item to the cart.

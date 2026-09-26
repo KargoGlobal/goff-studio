@@ -1,0 +1,8 @@
+key: avg_order_value
+name: Average order value
+kind: ratio
+numerator: order_value
+denominator: order_count
+format: currency
+direction: increase
+description: Mean value of completed orders.

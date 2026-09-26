@@ -85,28 +85,28 @@ describe('helpers', () => {
 })
 
 const experiment: Experiment = {
-  key: 'tmax-exp-us-east-1',
-  name: 'TMAX US-East',
-  owner: 'bidder',
-  hypothesis: 'Lower tmax | raises bid rate',
+  key: 'checkout-exp-us-east-1',
+  name: 'Checkout US-East',
+  owner: 'checkout',
+  hypothesis: 'One-page checkout | raises conversion',
   ticket: 'EXP-1',
-  flag: 'tmax',
+  flag: 'checkout',
   environment: 'production',
   allocations: ['exp-us-east-1'],
   control: 'control',
-  variants: ['control', 'tmax150'],
+  variants: ['control', 'one_page'],
   unit: { type: 'request', key: 'targetingKey' },
   start: '2026-09-10T00:00:00Z',
   end: '2026-10-08T00:00:00Z',
   status: 'running',
-  metrics: { primary: ['dsp_bid_rate'], secondary: [], guardrails: [{ metric: 'avg_bid_cpm', max_drop_pct: 2 }] },
+  metrics: { primary: ['conversion_rate'], secondary: [], guardrails: [{ metric: 'avg_order_value', max_drop_pct: 2 }] },
   analysis: { test: 'sequential', alpha: 0.05, power: 0.8, cuped: false, correction: 'none', strata: [] },
   segments: [],
-  decision: { outcome: 'roll_out', variant: 'tmax150', by: 'ada@acme.com', at: '2026-10-09T00:00:00Z' },
+  decision: { outcome: 'roll_out', variant: 'one_page', by: 'ada@acme.com', at: '2026-10-09T00:00:00Z' },
 }
 
 const arm = (lift: number, lo: number, hi: number, guard?: boolean) => ({
-  variant: 'tmax150',
+  variant: 'one_page',
   value: 0.41,
   control_value: 0.4,
   lift,
@@ -120,8 +120,8 @@ const arm = (lift: number, lo: number, hi: number, guard?: boolean) => ({
 })
 
 const metrics: MetricResult[] = [
-  { key: 'dsp_bid_rate', name: 'DSP bid rate', kind: 'mean', role: 'primary', direction: 'increase', format: 'percent', results: [arm(0.025, 0.01, 0.04)] },
-  { key: 'avg_bid_cpm', name: 'Average bid CPM', kind: 'ratio', role: 'guardrail', direction: 'increase', format: 'currency', results: [arm(-0.03, -0.05, -0.01, false)] },
+  { key: 'conversion_rate', name: 'Conversion rate', kind: 'mean', role: 'primary', direction: 'increase', format: 'percent', results: [arm(0.025, 0.01, 0.04)] },
+  { key: 'avg_order_value', name: 'Average order value', kind: 'ratio', role: 'guardrail', direction: 'increase', format: 'currency', results: [arm(-0.03, -0.05, -0.01, false)] },
 ]
 
 const results: Results = {
@@ -136,27 +136,27 @@ const results: Results = {
   metrics,
   segments: [],
   timeseries: [
-    { date: '2026-09-12', metric: 'dsp_bid_rate', variant: 'tmax150', lift: 0.02, ci_low: 0, ci_high: 0.04 },
-    { date: '2026-09-11', metric: 'dsp_bid_rate', variant: 'tmax150', lift: 0.01, ci_low: -0.02, ci_high: 0.04 },
-    { date: '2026-09-11', metric: 'other', variant: 'tmax150', lift: 0.5, ci_low: 0, ci_high: 1 },
+    { date: '2026-09-12', metric: 'conversion_rate', variant: 'one_page', lift: 0.02, ci_low: 0, ci_high: 0.04 },
+    { date: '2026-09-11', metric: 'conversion_rate', variant: 'one_page', lift: 0.01, ci_low: -0.02, ci_high: 0.04 },
+    { date: '2026-09-11', metric: 'other', variant: 'one_page', lift: 0.5, ci_low: 0, ci_high: 1 },
   ],
   diagnostics: [],
-  decision: { recommendation: 'do_not_roll_out', variant: 'tmax150', reason: 'Guardrail hurt.' },
+  decision: { recommendation: 'do_not_roll_out', variant: 'one_page', reason: 'Guardrail hurt.' },
   sample: true,
 }
 
 describe('groupByRole and liftSeries', () => {
   it('groups metrics by role', () => {
     const g = groupByRole(metrics)
-    expect(g.primary.map((m) => m.key)).toEqual(['dsp_bid_rate'])
-    expect(g.guardrail.map((m) => m.key)).toEqual(['avg_bid_cpm'])
+    expect(g.primary.map((m) => m.key)).toEqual(['conversion_rate'])
+    expect(g.guardrail.map((m) => m.key)).toEqual(['avg_order_value'])
     expect(g.secondary).toEqual([])
   })
 
   it('builds sorted per-variant series for one metric', () => {
-    const s = liftSeries(results, 'dsp_bid_rate')
-    expect([...s.keys()]).toEqual(['tmax150'])
-    expect(s.get('tmax150')!.map((p) => p.date)).toEqual(['2026-09-11', '2026-09-12'])
+    const s = liftSeries(results, 'conversion_rate')
+    expect([...s.keys()]).toEqual(['one_page'])
+    expect(s.get('one_page')!.map((p) => p.date)).toEqual(['2026-09-11', '2026-09-12'])
   })
 })
 
@@ -164,20 +164,20 @@ describe('readoutMarkdown', () => {
   const md = readoutMarkdown(experiment, results)
 
   it('leads with the hypothesis and flags sample data', () => {
-    expect(md).toContain('# Experiment readout: TMAX US-East')
+    expect(md).toContain('# Experiment readout: Checkout US-East')
     expect(md).toContain('**Sample data.**')
-    expect(md).toContain('**Hypothesis:** Lower tmax | raises bid rate')
+    expect(md).toContain('**Hypothesis:** One-page checkout | raises conversion')
   })
 
   it('includes the decision and the recorded decision', () => {
-    expect(md).toContain('**Recommendation: Do not roll out tmax150.** Guardrail hurt.')
-    expect(md).toContain('**Recorded decision:** Rolled out (tmax150) by ada@acme.com on 2026-10-09')
+    expect(md).toContain('**Recommendation: Do not roll out one_page.** Guardrail hurt.')
+    expect(md).toContain('**Recorded decision:** Rolled out (one_page) by ada@acme.com on 2026-10-09')
   })
 
   it('renders primary and guardrail tables', () => {
     expect(md).toContain('| Metric | Variant | Control | Variant value | Lift | 95% CI | p-value | Significant |')
-    expect(md).toContain('| DSP bid rate | tmax150 | 40.0% | 41.0% | +2.50% | [+1.00%, +4.00%] | <0.001 | yes |')
-    expect(md).toContain('| Average bid CPM | tmax150 | -3.00% | [-5.00%, -1.00%] | 2% | FAIL |')
+    expect(md).toContain('| Conversion rate | one_page | 40.0% | 41.0% | +2.50% | [+1.00%, +4.00%] | <0.001 | yes |')
+    expect(md).toContain('| Average order value | one_page | -3.00% | [-5.00%, -1.00%] | 2% | FAIL |')
     expect(md).not.toContain('## Secondary metrics')
     expect(md).toContain('Traffic matches the planned split (p = 0.520).')
   })

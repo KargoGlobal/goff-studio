@@ -4,4 +4,4 @@ kind: mean
 numerator: click_yn
 format: percent
 direction: increase
-description: Share of served impressions that were clicked.
+description: Share of page views with a click.

@@ -15,42 +15,42 @@ kind: mean
 numerator: click_yn
 format: percent
 direction: increase
-description: Share of served impressions that were clicked.
+description: Share of page views with a click.
 `,
 	"gross_revenue": `key: gross_revenue
-name: Gross revenue per bid request
+name: Gross revenue per user
 kind: mean
 numerator: gross_revenue
 format: currency
 direction: increase
 cap:
   pct: 99.9
-description: Gross revenue per bid request.
+description: Gross revenue per user.
 `,
-	"net_cpm": `key: net_cpm
-name: Net CPM
+	"net_revenue_per_user": `key: net_revenue_per_user
+name: Net revenue per user
 kind: mean
-numerator: net_cpm
+numerator: net_revenue_per_user
 format: currency
 direction: increase
-description: Net revenue per thousand impressions.
+description: Net revenue per user.
 `,
-	"tmax_exceeded_rate": `key: tmax_exceeded_rate
-name: Timeout rate
+	"error_rate": `key: error_rate
+name: Error rate
 kind: mean
-numerator: dsp_tmax_exceeded_yn
+numerator: error_yn
 format: percent
 direction: decrease
-description: Share of DSP calls that exceeded the tmax budget.
+description: Share of requests that returned an error.
 `,
-	"avg_bid_cpm": `key: avg_bid_cpm
-name: Average bid CPM
+	"avg_order_value": `key: avg_order_value
+name: Average order value
 kind: ratio
-numerator: dsp_bid_price
-denominator: dsp_bid_count
+numerator: order_value
+denominator: order_count
 format: currency
 direction: increase
-description: Mean DSP bid price across all bids.
+description: Mean value of completed orders.
 `,
 }
 
@@ -78,7 +78,7 @@ metrics:
   primary: [click_rate]
   secondary: [gross_revenue]
   guardrails:
-    - {metric: net_cpm, max_drop_pct: 2}
+    - {metric: net_revenue_per_user, max_drop_pct: 2}
 analysis:
   test: sequential
   alpha: 0.05
@@ -102,7 +102,7 @@ start: %s
 end: %s
 status: running
 metrics:
-  primary: [tmax_exceeded_rate]
+  primary: [error_rate]
 analysis:
   test: fixed
   alpha: 0.05
@@ -180,10 +180,10 @@ func analysisResults(key string, now time.Time) (map[string]any, bool) {
 			"srm":      map[string]any{"chi2": 0.12, "p_value": 0.73, "flag": false, "max_abs_deviation": 0.0007},
 			"metrics": []map[string]any{
 				primary,
-				metric("net_cpm", "Net CPM", "guardrail", "increase", "currency", arm("on", 2.41, 2.42, -0.004, 0.009, 0.41, true, &guardPass)),
-				metric("gross_revenue", "Gross revenue per bid request", "secondary", "increase", "currency", arm("on", 0.0131, 0.0128, 0.021, 0.03, 0.17, true, nil)),
-				metric("pmp_gross_revenue", "PMP revenue", "secondary", "increase", "currency", undefinedArm("on", nil)),
-				metric("avg_bid_cpm", "Average bid CPM", "guardrail", "increase", "currency",
+				metric("net_revenue_per_user", "Net revenue per user", "guardrail", "increase", "currency", arm("on", 2.41, 2.42, -0.004, 0.009, 0.41, true, &guardPass)),
+				metric("gross_revenue", "Gross revenue per user", "secondary", "increase", "currency", arm("on", 0.0131, 0.0128, 0.021, 0.03, 0.17, true, nil)),
+				metric("gift_card_revenue", "Gift card revenue", "secondary", "increase", "currency", undefinedArm("on", nil)),
+				metric("avg_order_value", "Average order value", "guardrail", "increase", "currency",
 					undefinedArm("on", map[string]any{"pass": false, "significant_harm": false, "reason": "no usable data"})),
 			},
 			"segments": []map[string]any{
@@ -201,10 +201,10 @@ func analysisResults(key string, now time.Time) (map[string]any, bool) {
 			"variants": []map[string]any{{"key": "off", "is_control": true, "units": 500000, "expected_share": 0.5}, {"key": "on", "is_control": false, "units": 530000, "expected_share": 0.5}},
 			"srm":      map[string]any{"chi2": 873.8, "p_value": 0.0, "flag": true, "max_abs_deviation": 0.0146},
 			"metrics": []map[string]any{
-				metric("tmax_exceeded_rate", "Timeout rate", "primary", "decrease", "percent", arm("on", 0.021, 0.02, 0.05, 0.02, 0.0001, false, nil)),
+				metric("error_rate", "Error rate", "primary", "decrease", "percent", arm("on", 0.021, 0.02, 0.05, 0.02, 0.0001, false, nil)),
 			},
 			"segments":    []map[string]any{},
-			"timeseries":  series("tmax_exceeded_rate", "on", 0.05, 5),
+			"timeseries":  series("error_rate", "on", 0.05, 5),
 			"diagnostics": []map[string]any{{"check": "traffic_balance", "status": "fail", "detail": "Sample ratio mismatch."}},
 			"decision":    map[string]any{"recommendation": "do_not_roll_out", "variant": "", "reason": "Timeouts went up."},
 		}, true

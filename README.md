@@ -209,11 +209,11 @@ the same repository and goes through the same review-and-commit path as flags.
 ```
 flags-repo/
   production/
-    bidder.goff.yaml          # the flag the experiment runs on
+    checkout.goff.yaml            # the flag the experiment runs on
   experiments/
-    tmax-exp-us-east-1.yaml   # one registry entry per experiment
+    checkout-exp-us-east-1.yaml   # one registry entry per experiment
   metrics/
-    dsp_bid_rate.yaml         # one catalog entry per metric
+    conversion_rate.yaml          # one catalog entry per metric
 ```
 
 `experiments/` and `metrics/` are reserved: environment discovery skips them and

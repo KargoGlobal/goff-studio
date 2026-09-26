@@ -1,9 +1,9 @@
 key: gross_revenue
-name: Gross revenue per bid request
+name: Gross revenue per user
 kind: mean
 numerator: gross_revenue
 format: currency
 direction: increase
 cap:
   pct: 99.9
-description: Gross revenue per bid request.
+description: Gross revenue per user.

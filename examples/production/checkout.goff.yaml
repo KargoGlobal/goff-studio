@@ -1,0 +1,17 @@
+# Checkout flags. The experiment registry entry is experiments/checkout-exp-us-east-1.yaml.
+checkout:
+  variations:
+    control: multi-step
+    one_page: one-page
+    express: express
+  targeting:
+    - name: exp-us-east-1
+      query: region eq "us-east-1"
+      percentage:
+        control: 34
+        one_page: 33
+        express: 33
+  defaultRule:
+    variation: control
+  metadata:
+    team: checkout

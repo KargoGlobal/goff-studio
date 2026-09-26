@@ -1,0 +1,7 @@
+key: gift_card_revenue
+name: Gift card revenue per user
+kind: mean
+numerator: gift_card_revenue
+format: currency
+direction: increase
+description: Gift card revenue per user.

@@ -1,0 +1,7 @@
+key: error_rate
+name: Error rate
+kind: mean
+numerator: error_yn
+format: percent
+direction: decrease
+description: Share of requests that returned an error.

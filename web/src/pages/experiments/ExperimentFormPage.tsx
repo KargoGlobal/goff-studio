@@ -546,7 +546,7 @@ function ExperimentForm({
                   label="Strata"
                   values={draft.analysis.strata ?? []}
                   onChange={(strata) => set({ analysis: { ...draft.analysis, strata } })}
-                  placeholder="auction_type"
+                  placeholder="plan"
                 />
               </Field>
               <Field group label="Segments" hint="breakdowns in the results">
@@ -554,7 +554,7 @@ function ExperimentForm({
                   label="Segments"
                   values={draft.segments ?? []}
                   onChange={(segments) => set({ segments })}
-                  placeholder="media_type"
+                  placeholder="country"
                 />
               </Field>
             </div>

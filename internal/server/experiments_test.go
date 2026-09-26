@@ -44,8 +44,8 @@ func experimentRepo(t *testing.T) *repoState {
 	return repo
 }
 
-// withSecondRule gives the example tmax flag a rule exp-2, which logs under
-// tmax-exp-2, so tests can register a second experiment on the flag.
+// withSecondRule gives the example checkout flag a rule exp-2, which logs under
+// checkout-exp-2, so tests can register a second experiment on the flag.
 func withSecondRule(src string) string {
 	return strings.Replace(src, "  targeting:\n", `  targeting:
     - name: exp-2
@@ -61,30 +61,30 @@ func experimentServer(t *testing.T, repo *repoState, rules []permissions.Rule) (
 	return srv, sealer
 }
 
-func bidderTeam() *auth.Session {
-	return &auth.Session{Subject: "okta|bid", Name: "Bea Bidder", Email: "bea@acme.com", Groups: []string{"bidder"}}
+func checkoutTeam() *auth.Session {
+	return &auth.Session{Subject: "okta|chk", Name: "Cam Checkout", Email: "bea@acme.com", Groups: []string{"checkout"}}
 }
 
 func experimentRules() []permissions.Rule {
 	return append(adminRules(),
-		permissions.Rule{Group: "bidder", Allow: []string{"bidder"}, Environments: []string{"production"}},
+		permissions.Rule{Group: "checkout", Allow: []string{"checkout"}, Environments: []string{"production"}},
 	)
 }
 
 const newExperiment = `{"experiment": {
-  "key": "tmax-exp-2",
-  "name": "TMAX again",
-  "owner": "bidder",
+  "key": "checkout-exp-2",
+  "name": "Checkout again",
+  "owner": "checkout",
   "hypothesis": "Still lower is better",
-  "flag": "tmax",
+  "flag": "checkout",
   "environment": "production",
   "allocations": ["exp-2"],
   "control": "control",
-  "variants": ["control", "tmax150"],
+  "variants": ["control", "one_page"],
   "unit": {"type": "request", "key": "targetingKey"},
   "start": "2026-10-01T00:00:00Z",
   "end": "2026-10-15T00:00:00Z",
-  "metrics": {"primary": ["dsp_bid_rate"], "guardrails": [{"metric": "avg_bid_cpm", "max_drop_pct": 2}]}
+  "metrics": {"primary": ["conversion_rate"], "guardrails": [{"metric": "avg_order_value", "max_drop_pct": 2}]}
 }}`
 
 func TestListExperimentsWithSampleSummaries(t *testing.T) {
@@ -102,13 +102,13 @@ func TestListExperimentsWithSampleSummaries(t *testing.T) {
 		t.Fatalf("list = %+v", list)
 	}
 	e := list.Experiments[0]
-	if e.Key != "tmax-exp-us-east-1" || e.FlagFile != "production/bidder.goff.yaml" || e.FileSHA == "" {
+	if e.Key != "checkout-exp-us-east-1" || e.FlagFile != "production/checkout.goff.yaml" || e.FileSHA == "" {
 		t.Errorf("experiment = %+v", e)
 	}
 	if e.DaysRunning != 10 || e.DaysRemaining != 18 {
 		t.Errorf("days running/remaining = %d/%d, want 10/18", e.DaysRunning, e.DaysRemaining)
 	}
-	if e.Results == nil || !e.Results.Sample || e.Results.PrimaryMetric != "dsp_bid_rate" || e.Results.PrimaryLift == nil {
+	if e.Results == nil || !e.Results.Sample || e.Results.PrimaryMetric != "conversion_rate" || e.Results.PrimaryLift == nil {
 		t.Errorf("results summary = %+v", e.Results)
 	}
 	want := []permissions.Action{permissions.View, permissions.EditRules, permissions.Create}
@@ -124,17 +124,17 @@ func TestExperimentsFollowTheFlagOwnersPermissions(t *testing.T) {
 	var list ExperimentList
 	_ = json.Unmarshal(rec.Body.Bytes(), &list)
 	if rec.Code != http.StatusOK || len(list.Experiments) != 0 {
-		t.Errorf("marketing cannot see the bidder file, so must not see its experiment: %d %s", rec.Code, rec.Body)
+		t.Errorf("marketing cannot see the checkout file, so must not see its experiment: %d %s", rec.Code, rec.Body)
 	}
 
-	for _, target := range []string{"/api/experiments/tmax-exp-us-east-1", "/api/experiments/tmax-exp-us-east-1/results"} {
+	for _, target := range []string{"/api/experiments/checkout-exp-us-east-1", "/api/experiments/checkout-exp-us-east-1/results"} {
 		rec = request(t, srv, sealer, marketer(), http.MethodGet, target, "")
 		if rec.Code != http.StatusForbidden {
 			t.Errorf("%s: status %d, want 403", target, rec.Code)
 		}
 	}
 
-	rec = request(t, srv, sealer, bidderTeam(), http.MethodGet, "/api/experiments/tmax-exp-us-east-1", "")
+	rec = request(t, srv, sealer, checkoutTeam(), http.MethodGet, "/api/experiments/checkout-exp-us-east-1", "")
 	if rec.Code != http.StatusOK {
 		t.Errorf("the owning team should read it: %d %s", rec.Code, rec.Body)
 	}
@@ -166,23 +166,23 @@ func TestCreateExperimentCommitsTheRegistryFile(t *testing.T) {
 	repo := experimentRepo(t)
 	srv, sealer := experimentServer(t, repo, experimentRules())
 
-	rec := request(t, srv, sealer, bidderTeam(), http.MethodPost, "/api/experiments", newExperiment)
+	rec := request(t, srv, sealer, checkoutTeam(), http.MethodPost, "/api/experiments", newExperiment)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body)
 	}
-	written := repo.files["experiments/tmax-exp-2.yaml"]
-	for _, want := range []string{"key: tmax-exp-2", "status: draft", "test: sequential", "alpha: 0.05", "end: 2026-10-15T00:00:00Z"} {
+	written := repo.files["experiments/checkout-exp-2.yaml"]
+	for _, want := range []string{"key: checkout-exp-2", "status: draft", "test: sequential", "alpha: 0.05", "end: 2026-10-15T00:00:00Z"} {
 		if !strings.Contains(written, want) {
 			t.Errorf("written file should contain %q:\n%s", want, written)
 		}
 	}
 	last := repo.puts[len(repo.puts)-1]
 	msg, _ := last["message"].(string)
-	if !strings.HasPrefix(msg, "[experiments] tmax-exp-2: created") || !strings.Contains(msg, "GOFF-Studio-User: bea@acme.com") {
+	if !strings.HasPrefix(msg, "[experiments] checkout-exp-2: created") || !strings.Contains(msg, "GOFF-Studio-User: bea@acme.com") {
 		t.Errorf("commit message = %q", msg)
 	}
 
-	rec = request(t, srv, sealer, bidderTeam(), http.MethodPost, "/api/experiments", newExperiment)
+	rec = request(t, srv, sealer, checkoutTeam(), http.MethodPost, "/api/experiments", newExperiment)
 	if rec.Code != http.StatusConflict {
 		t.Errorf("a duplicate key should be 409, got %d %s", rec.Code, rec.Body)
 	}
@@ -192,12 +192,12 @@ func TestCreateExperimentValidates(t *testing.T) {
 	srv, sealer := experimentServer(t, experimentRepo(t), experimentRules())
 	cases := map[string][2]string{
 		"too long":        {`"end": "2026-10-15T00:00:00Z"`, `"end": "2026-12-15T00:00:00Z"`},
-		"unknown variant": {`["control", "tmax150"]`, `["control", "tmax999"]`},
-		"unknown metric":  {`"primary": ["dsp_bid_rate"]`, `"primary": ["mystery"]`},
-		"unknown flag":    {`"flag": "tmax"`, `"flag": "nope"`},
+		"unknown variant": {`["control", "one_page"]`, `["control", "mystery_arm"]`},
+		"unknown metric":  {`"primary": ["conversion_rate"]`, `"primary": ["mystery"]`},
+		"unknown flag":    {`"flag": "checkout"`, `"flag": "nope"`},
 	}
 	wants := map[string]string{
-		"too long": "8 weeks", "unknown variant": "tmax999", "unknown metric": "mystery", "unknown flag": "no flag",
+		"too long": "8 weeks", "unknown variant": "mystery_arm", "unknown metric": "mystery", "unknown flag": "no flag",
 	}
 	for name, sub := range cases {
 		body := strings.Replace(newExperiment, sub[0], sub[1], 1)
@@ -216,10 +216,10 @@ func TestCreateExperimentValidates(t *testing.T) {
 
 func TestCreateExperimentNeedsCreateOnTheFlagFile(t *testing.T) {
 	rules := append(adminRules(), permissions.Rule{
-		Group: "bidder", Allow: []string{"bidder"}, Environments: []string{"production"}, Actions: []string{"edit_rules"},
+		Group: "checkout", Allow: []string{"checkout"}, Environments: []string{"production"}, Actions: []string{"edit_rules"},
 	})
 	srv, sealer := experimentServer(t, experimentRepo(t), rules)
-	rec := request(t, srv, sealer, bidderTeam(), http.MethodPost, "/api/experiments", newExperiment)
+	rec := request(t, srv, sealer, checkoutTeam(), http.MethodPost, "/api/experiments", newExperiment)
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("edit_rules alone must not create: %d %s", rec.Code, rec.Body)
 	}
@@ -231,7 +231,7 @@ func TestCreateExperimentNeedsCreateOnTheFlagFile(t *testing.T) {
 
 func getExperiment(t *testing.T, srv *Server, sealer *auth.Sealer) ExperimentView {
 	t.Helper()
-	rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/tmax-exp-us-east-1", "")
+	rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/checkout-exp-us-east-1", "")
 	var view ExperimentView
 	if err := json.Unmarshal(rec.Body.Bytes(), &view); err != nil {
 		t.Fatalf("%v: %s", err, rec.Body)
@@ -255,31 +255,31 @@ func TestUpdateExperiment(t *testing.T) {
 	view := getExperiment(t, srv, sealer)
 	view.Status = "stopped"
 
-	rec := request(t, srv, sealer, admin(), http.MethodPost, "/api/experiments/tmax-exp-us-east-1/diff", updateBody(t, view, ""))
+	rec := request(t, srv, sealer, admin(), http.MethodPost, "/api/experiments/checkout-exp-us-east-1/diff", updateBody(t, view, ""))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "status running to stopped") ||
 		!strings.Contains(rec.Body.String(), `+status: stopped`) {
 		t.Errorf("diff: %d %s", rec.Code, rec.Body)
 	}
 
-	rec = request(t, srv, sealer, admin(), http.MethodPut, "/api/experiments/tmax-exp-us-east-1", updateBody(t, view, "not-the-sha"))
+	rec = request(t, srv, sealer, admin(), http.MethodPut, "/api/experiments/checkout-exp-us-east-1", updateBody(t, view, "not-the-sha"))
 	if rec.Code != http.StatusConflict {
 		t.Errorf("a stale sha should conflict: %d %s", rec.Code, rec.Body)
 	}
-	rec = request(t, srv, sealer, admin(), http.MethodPut, "/api/experiments/tmax-exp-us-east-1", updateBody(t, view, ""))
+	rec = request(t, srv, sealer, admin(), http.MethodPut, "/api/experiments/checkout-exp-us-east-1", updateBody(t, view, ""))
 	if rec.Code != http.StatusConflict {
 		t.Errorf("an update without a sha should conflict: %d %s", rec.Code, rec.Body)
 	}
 
-	rec = request(t, srv, sealer, admin(), http.MethodPut, "/api/experiments/tmax-exp-us-east-1", updateBody(t, view, view.FileSHA))
+	rec = request(t, srv, sealer, admin(), http.MethodPut, "/api/experiments/checkout-exp-us-east-1", updateBody(t, view, view.FileSHA))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("update: %d %s", rec.Code, rec.Body)
 	}
-	if !strings.Contains(repo.files["experiments/tmax-exp-us-east-1.yaml"], "status: stopped") {
-		t.Errorf("file not updated:\n%s", repo.files["experiments/tmax-exp-us-east-1.yaml"])
+	if !strings.Contains(repo.files["experiments/checkout-exp-us-east-1.yaml"], "status: stopped") {
+		t.Errorf("file not updated:\n%s", repo.files["experiments/checkout-exp-us-east-1.yaml"])
 	}
 
 	view.Key = "renamed"
-	rec = request(t, srv, sealer, admin(), http.MethodPut, "/api/experiments/tmax-exp-us-east-1", updateBody(t, view, view.FileSHA))
+	rec = request(t, srv, sealer, admin(), http.MethodPut, "/api/experiments/checkout-exp-us-east-1", updateBody(t, view, view.FileSHA))
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("a key change should be rejected: %d %s", rec.Code, rec.Body)
 	}
@@ -287,23 +287,23 @@ func TestUpdateExperiment(t *testing.T) {
 
 func TestUpdateKeepsUnknownRegistryKeys(t *testing.T) {
 	repo := experimentRepo(t)
-	repo.files["experiments/tmax-exp-us-east-1.yaml"] += "rollout_monitor:\n  dashboard: https://example.com/d/1\n"
+	repo.files["experiments/checkout-exp-us-east-1.yaml"] += "rollout_monitor:\n  dashboard: https://example.com/d/1\n"
 	srv, sealer := experimentServer(t, repo, experimentRules())
 
 	view := getExperiment(t, srv, sealer)
 	view.Name = "Renamed"
-	rec := request(t, srv, sealer, admin(), http.MethodPut, "/api/experiments/tmax-exp-us-east-1", updateBody(t, view, view.FileSHA))
+	rec := request(t, srv, sealer, admin(), http.MethodPut, "/api/experiments/checkout-exp-us-east-1", updateBody(t, view, view.FileSHA))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
-	if !strings.Contains(repo.files["experiments/tmax-exp-us-east-1.yaml"], "dashboard: https://example.com/d/1") {
+	if !strings.Contains(repo.files["experiments/checkout-exp-us-east-1.yaml"], "dashboard: https://example.com/d/1") {
 		t.Error("fields Studio does not edit must survive a save")
 	}
 }
 
 func TestSampleResults(t *testing.T) {
 	srv, sealer := experimentServer(t, experimentRepo(t), experimentRules())
-	rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/tmax-exp-us-east-1/results", "")
+	rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/checkout-exp-us-east-1/results", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
@@ -321,7 +321,7 @@ func TestSampleResults(t *testing.T) {
 		t.Errorf("results = %+v", res)
 	}
 
-	rec = request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/tmax-exp-us-east-1/results?as_of=yesterday", "")
+	rec = request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/checkout-exp-us-east-1/results?as_of=yesterday", "")
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("a malformed as_of should be 400, got %d", rec.Code)
 	}
@@ -348,11 +348,11 @@ func TestResultsAreProxiedToTheAnalysisService(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer svc-token" {
 			t.Errorf("auth = %q", r.Header.Get("Authorization"))
 		}
-		_, _ = w.Write([]byte(`{"experiment_key":"tmax-exp-us-east-1","status":"ok","srm":{"flag":true},"metrics":[]}`))
+		_, _ = w.Write([]byte(`{"experiment_key":"checkout-exp-us-east-1","status":"ok","srm":{"flag":true},"metrics":[]}`))
 	})
 
 	for range 2 {
-		rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/tmax-exp-us-east-1/results", "")
+		rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/checkout-exp-us-east-1/results", "")
 		if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), `"sample"`) {
 			t.Fatalf("%d %s", rec.Code, rec.Body)
 		}
@@ -385,7 +385,7 @@ func TestAnalysisFailuresAreFriendly(t *testing.T) {
 			w.WriteHeader(tc.status)
 			_, _ = w.Write([]byte(`{"error":"internal stack trace here"}`))
 		})
-		rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/tmax-exp-us-east-1/results", "")
+		rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/checkout-exp-us-east-1/results", "")
 		if rec.Code != tc.want {
 			t.Errorf("upstream %d: got %d, want %d", tc.status, rec.Code, tc.want)
 		}
@@ -408,49 +408,49 @@ func TestPowerEstimateWithoutAnalysisService(t *testing.T) {
 	}
 }
 
-const newMetric = `{"metric": {"key": "bid_count", "name": "Bids per request", "kind": "mean", "numerator": "dsp_bid_count", "format": "number", "direction": "increase"}}`
+const newMetric = `{"metric": {"key": "orders_per_user", "name": "Orders per user", "kind": "mean", "numerator": "order_count", "format": "number", "direction": "increase"}}`
 
 func TestMetricCatalog(t *testing.T) {
 	repo := experimentRepo(t)
 	srv, sealer := experimentServer(t, repo, experimentRules())
 
-	rec := request(t, srv, sealer, bidderTeam(), http.MethodGet, "/api/metrics", "")
+	rec := request(t, srv, sealer, checkoutTeam(), http.MethodGet, "/api/metrics", "")
 	var list MetricList
 	_ = json.Unmarshal(rec.Body.Bytes(), &list)
-	if rec.Code != http.StatusOK || len(list.Metrics) != 12 {
+	if rec.Code != http.StatusOK || len(list.Metrics) != 9 {
 		t.Fatalf("anyone who can see an environment reads the catalog: %d %d", rec.Code, len(list.Metrics))
 	}
 	if len(list.Metrics[0].Actions) != 0 {
 		t.Errorf("an environment-scoped team cannot edit the shared catalog, actions = %v", list.Metrics[0].Actions)
 	}
 
-	rec = request(t, srv, sealer, bidderTeam(), http.MethodPost, "/api/metrics", newMetric)
+	rec = request(t, srv, sealer, checkoutTeam(), http.MethodPost, "/api/metrics", newMetric)
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("an environment-scoped rule must not write the catalog: %d %s", rec.Code, rec.Body)
 	}
 
-	rec = request(t, srv, sealer, admin(), http.MethodPost, "/api/metrics/bid_count/diff", strings.Replace(newMetric, `{"metric"`, `{"create": true, "metric"`, 1))
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "+key: bid_count") {
+	rec = request(t, srv, sealer, admin(), http.MethodPost, "/api/metrics/orders_per_user/diff", strings.Replace(newMetric, `{"metric"`, `{"create": true, "metric"`, 1))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "+key: orders_per_user") {
 		t.Errorf("diff: %d %s", rec.Code, rec.Body)
 	}
 
 	rec = request(t, srv, sealer, admin(), http.MethodPost, "/api/metrics", newMetric)
-	if rec.Code != http.StatusCreated || !strings.Contains(repo.files["metrics/bid_count.yaml"], "numerator: dsp_bid_count") {
+	if rec.Code != http.StatusCreated || !strings.Contains(repo.files["metrics/orders_per_user.yaml"], "numerator: order_count") {
 		t.Fatalf("create: %d %s", rec.Code, rec.Body)
 	}
 
-	rec = request(t, srv, sealer, admin(), http.MethodGet, "/api/metrics/avg_bid_cpm", "")
+	rec = request(t, srv, sealer, admin(), http.MethodGet, "/api/metrics/avg_order_value", "")
 	var m MetricView
 	_ = json.Unmarshal(rec.Body.Bytes(), &m)
 	m.Description = "Changed"
 	raw, _ := json.Marshal(map[string]any{"metric": m.Metric, "fileSha": m.FileSHA})
-	rec = request(t, srv, sealer, admin(), http.MethodPut, "/api/metrics/avg_bid_cpm", string(raw))
-	if rec.Code != http.StatusOK || !strings.Contains(repo.files["metrics/avg_bid_cpm.yaml"], "description: Changed") {
+	rec = request(t, srv, sealer, admin(), http.MethodPut, "/api/metrics/avg_order_value", string(raw))
+	if rec.Code != http.StatusOK || !strings.Contains(repo.files["metrics/avg_order_value.yaml"], "description: Changed") {
 		t.Errorf("update: %d %s", rec.Code, rec.Body)
 	}
 
 	bad := strings.Replace(newMetric, `"kind": "mean"`, `"kind": "ratio"`, 1)
-	rec = request(t, srv, sealer, admin(), http.MethodPost, "/api/metrics", strings.Replace(bad, "bid_count", "bid_count_2", 1))
+	rec = request(t, srv, sealer, admin(), http.MethodPost, "/api/metrics", strings.Replace(bad, "orders_per_user", "orders_per_user_2", 1))
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "denominator") {
 		t.Errorf("a ratio without a denominator: %d %s", rec.Code, rec.Body)
 	}
@@ -489,7 +489,7 @@ func TestDiscoveryIgnoresExperimentDirectories(t *testing.T) {
 func TestExperimentsOnTheFileBackend(t *testing.T) {
 	root := t.TempDir()
 	src := filepath.Join("..", "..", "examples")
-	for _, rel := range []string{"production/bidder.goff.yaml", "metrics/dsp_bid_rate.yaml", "metrics/avg_bid_cpm.yaml"} {
+	for _, rel := range []string{"production/checkout.goff.yaml", "metrics/conversion_rate.yaml", "metrics/avg_order_value.yaml"} {
 		raw, err := os.ReadFile(filepath.Join(src, rel))
 		if err != nil {
 			t.Fatal(err)
@@ -515,7 +515,7 @@ func TestExperimentsOnTheFileBackend(t *testing.T) {
 	if _, err := svc.SaveExperiment(t.Context(), *admin(), ExperimentChange{Experiment: *body.Experiment, Create: true}); err != nil {
 		t.Fatal(err)
 	}
-	view, err := svc.GetExperiment(t.Context(), *admin(), "tmax-exp-2")
+	view, err := svc.GetExperiment(t.Context(), *admin(), "checkout-exp-2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -526,7 +526,7 @@ func TestExperimentsOnTheFileBackend(t *testing.T) {
 	if _, err := svc.SaveExperiment(t.Context(), *admin(), ExperimentChange{Key: view.Key, Experiment: view.Experiment, FileSHA: view.FileSHA}); err == nil {
 		t.Error("saving again from the old version should conflict")
 	}
-	raw, _ := os.ReadFile(filepath.Join(root, "experiments", "tmax-exp-2.yaml"))
+	raw, _ := os.ReadFile(filepath.Join(root, "experiments", "checkout-exp-2.yaml"))
 	if !strings.Contains(string(raw), "status: running") {
 		t.Errorf("file = %s", raw)
 	}
@@ -536,34 +536,34 @@ func TestRegistryKeyMustMatchTheAllocationsExperimentKey(t *testing.T) {
 	repo := experimentRepo(t)
 	srv, sealer := experimentServer(t, repo, experimentRules())
 
-	// Squatting: another team's allocation logs as tmax-exp-us-east-1, not tmax-squat.
-	squat := strings.Replace(strings.Replace(newExperiment, `"tmax-exp-2"`, `"tmax-squat"`, 1), `["exp-2"]`, `["exp-us-east-1"]`, 1)
-	rec := request(t, srv, sealer, bidderTeam(), http.MethodPost, "/api/experiments", squat)
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `exp-us-east-1 logs as \"tmax-exp-us-east-1\"`) {
+	// Squatting: another team's allocation logs as checkout-exp-us-east-1, not checkout-squat.
+	squat := strings.Replace(strings.Replace(newExperiment, `"checkout-exp-2"`, `"checkout-squat"`, 1), `["exp-2"]`, `["exp-us-east-1"]`, 1)
+	rec := request(t, srv, sealer, checkoutTeam(), http.MethodPost, "/api/experiments", squat)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `exp-us-east-1 logs as \"checkout-exp-us-east-1\"`) {
 		t.Fatalf("got %d %s, want 400 naming the logged key", rec.Code, rec.Body)
 	}
 
 	// An allocation with an explicit experimentKey in metadata.experiment registers under that key only.
-	repo.files["production/bidder.goff.yaml"] += `  metadata:
+	repo.files["production/checkout.goff.yaml"] += `  metadata:
     experiment:
       version: 1
       allocations:
         exp-2:
-          experimentKey: bidder-latency-q4
+          experimentKey: checkout-latency-q4
           splits:
-            - variation: tmax150
+            - variation: one_page
               shards: [{salt: s, ranges: [[0, 10000]]}]
 `
-	repo.files["production/bidder.goff.yaml"] = strings.Replace(repo.files["production/bidder.goff.yaml"], "  metadata:\n    team: bidder\n", "", 1)
-	repo.files["production/bidder.goff.yaml"] = strings.Replace(repo.files["production/bidder.goff.yaml"], "  metadata:\n    experiment:", "  metadata:\n    team: bidder\n    experiment:", 1)
-	repo.shas["production/bidder.goff.yaml"] = "sha-bidder-with-experiment"
+	repo.files["production/checkout.goff.yaml"] = strings.Replace(repo.files["production/checkout.goff.yaml"], "  metadata:\n    team: checkout\n", "", 1)
+	repo.files["production/checkout.goff.yaml"] = strings.Replace(repo.files["production/checkout.goff.yaml"], "  metadata:\n    experiment:", "  metadata:\n    team: checkout\n    experiment:", 1)
+	repo.shas["production/checkout.goff.yaml"] = "sha-checkout-with-experiment"
 
-	rec = request(t, srv, sealer, bidderTeam(), http.MethodPost, "/api/experiments", newExperiment)
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `exp-2 logs as \"bidder-latency-q4\"`) {
+	rec = request(t, srv, sealer, checkoutTeam(), http.MethodPost, "/api/experiments", newExperiment)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `exp-2 logs as \"checkout-latency-q4\"`) {
 		t.Fatalf("default key on an allocation with its own key: got %d %s", rec.Code, rec.Body)
 	}
-	owned := strings.Replace(newExperiment, `"tmax-exp-2"`, `"bidder-latency-q4"`, 1)
-	if rec = request(t, srv, sealer, bidderTeam(), http.MethodPost, "/api/experiments", owned); rec.Code != http.StatusCreated && rec.Code != http.StatusOK {
+	owned := strings.Replace(newExperiment, `"checkout-exp-2"`, `"checkout-latency-q4"`, 1)
+	if rec = request(t, srv, sealer, checkoutTeam(), http.MethodPost, "/api/experiments", owned); rec.Code != http.StatusCreated && rec.Code != http.StatusOK {
 		t.Fatalf("the allocation's own key should register: %d %s", rec.Code, rec.Body)
 	}
 }
@@ -585,7 +585,7 @@ func TestAsOfIsBoundedToAPastCalendarDay(t *testing.T) {
 		{"1999-12-31", http.StatusBadRequest},
 		{"yesterday", http.StatusBadRequest},
 	} {
-		rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/tmax-exp-us-east-1/results?as_of="+tc.asOf, "")
+		rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/checkout-exp-us-east-1/results?as_of="+tc.asOf, "")
 		if rec.Code != tc.code {
 			t.Errorf("as_of=%s: %d %s, want %d", tc.asOf, rec.Code, rec.Body, tc.code)
 		}
@@ -597,7 +597,7 @@ func TestAsOfIsBoundedToAPastCalendarDay(t *testing.T) {
 
 func TestResultsAndPowerAreNotCachedByTheBrowser(t *testing.T) {
 	srv, sealer := experimentServer(t, experimentRepo(t), experimentRules())
-	rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/tmax-exp-us-east-1/results", "")
+	rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/checkout-exp-us-east-1/results", "")
 	if got := rec.Header().Get("Cache-Control"); rec.Code != http.StatusOK || got != "no-cache" {
 		t.Errorf("results: %d Cache-Control %q", rec.Code, got)
 	}
@@ -618,7 +618,7 @@ func TestUnreachableAnalysisServiceIs502(t *testing.T) {
 	svc.clock = srv.svc.clock
 	srv.svc = svc
 
-	rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/tmax-exp-us-east-1/results", "")
+	rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/experiments/checkout-exp-us-east-1/results", "")
 	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "unreachable") {
 		t.Errorf("got %d %s", rec.Code, rec.Body)
 	}
