@@ -2,8 +2,10 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Plus, X } from 'lucide-react'
 import { ApiError, type Environment, type NewVariation } from '@/lib/api'
-import { useCreateFlag, useCreateTeam, useFlags, useMe } from '@/hooks/useFlags'
+import { useCreateFlag, useFlags, useMe } from '@/hooks/useFlags'
 import { Button, Card, Input, Spinner } from '@/components/ui/primitives'
+import { Select } from '@/components/ui/Select'
+import { NewTeamDialog } from '@/components/NewTeamDialog'
 import { useToast } from '@/components/ui/Toast'
 
 const TYPES = [
@@ -36,12 +38,11 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
   const { data } = useFlags(env)
   const { data: me } = useMe()
   const create = useCreateFlag(env)
-  const createTeam = useCreateTeam(env)
   const toast = useToast()
 
   const [key, setKey] = useState('')
   const [team, setTeam] = useState('')
-  const [newTeam, setNewTeam] = useState<string | null>(null)
+  const [teamDialogOpen, setTeamDialogOpen] = useState(false)
   const [type, setType] = useState<string>('boolean')
   const [variations, setVariations] = useState<NewVariation[]>(DEFAULTS.boolean)
   const [defaultName, setDefaultName] = useState('off')
@@ -51,30 +52,6 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
   const teams = data?.teams ?? []
   const chosenTeam = team || teams[0]?.name || ''
   const chosenFile = teams.find((t) => t.name === chosenTeam)?.file ?? ''
-
-  async function addTeam() {
-    const name = (newTeam ?? '').trim()
-    if (name === '') {
-      setFieldError({ field: 'newTeam', message: 'Give the team a name.' })
-      return
-    }
-    if (/[\s/\\]/.test(name)) {
-      setFieldError({ field: 'newTeam', message: 'Use letters, numbers and dashes only.' })
-      return
-    }
-    try {
-      await createTeam.mutateAsync(name)
-      setTeam(name)
-      setNewTeam(null)
-      setFieldError(null)
-      toast(`Created ${name}.`)
-    } catch (e) {
-      setFieldError({
-        field: 'newTeam',
-        message: e instanceof Error ? e.message : 'Could not create the team',
-      })
-    }
-  }
 
   function changeType(next: string) {
     setType(next)
@@ -196,67 +173,28 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
             <label htmlFor="flag-team" className="text-sm font-medium text-ink-soft">
               Team
             </label>
-            {newTeam === null && (
-              <button
-                type="button"
-                onClick={() => setNewTeam('')}
-                className="text-sm font-medium text-brand hover:underline"
-              >
-                New team
-              </button>
-            )}
-          </div>
-          {newTeam === null ? (
-            <select
-              id="flag-team"
-              value={chosenTeam}
-              onChange={(e) => setTeam(e.target.value)}
-              className="h-11 w-full rounded-md border bg-surface px-3 font-mono text-base focus:border-brand focus:outline-none"
+            <button
+              type="button"
+              onClick={() => setTeamDialogOpen(true)}
+              className="text-sm font-medium text-brand hover:underline"
             >
-              {teams.length === 0 && <option value="">No teams yet</option>}
-              {teams.map((t) => (
-                <option key={t.name} value={t.name}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <div className="flex gap-2">
-              <Input
-                autoFocus
-                value={newTeam}
-                onChange={(e) => {
-                  setNewTeam(e.target.value)
-                  setFieldError(null)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void addTeam()
-                  if (e.key === 'Escape') setNewTeam(null)
-                }}
-                placeholder="billing"
-                className="h-11 font-mono text-base"
-                aria-label="New team name"
-              />
-              <Button onClick={() => void addTeam()} disabled={createTeam.isPending}>
-                {createTeam.isPending && <Spinner className="border-white/40 border-t-white" />}
-                Add
-              </Button>
-              <Button variant="outline" onClick={() => setNewTeam(null)}>
-                Cancel
-              </Button>
-            </div>
-          )}
+              New team
+            </button>
+          </div>
+          <Select
+            id="flag-team"
+            value={chosenTeam}
+            onChange={(v) => setTeam(v)}
+            options={teams.map((t) => ({ value: t.name, label: t.name }))}
+            placeholder={teams.length === 0 ? 'No teams yet' : 'Pick a team'}
+            ariaLabel="Team"
+          />
           <p className="mt-1.5 text-[13px] text-ink-muted">
             Written to <span className="font-mono">metadata.team</span> and stored in{' '}
             <span className="font-mono">{chosenFile || `${env}/<team>.goff.yaml`}</span>, which
             decides who may edit it
             {me?.capabilities?.review !== false && ' and who reviews changes via CODEOWNERS'}.
           </p>
-          {fieldError?.field === 'newTeam' && (
-            <p role="alert" className="mt-2 text-sm text-danger">
-              {fieldError.message}
-            </p>
-          )}
         </div>
 
         <div>
@@ -304,19 +242,21 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
               />
 
               {type === 'boolean' ? (
-                <select
-                  value={row.value}
-                  onChange={(e) =>
-                    setVariations((prev) =>
-                      prev.map((v, j) => (j === i ? { ...v, value: e.target.value } : v)),
-                    )
-                  }
-                  aria-label={`Variation ${i + 1} value`}
-                  className="h-10 flex-1 rounded-md border bg-surface px-2.5 font-mono text-sm focus:border-brand focus:outline-none"
-                >
-                  <option value="true">true</option>
-                  <option value="false">false</option>
-                </select>
+                <div className="flex-1">
+                  <Select
+                    value={row.value}
+                    onChange={(v) =>
+                      setVariations((prev) =>
+                        prev.map((v2, j) => (j === i ? { ...v2, value: v } : v2)),
+                      )
+                    }
+                    options={[
+                      { value: 'true', label: 'true' },
+                      { value: 'false', label: 'false' },
+                    ]}
+                    ariaLabel={`Variation ${i + 1} value`}
+                  />
+                </div>
               ) : type === 'json' ? (
                 <textarea
                   value={row.value}
@@ -371,21 +311,17 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
           <label htmlFor="flag-default" className="mb-1.5 block text-sm font-medium text-ink-soft">
             Served when no rule matches
           </label>
-          <select
+          <Select
             id="flag-default"
             value={defaultName}
-            onChange={(e) => setDefaultName(e.target.value)}
-            className="h-10 w-64 rounded-md border bg-surface px-2.5 font-mono text-sm focus:border-brand focus:outline-none"
-          >
-            <option value="">— pick one —</option>
-            {variations
+            onChange={(v) => setDefaultName(v)}
+            options={variations
               .filter((v) => v.name.trim() !== '')
-              .map((v) => (
-                <option key={v.name} value={v.name}>
-                  {v.name}
-                </option>
-              ))}
-          </select>
+              .map((v) => ({ value: v.name, label: v.name }))}
+            placeholder="— pick one —"
+            ariaLabel="Default variation"
+            className="w-64"
+          />
         </div>
 
         <label className="flex items-center gap-2.5 text-base">
@@ -417,6 +353,13 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
           Cancel
         </Button>
       </div>
+
+      <NewTeamDialog
+        env={env}
+        open={teamDialogOpen}
+        onClose={() => setTeamDialogOpen(false)}
+        onCreated={(name) => setTeam(name)}
+      />
     </div>
   )
 }
