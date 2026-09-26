@@ -37,9 +37,11 @@ export function AppShell({
   return (
     <div className="flex h-screen overflow-hidden">
       <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col overflow-y-auto border-r border-[color:var(--color-sidebar-line)] bg-[color:var(--color-sidebar)] text-[color:var(--color-sidebar-ink)]">
-        <Link
-          to="/"
-          aria-label="GO Feature Flag Studio home"
+        <a
+          href="https://gofeatureflag.org/"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="GO Feature Flag (opens in a new tab)"
           className="flex flex-col items-center gap-2 rounded-md px-4 py-5 transition-opacity hover:opacity-90"
         >
           <Logo className="h-20 w-20 shrink-0" />
@@ -49,7 +51,7 @@ export function AppShell({
               GO Feature Flag
             </p>
           </div>
-        </Link>
+        </a>
 
         <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2">
           <p className="flex items-center gap-1.5 px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--color-sidebar-ink-muted)]">
