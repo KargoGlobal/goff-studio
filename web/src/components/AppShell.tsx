@@ -37,9 +37,11 @@ export function AppShell({
   return (
     <div className="flex h-screen overflow-hidden">
       <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col overflow-y-auto border-r border-[color:var(--color-sidebar-line)] bg-[color:var(--color-sidebar)] text-[color:var(--color-sidebar-ink)]">
-        <Link
-          to="/"
-          aria-label="GO Feature Flag Studio home"
+        <a
+          href="https://gofeatureflag.org/"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="GO Feature Flag (opens in a new tab)"
           className="flex flex-col items-center gap-2 rounded-md px-4 py-5 transition-opacity hover:opacity-90"
         >
           <Logo className="h-20 w-20 shrink-0" />
@@ -49,7 +51,7 @@ export function AppShell({
               GO Feature Flag
             </p>
           </div>
-        </Link>
+        </a>
 
         <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2">
           <p className="flex items-center gap-1.5 px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--color-sidebar-ink-muted)]">
@@ -102,32 +104,54 @@ export function AppShell({
           </button>
         </nav>
 
-        <div className="shrink-0 border-t border-[color:var(--color-sidebar-line)] px-4 py-3">
-          <div className="mb-2">
-            <p className="truncate text-[13px] font-medium text-[color:var(--color-sidebar-ink)]">{user.name}</p>
-            <p className="truncate text-[11px] text-[color:var(--color-sidebar-ink-muted)]">{user.email}</p>
-          </div>
-          <div className="flex gap-1">
+        <div className="shrink-0 px-3 pb-6 pt-4">
+          <div className="mx-auto mb-3 flex w-fit items-center gap-1 rounded-full bg-[color:var(--color-sidebar-hover)] p-1">
             <button
               type="button"
-              onClick={toggle}
-              aria-label="Toggle theme"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[color:var(--color-sidebar-ink)] transition-colors hover:bg-[color:var(--color-sidebar-hover)]"
+              onClick={() => dark && toggle()}
+              aria-label="Light mode"
+              aria-pressed={!dark}
+              className={cn(
+                'inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors',
+                !dark
+                  ? 'bg-[color:var(--color-sidebar-active)] text-[color:var(--color-sidebar-active-ink)]'
+                  : 'text-[color:var(--color-sidebar-ink-muted)] hover:text-[color:var(--color-sidebar-ink)]',
+              )}
             >
-              {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+              <Sun className="h-4 w-4" />
             </button>
             <button
               type="button"
-              aria-label="Sign out"
-              onClick={async () => {
-                await api.logout()
-                window.location.href = '/'
-              }}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[color:var(--color-sidebar-ink)] transition-colors hover:bg-[color:var(--color-sidebar-hover)]"
+              onClick={() => !dark && toggle()}
+              aria-label="Dark mode"
+              aria-pressed={dark}
+              className={cn(
+                'inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors',
+                dark
+                  ? 'bg-[color:var(--color-sidebar-active)] text-[color:var(--color-sidebar-active-ink)]'
+                  : 'text-[color:var(--color-sidebar-ink-muted)] hover:text-[color:var(--color-sidebar-ink)]',
+              )}
             >
-              <LogOut className="h-3.5 w-3.5" />
+              <Moon className="h-4 w-4" />
             </button>
           </div>
+          <div className="mx-auto mb-4 h-px w-48 bg-[color:var(--color-sidebar-line)]" aria-hidden />
+          <div className="mb-3 min-w-0 text-center">
+            <p className="truncate text-[15px] font-semibold text-[color:var(--color-sidebar-ink)]">{user.name}</p>
+            <p className="truncate text-[12.5px] text-[color:var(--color-sidebar-ink-muted)]">{user.email}</p>
+          </div>
+          <button
+            type="button"
+            aria-label="Sign out"
+            onClick={async () => {
+              await api.logout()
+              window.location.href = '/'
+            }}
+            className="mx-auto flex h-8 w-full max-w-40 items-center justify-center gap-2 rounded-md text-[13px] font-medium text-[color:var(--color-sidebar-ink)] transition-colors hover:bg-[color:var(--color-sidebar-hover)]"
+          >
+            <LogOut className="h-4 w-4" />
+            Sign out
+          </button>
         </div>
       </aside>
 
