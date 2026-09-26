@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { ProgressiveRollout, RolloutStep } from '@/lib/api'
-import { Button, Input } from '@/components/ui/primitives'
+import { Button } from '@/components/ui/primitives'
+import { Select } from '@/components/ui/Select'
 import { DateTimeInput } from '@/components/DateTimeInput'
 import { DATE_HINT, formatWhen } from '@/lib/dates'
 
@@ -57,27 +58,23 @@ export function ProgressiveEditor({
 
   function step(label: 'initial' | 'end', value: RolloutStep) {
     return (
-      <div className="space-y-1.5 rounded-md border bg-surface p-2.5">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-ink-muted">
+      <div className="space-y-2 rounded-lg border bg-surface p-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-sidebar-active)]">
           {label === 'initial' ? 'Start' : 'End'}
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          <select
-            aria-label={`${label} variation`}
-            value={value.variation}
-            onChange={(e) =>
-              setDraft((prev) => ({ ...prev, [label]: { ...value, variation: e.target.value } }))
-            }
-            className="h-8 rounded-md border bg-surface px-2 font-mono text-[12.5px] focus:border-brand focus:outline-none"
-          >
-            {variations.map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </select>
-          <div className="flex items-center gap-1">
-            <Input
+          <div className="w-40">
+            <Select
+              value={value.variation}
+              onChange={(v) =>
+                setDraft((prev) => ({ ...prev, [label]: { ...value, variation: v } }))
+              }
+              ariaLabel={`${label} variation`}
+              options={variations.map((v) => ({ value: v, label: v }))}
+            />
+          </div>
+          <label className="inline-flex h-11 items-center gap-1 rounded-md border bg-surface pl-3 pr-2 focus-within:border-brand">
+            <input
               type="number"
               min={0}
               max={100}
@@ -89,11 +86,12 @@ export function ProgressiveEditor({
                   [label]: { ...value, percentage: Number(e.target.value) },
                 }))
               }
-              className="h-8 w-20 font-mono"
+              className="w-16 bg-transparent font-mono text-sm text-ink focus:outline-none"
             />
-            <span className="text-[12.5px] text-ink-muted">%</span>
-          </div>
+            <span className="text-sm text-ink-muted">%</span>
+          </label>
           <DateTimeInput
+            className="w-64"
             label={`${label} date`}
             value={value.date}
             onChange={(iso) =>

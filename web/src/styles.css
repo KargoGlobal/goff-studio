@@ -72,6 +72,7 @@
   --color-flare-soft: #fdece1;
   --color-danger: #b3261e;
   --color-danger-soft: #fdeceb;
+  --color-danger-neon: #ff2d1a;
   --color-warn: #8a6116;
   --color-warn-soft: #fdf6e7;
   --color-ok: #1f7a4d;
@@ -121,8 +122,9 @@
     --color-plum-soft: #26203a;
     --color-flare: #e08150;
     --color-flare-soft: #3a2418;
-    --color-danger: #f4948d;
-    --color-danger-soft: #35201f;
+    --color-danger: #ff5c5c;
+    --color-danger-soft: #2a0e0e;
+    --color-danger-neon: #ff2d1a;
     --color-warn: #e3b567;
     --color-warn-soft: #322a1a;
     --color-ok: #6fce9a;

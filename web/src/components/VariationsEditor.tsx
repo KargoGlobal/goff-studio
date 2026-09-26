@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Plus, X } from 'lucide-react'
 import type { Flag, NewVariation } from '@/lib/api'
 import { Button } from '@/components/ui/primitives'
+import { Select } from '@/components/ui/Select'
 
 function toRaw(value: unknown, type: Flag['type']): string {
   if (value === null || value === undefined) return ''
@@ -120,26 +121,28 @@ export function VariationsEditor({
                 onChange={(e) => update(i, { name: e.target.value })}
                 placeholder="name"
                 aria-label={`Variation ${i + 1} name`}
-                className="h-8 w-32 shrink-0 rounded-md border bg-surface px-2 font-mono text-[12.5px] focus:border-brand focus:outline-none"
+                className="h-11 w-40 shrink-0 rounded-md border bg-surface px-2.5 font-mono text-sm focus:border-brand focus:outline-none"
               />
 
               {flag.type === 'boolean' ? (
-                <select
-                  value={row.value}
-                  onChange={(e) => update(i, { value: e.target.value })}
-                  aria-label={`Variation ${i + 1} value`}
-                  className="h-8 flex-1 rounded-md border bg-surface px-2 font-mono text-[12.5px] focus:border-brand focus:outline-none"
-                >
-                  <option value="true">true</option>
-                  <option value="false">false</option>
-                </select>
+                <div className="flex-1">
+                  <Select
+                    value={row.value}
+                    onChange={(v) => update(i, { value: v })}
+                    ariaLabel={`Variation ${i + 1} value`}
+                    options={[
+                      { value: 'true', label: 'true' },
+                      { value: 'false', label: 'false' },
+                    ]}
+                  />
+                </div>
               ) : flag.type === 'json' ? (
                 <textarea
                   value={row.value}
                   onChange={(e) => update(i, { value: e.target.value })}
                   rows={2}
                   aria-label={`Variation ${i + 1} value`}
-                  className="flex-1 rounded-md border bg-surface px-2 py-1.5 font-mono text-[12.5px] focus:border-brand focus:outline-none"
+                  className="flex-1 rounded-md border bg-surface px-2.5 py-2 font-mono text-sm focus:border-brand focus:outline-none"
                 />
               ) : (
                 <input
@@ -148,7 +151,7 @@ export function VariationsEditor({
                   onChange={(e) => update(i, { value: e.target.value })}
                   placeholder="value"
                   aria-label={`Variation ${i + 1} value`}
-                  className="h-8 flex-1 rounded-md border bg-surface px-2 font-mono text-[12.5px] focus:border-brand focus:outline-none"
+                  className="h-11 flex-1 rounded-md border bg-surface px-2.5 font-mono text-sm focus:border-brand focus:outline-none"
                 />
               )}
 
@@ -157,10 +160,10 @@ export function VariationsEditor({
                 onClick={() => remove(i)}
                 title={used ? `Used by ${used}` : 'Remove'}
                 aria-label={`Remove variation ${row.name || i + 1}`}
-                className="h-8 w-8 shrink-0 rounded-md border text-ink-muted hover:border-danger hover:text-danger disabled:opacity-40"
+                className="h-11 w-11 shrink-0 rounded-md border text-ink-muted transition-colors hover:border-danger hover:text-danger disabled:opacity-40"
                 disabled={Boolean(used)}
               >
-                <X className="mx-auto h-3.5 w-3.5" />
+                <X className="mx-auto h-4 w-4" />
               </button>
             </div>
           )
@@ -177,24 +180,18 @@ export function VariationsEditor({
       </Button>
 
       <div>
-        <label htmlFor="default-variation" className="mb-1 block text-[12px] text-ink-soft">
+        <label htmlFor="default-variation" className="mb-1.5 block text-sm font-medium text-ink-soft">
           Served when no rule matches
         </label>
-        <select
+        <Select
           id="default-variation"
           value={defaultName}
-          onChange={(e) => setDefaultName(e.target.value)}
-          className="h-8 w-48 rounded-md border bg-surface px-2 font-mono text-[12.5px] focus:border-brand focus:outline-none"
-        >
-          <option value="">— pick one —</option>
-          {rows
-            .filter((r) => r.name.trim() !== '')
-            .map((r) => (
-              <option key={r.name} value={r.name}>
-                {r.name}
-              </option>
-            ))}
-        </select>
+          onChange={(v) => setDefaultName(v)}
+          ariaLabel="Default variation"
+          placeholder="— pick one —"
+          options={rows.filter((r) => r.name.trim() !== '').map((r) => ({ value: r.name, label: r.name }))}
+          className="w-64"
+        />
       </div>
 
       {error && (

@@ -11,6 +11,7 @@ import {
 } from '@/lib/api'
 import { useCompare, usePromote } from '@/hooks/useFlags'
 import { Badge, Button, Card, Spinner } from '@/components/ui/primitives'
+import { Select } from '@/components/ui/Select'
 import { ReviewDialog } from '@/components/ReviewDialog'
 import { useToast } from '@/components/ui/Toast'
 import { ScheduleBadge } from '@/components/ScheduleBadge'
@@ -131,18 +132,14 @@ export function ComparePage({ environments }: { environments: Environment[] }) {
 
       <div className="flex items-center gap-2">
         <span className="text-[13px] text-ink-muted">Compare with</span>
-        <select
-          aria-label="Target environment"
-          value={target}
-          onChange={(e) => setTarget(e.target.value)}
-          className="h-9 rounded-md border bg-surface px-2 text-sm text-ink focus:border-brand focus:outline-none"
-        >
-          {others.map((e) => (
-            <option key={e.name} value={e.name}>
-              {e.display}
-            </option>
-          ))}
-        </select>
+        <div className="w-56">
+          <Select
+            value={target}
+            onChange={(v) => setTarget(v)}
+            ariaLabel="Target environment"
+            options={others.map((e) => ({ value: e.name, label: e.display }))}
+          />
+        </div>
       </div>
 
       {isLoading && <Spinner />}

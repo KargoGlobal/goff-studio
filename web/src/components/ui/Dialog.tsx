@@ -14,7 +14,7 @@ export function Dialog({
   title: string
   children: ReactNode
   footer?: ReactNode
-  tone?: 'neutral' | 'protected'
+  tone?: 'neutral' | 'protected' | 'danger'
 }) {
   useEffect(() => {
     if (!open) return
@@ -41,12 +41,14 @@ export function Dialog({
         className={cn(
           'relative z-10 w-full max-w-lg overflow-hidden rounded-xl border bg-surface shadow-xl',
           tone === 'protected' && 'border-warn',
+          tone === 'danger' && 'border-[color:var(--color-danger-neon)]',
         )}
       >
         <div
           className={cn(
             'border-b px-5 py-3.5',
             tone === 'protected' && 'border-warn bg-warn-soft',
+            tone === 'danger' && 'border-[color:var(--color-danger-neon)] bg-[color:var(--color-danger-soft)] text-[color:var(--color-danger)]',
           )}
         >
           <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
