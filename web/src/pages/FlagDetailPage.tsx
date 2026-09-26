@@ -43,6 +43,7 @@ import {
   useSetVariations,
 } from '@/hooks/useFlags'
 import { Badge, Button, Card, Code, Input, Spinner, Toggle } from '@/components/ui/primitives'
+import { Select } from '@/components/ui/Select'
 import { ReviewDialog } from '@/components/ReviewDialog'
 import { useToast } from '@/components/ui/Toast'
 import { describeOutcome } from '@/lib/describe'
@@ -350,27 +351,29 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <Link
         to={`/env/${env}`}
-        className="inline-flex items-center gap-2 text-base font-medium text-ink-muted hover:text-ink"
+        className="inline-flex items-center gap-2 text-lg font-semibold text-ink-muted transition-colors hover:text-ink"
       >
-        <ArrowLeft className="h-5 w-5" />
+        <ArrowLeft className="h-6 w-6" />
         All flags
       </Link>
 
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           {renaming === null ? (
-            <div className="flex items-baseline gap-2">
-              <h1 className="font-mono text-xl font-semibold tracking-tight">{flag.key}</h1>
+            <div className="flex items-baseline gap-3">
+              <h1 className="font-mono text-3xl font-bold tracking-tight">{flag.key}</h1>
               {can('create') && can('delete') && (
                 <button
                   type="button"
                   onClick={() => setRenaming(flag.key)}
-                  className="text-[12px] text-brand hover:underline"
+                  aria-label="Rename this flag"
+                  title="Rename"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md text-brand transition-colors hover:text-brand-strong"
                 >
-                  Rename
+                  <Pencil className="h-4 w-4" />
                 </button>
               )}
             </div>
@@ -401,26 +404,25 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
               </Button>
             </div>
           )}
-          <p className="mt-1 text-[13px] text-ink-soft">{flag.summary}</p>
+          <p className="mt-1.5 text-base text-ink-soft">{flag.summary}</p>
         </div>
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-3">
           {environments.length > 1 && (
             <Link
               to={`/env/${env}/flags/${encodeURIComponent(key)}/compare`}
-              className="inline-flex items-center gap-1.5 text-[13px] text-ink-muted hover:text-ink"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-muted transition-colors hover:text-ink"
             >
-              <GitCompare className="h-3.5 w-3.5" />
+              <GitCompare className="h-4 w-4" />
               Compare
             </Link>
           )}
           {can('delete') && (
             <Button
-              size="sm"
               variant="ghost"
               onClick={() => void openReview({ kind: 'deleteFlag' })}
               aria-label={`Delete ${flag.key}`}
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="h-4 w-4" />
               Delete
             </Button>
           )}
@@ -447,9 +449,9 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
-          <Card className="p-4">
+          <Card className="p-6">
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-[13px] font-semibold uppercase tracking-wide text-ink-muted">
+              <h2 className="text-xl font-semibold tracking-tight text-ink">
                 Variations
               </h2>
               {can('edit_variations') && !editingVariations && (
@@ -489,18 +491,18 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                     </div>
                   ))}
                 </div>
-                <p className="mt-2.5 text-[12px] text-ink-muted">
+                <p className="mt-3 text-[13px] text-ink-muted">
                   Type: {flag.type}
                   {(flag.preserved?.length ?? 0) > 0 && (
                     <> · Managed in the file: {flag.preserved?.join(', ')}</>
                   )}
                 </p>
 
-                <div className="mt-3 border-t pt-3">
-                  <h3 className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-ink-muted">
+                <div className="mt-4 border-t pt-4">
+                  <h3 className="mb-1 text-sm font-semibold text-ink-soft">
                     Schedule
                   </h3>
-                  <p className="mb-2.5 text-[12px] text-ink-muted">
+                  <p className="mb-2.5 text-[13px] text-ink-muted">
                     Turns the flag off outside a time window. Outside it the flag is off and
                     everyone gets the default value, exactly as if you had toggled it off.
                   </p>
@@ -515,9 +517,9 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
             )}
           </Card>
 
-          <Card className="p-4">
+          <Card className="p-6">
             <div className="mb-1 flex items-center justify-between">
-              <h2 className="text-[13px] font-semibold uppercase tracking-wide text-ink-muted">
+              <h2 className="text-xl font-semibold tracking-tight text-ink">
                 Targeting
               </h2>
               {can('edit_rules') && !addingRule && (
@@ -536,7 +538,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                 </Button>
               )}
             </div>
-            <p className="mb-3 text-[12px] text-ink-muted">
+            <p className="mb-3 text-[13px] text-ink-muted">
               Checked top to bottom. The first match wins.
             </p>
 
@@ -685,30 +687,32 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                       {can('edit_rules') && (
                         <div className="mb-2 flex items-center gap-2">
                           <span className="text-[12px] text-ink-soft">Serves</span>
-                          <select
-                            aria-label={`What ${rule.name} serves`}
-                            value={isSplit ? 'split' : 'single'}
-                            onChange={(e) => {
-                              if (e.target.value === 'split') {
-                                setDraftPct((prev) => ({ ...prev, [rule.name]: pct }))
-                              } else {
-                                setDraftPct((prev) => {
-                                  const next = { ...prev }
-                                  delete next[rule.name]
-                                  return next
-                                })
-                                void openReview({
-                                  kind: 'outcome',
-                                  ruleName: rule.name,
-                                  outcome: { variation: variationNames[0] ?? '' },
-                                })
-                              }
-                            }}
-                            className="h-7 rounded-md border bg-surface px-2 text-[12px] focus:border-brand focus:outline-none"
-                          >
-                            <option value="single">one variation</option>
-                            <option value="split">a percentage split</option>
-                          </select>
+                          <div className="w-56">
+                            <Select
+                              ariaLabel={`What ${rule.name} serves`}
+                              value={isSplit ? 'split' : 'single'}
+                              onChange={(v) => {
+                                if (v === 'split') {
+                                  setDraftPct((prev) => ({ ...prev, [rule.name]: pct }))
+                                } else {
+                                  setDraftPct((prev) => {
+                                    const next = { ...prev }
+                                    delete next[rule.name]
+                                    return next
+                                  })
+                                  void openReview({
+                                    kind: 'outcome',
+                                    ruleName: rule.name,
+                                    outcome: { variation: variationNames[0] ?? '' },
+                                  })
+                                }
+                              }}
+                              options={[
+                                { value: 'single', label: 'one variation' },
+                                { value: 'split', label: 'a percentage split' },
+                              ]}
+                            />
+                          </div>
                         </div>
                       )}
 
@@ -776,26 +780,22 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
               {addingRule && (
                 <div className="rounded-lg border border-brand p-3">
                   <p className="mb-2 text-[13px] font-medium">New rule</p>
-                  <div className="mb-3 flex flex-wrap gap-2">
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
                     <input
                       value={newRuleName}
                       onChange={(e) => setNewRuleName(e.target.value)}
                       placeholder="rule name"
                       aria-label="New rule name"
-                      className="h-8 w-44 rounded-md border bg-surface px-2 text-[12.5px] focus:border-brand focus:outline-none"
+                      className="h-11 w-44 rounded-md border bg-surface px-2.5 text-sm focus:border-brand focus:outline-none"
                     />
-                    <select
-                      value={newRuleVariation}
-                      onChange={(e) => setNewRuleVariation(e.target.value)}
-                      aria-label="New rule serves"
-                      className="h-8 rounded-md border bg-surface px-2 font-mono text-[12.5px] focus:border-brand focus:outline-none"
-                    >
-                      {variationNames.map((n) => (
-                        <option key={n} value={n}>
-                          serves {n}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="w-56">
+                      <Select
+                        value={newRuleVariation}
+                        onChange={(v) => setNewRuleVariation(v)}
+                        ariaLabel="New rule serves"
+                        options={variationNames.map((n) => ({ value: n, label: `serves ${n}` }))}
+                      />
+                    </div>
                   </div>
 
                   <RuleBuilder value={draftGroup} onChange={setDraftGroup} attributes={attributes ?? []} />
@@ -843,20 +843,21 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
         </div>
 
         <div className="space-y-4">
-          <Card className="p-4">
-            <h2 className="mb-3 flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-ink-muted">
-              <Play className="h-3.5 w-3.5" />
+          <Card className="p-6">
+            <h2 className="mb-3 flex items-center gap-2 text-xl font-semibold tracking-tight text-ink">
+              <Play className="h-4 w-4" />
               Preview
             </h2>
-            <label htmlFor="preview-key" className="mb-1 block text-[12px] text-ink-soft">
+            <label htmlFor="preview-key" className="mb-1.5 block text-sm font-medium text-ink-soft">
               User ID
             </label>
             <Input
               id="preview-key"
               value={targetingKey}
               onChange={(e) => setTargetingKey(e.target.value)}
+              className="h-11 text-base"
             />
-            <label htmlFor="preview-attrs" className="mb-1 mt-3 block text-[12px] text-ink-soft">
+            <label htmlFor="preview-attrs" className="mb-1.5 mt-4 block text-sm font-medium text-ink-soft">
               Context (JSON)
             </label>
             <textarea
@@ -864,11 +865,10 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
               value={attrsText}
               onChange={(e) => setAttrsText(e.target.value)}
               rows={4}
-              className="w-full rounded-md border bg-surface px-3 py-2 font-mono text-[12.5px] focus:border-brand focus:outline-none"
+              className="w-full rounded-md border bg-surface px-3 py-2 font-mono text-sm focus:border-brand focus:outline-none"
             />
             <Button
-              className="mt-3 w-full"
-              size="sm"
+              className="mt-4 w-full"
               onClick={() => void runPreview()}
               disabled={previewing}
             >
@@ -877,15 +877,15 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
             </Button>
 
             {preview && (
-              <div className="mt-3 rounded-lg border border-[color:var(--color-brand)] bg-surface p-3">
+              <div className="mt-4 rounded-lg border border-[color:var(--color-brand)] bg-surface p-3">
                 {preview.error ? (
-                  <p className="text-[12.5px] text-danger">{preview.error}</p>
+                  <p className="text-sm text-danger">{preview.error}</p>
                 ) : (
                   <>
-                    <p className="text-[13px]">
+                    <p className="text-base">
                       Gets <strong className="font-mono">{JSON.stringify(preview.value)}</strong>
                     </p>
-                    <p className="mt-0.5 text-[12px] text-ink-muted">
+                    <p className="mt-1 text-[13px] text-ink-muted">
                       {preview.variation && <>variation {preview.variation} · </>}
                       {preview.reason}
                     </p>
@@ -896,24 +896,24 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
           </Card>
 
           {me?.capabilities?.history !== false && (
-          <Card className="p-4">
-            <h2 className="mb-3 flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-ink-muted">
-              <History className="h-3.5 w-3.5" />
+          <Card className="p-6">
+            <h2 className="mb-3 flex items-center gap-2 text-xl font-semibold tracking-tight text-ink">
+              <History className="h-4 w-4" />
               History
             </h2>
             {commits && commits.length > 0 ? (
-              <ul className="space-y-2.5">
+              <ul className="space-y-3">
                 {commits.slice(0, 8).map((c) => (
                   <li key={c.sha} className="border-b pb-2.5 last:border-0 last:pb-0">
-                    <p className="text-[12.5px] text-ink">{c.message.split('\n')[0]}</p>
-                    <p className="mt-0.5 text-[11px] text-ink-muted">
+                    <p className="text-sm text-ink">{c.message.split('\n')[0]}</p>
+                    <p className="mt-1 text-[13px] text-ink-muted">
                       {c.author} · {new Date(c.when).toLocaleString()}
                     </p>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-[12.5px] text-ink-muted">No changes recorded yet.</p>
+              <p className="text-sm text-ink-muted">No changes recorded yet.</p>
             )}
           </Card>
           )}
@@ -930,6 +930,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
         saving={saving}
         protectedEnv={Boolean(environment?.protected)}
         envName={environment?.name ?? env}
+        danger={pending?.kind === 'deleteFlag'}
       />
     </div>
   )

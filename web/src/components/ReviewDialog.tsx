@@ -15,6 +15,7 @@ export function ReviewDialog({
   saving,
   protectedEnv,
   envName,
+  danger,
 }: {
   open: boolean
   onClose: () => void
@@ -25,6 +26,7 @@ export function ReviewDialog({
   saving: boolean
   protectedEnv: boolean
   envName: string
+  danger?: boolean
 }) {
   const [showDiff, setShowDiff] = useState(false)
   const [typed, setTyped] = useState('')
@@ -37,15 +39,19 @@ export function ReviewDialog({
       open={open}
       onClose={onClose}
       title={title}
-      tone={protectedEnv ? 'protected' : 'neutral'}
+      tone={danger ? 'danger' : protectedEnv ? 'protected' : 'neutral'}
       footer={
         <>
           <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={onConfirm} disabled={!canConfirm}>
+          <Button
+            variant={danger ? 'danger' : 'default'}
+            onClick={onConfirm}
+            disabled={!canConfirm}
+          >
             {saving && <Spinner className="border-white/40 border-t-white" />}
-            {saving ? 'Saving' : 'Save change'}
+            {saving ? 'Saving' : danger ? 'Delete' : 'Save change'}
           </Button>
         </>
       }
@@ -60,9 +66,21 @@ export function ReviewDialog({
           <p className="text-[15px] text-ink">{diff?.description}</p>
 
           {protectedEnv && (
-            <div className="rounded-lg border border-warn bg-warn-soft p-3">
+            <div
+              className={cn(
+                'rounded-lg border p-3',
+                danger
+                  ? 'border-[color:var(--color-danger-neon)] bg-[color:var(--color-danger-soft)]'
+                  : 'border-warn bg-warn-soft',
+              )}
+            >
               <p className="flex items-start gap-2 text-[13px] text-ink">
-                <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+                <ShieldAlert
+                  className={cn(
+                    'mt-0.5 h-4 w-4 shrink-0',
+                    danger ? 'text-[color:var(--color-danger)]' : 'text-warn',
+                  )}
+                />
                 <span>
                   This is a protected environment. Type <strong>{envName}</strong> to confirm.
                 </span>
@@ -72,7 +90,12 @@ export function ReviewDialog({
                 onChange={(e) => setTyped(e.target.value)}
                 placeholder={envName}
                 aria-label={`Type ${envName} to confirm`}
-                className="mt-2 h-8 w-full rounded-md border bg-surface px-2.5 font-mono text-[13px] focus:border-brand focus:outline-none"
+                className={cn(
+                  'mt-2 h-8 w-full rounded-md border bg-surface px-2.5 font-mono text-[13px] focus:outline-none',
+                  danger
+                    ? 'focus:border-[color:var(--color-danger-neon)]'
+                    : 'focus:border-brand',
+                )}
               />
             </div>
           )}
