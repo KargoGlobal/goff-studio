@@ -10,7 +10,7 @@ test('the compare view shows which settings differ between environments', async 
   await page.goto('/env/staging/flags/new-checkout/compare')
 
   await expect(page.getByRole('heading', { name: 'new-checkout' })).toBeVisible()
-  await expect(page.getByLabel('Target environment')).toHaveValue('production')
+  await expect(page.getByRole('combobox', { name: 'Target environment' })).toHaveText('Production')
 
   await expect(page.getByText('Targeting rules').first()).toBeVisible()
   await expect(page.getByText('Not defined in this environment.')).toBeHidden()

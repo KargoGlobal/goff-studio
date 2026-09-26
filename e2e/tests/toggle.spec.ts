@@ -5,7 +5,7 @@ import {
   expectSuccessToast,
   expectUserTrailer,
   GROWTH,
-  gotoFlagList,
+  gotoFlagDetail,
   PAYMENTS,
   reviewDialog,
   signIn,
@@ -14,9 +14,10 @@ import {
   waitForReviewReady,
 } from './support/studio'
 
+// The flag list no longer has inline switches; the on/off switch lives on the detail page.
 test.beforeEach(async ({ page }) => {
   await signIn(page)
-  await gotoFlagList(page)
+  await gotoFlagDetail(page, 'new-checkout')
 })
 
 test('toggling a protected flag opens a review dialog that gates on typing the env name', async ({
