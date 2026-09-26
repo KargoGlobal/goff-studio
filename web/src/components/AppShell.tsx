@@ -102,32 +102,54 @@ export function AppShell({
           </button>
         </nav>
 
-        <div className="shrink-0 border-t border-[color:var(--color-sidebar-line)] px-4 py-3">
-          <div className="mb-2">
-            <p className="truncate text-[13px] font-medium text-[color:var(--color-sidebar-ink)]">{user.name}</p>
-            <p className="truncate text-[11px] text-[color:var(--color-sidebar-ink-muted)]">{user.email}</p>
-          </div>
-          <div className="flex gap-1">
+        <div className="shrink-0 px-3 pb-6 pt-4">
+          <div className="mx-auto mb-3 flex w-fit items-center gap-1 rounded-full bg-[color:var(--color-sidebar-hover)] p-1">
             <button
               type="button"
-              onClick={toggle}
-              aria-label="Toggle theme"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[color:var(--color-sidebar-ink)] transition-colors hover:bg-[color:var(--color-sidebar-hover)]"
+              onClick={() => dark && toggle()}
+              aria-label="Light mode"
+              aria-pressed={!dark}
+              className={cn(
+                'inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors',
+                !dark
+                  ? 'bg-[color:var(--color-sidebar-active)] text-[color:var(--color-sidebar-active-ink)]'
+                  : 'text-[color:var(--color-sidebar-ink-muted)] hover:text-[color:var(--color-sidebar-ink)]',
+              )}
             >
-              {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+              <Sun className="h-4 w-4" />
             </button>
             <button
               type="button"
-              aria-label="Sign out"
-              onClick={async () => {
-                await api.logout()
-                window.location.href = '/'
-              }}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[color:var(--color-sidebar-ink)] transition-colors hover:bg-[color:var(--color-sidebar-hover)]"
+              onClick={() => !dark && toggle()}
+              aria-label="Dark mode"
+              aria-pressed={dark}
+              className={cn(
+                'inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors',
+                dark
+                  ? 'bg-[color:var(--color-sidebar-active)] text-[color:var(--color-sidebar-active-ink)]'
+                  : 'text-[color:var(--color-sidebar-ink-muted)] hover:text-[color:var(--color-sidebar-ink)]',
+              )}
             >
-              <LogOut className="h-3.5 w-3.5" />
+              <Moon className="h-4 w-4" />
             </button>
           </div>
+          <div className="mx-auto mb-4 h-px w-48 bg-[color:var(--color-sidebar-line)]" aria-hidden />
+          <div className="mb-3 min-w-0 text-center">
+            <p className="truncate text-[15px] font-semibold text-[color:var(--color-sidebar-ink)]">{user.name}</p>
+            <p className="truncate text-[12.5px] text-[color:var(--color-sidebar-ink-muted)]">{user.email}</p>
+          </div>
+          <button
+            type="button"
+            aria-label="Sign out"
+            onClick={async () => {
+              await api.logout()
+              window.location.href = '/'
+            }}
+            className="mx-auto flex h-8 w-full max-w-40 items-center justify-center gap-2 rounded-md text-[13px] font-medium text-[color:var(--color-sidebar-ink)] transition-colors hover:bg-[color:var(--color-sidebar-hover)]"
+          >
+            <LogOut className="h-4 w-4" />
+            Sign out
+          </button>
         </div>
       </aside>
 
