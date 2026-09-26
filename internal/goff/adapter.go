@@ -177,11 +177,7 @@ func ruleBody(r Rule, f Flag) *yaml.Node {
 		add("name", &yaml.Node{Kind: yaml.ScalarNode, Tag: tagStr, Value: r.Name})
 	}
 
-	query := r.Query
-	if !r.Advanced && r.Condition != nil {
-		query = CompileCondition(r.Condition)
-	}
-	if query != "" {
+	if query := effectiveQuery(r, f); query != "" {
 		add("query", &yaml.Node{Kind: yaml.ScalarNode, Tag: tagStr, Value: query})
 	}
 
@@ -635,11 +631,7 @@ func ruleUnchanged(r Rule, f Flag) bool {
 	if r.Disabled != original.Disabled {
 		return false
 	}
-	query := r.Query
-	if !r.Advanced && r.Condition != nil {
-		query = CompileCondition(r.Condition)
-	}
-	if query != original.Query {
+	if effectiveQuery(r, f) != original.Query {
 		return false
 	}
 	if r.Outcome.Variation != original.Outcome.Variation {
@@ -661,4 +653,18 @@ func progressiveEqual(a, b *ProgressiveRollout) bool {
 		return a == nil && b == nil
 	}
 	return a.Initial == b.Initial && a.End == b.End
+}
+
+// effectiveQuery keeps the author's query text when the builder condition is
+// unchanged, so an edit elsewhere never rewrites `in ["x"]` as `eq "x"`.
+func effectiveQuery(r Rule, f Flag) string {
+	if r.Advanced || r.Condition == nil {
+		return r.Query
+	}
+	compiled := CompileCondition(r.Condition)
+	if original, ok := f.originalRules[r.Name]; ok && r.Name != "" && original.Condition != nil &&
+		r.Query == original.Query && CompileCondition(original.Condition) == compiled {
+		return original.Query
+	}
+	return compiled
 }
