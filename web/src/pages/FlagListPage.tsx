@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { AlertTriangle, ChevronDown, ChevronsUpDown, ChevronUp, ExternalLink, Plus, Search } from 'lucide-react'
 import { type Environment } from '@/lib/api'
 import { useFlags } from '@/hooks/useFlags'
@@ -41,6 +41,7 @@ function relativeTime(d: Date): string {
 
 export function FlagListPage({ environments: _environments }: { environments: Environment[] }) {
   const { env = '' } = useParams()
+  const navigate = useNavigate()
   const { data, isLoading, error } = useFlags(env)
 
   const [search, setSearch] = useState('')
@@ -186,8 +187,27 @@ export function FlagListPage({ environments: _environments }: { environments: En
           </thead>
           <tbody className="divide-y divide-[color:var(--color-line)]">
             {flags.map((flag) => {
+              const href = `/env/${env}/flags/${encodeURIComponent(flag.key)}`
               return (
-                <tr key={flag.key} className="transition-colors hover:bg-[color:var(--color-row-hover)]">
+                <tr
+                  key={flag.key}
+                  role="link"
+                  tabIndex={0}
+                  aria-label={`Open ${flag.key}`}
+                  onClick={(e) => {
+                    // Ignore clicks that originated from a link/button inside the row.
+                    if ((e.target as HTMLElement).closest('a, button, input, select, textarea')) return
+                    navigate(href)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      if ((e.target as HTMLElement).closest('a, button, input, select, textarea')) return
+                      e.preventDefault()
+                      navigate(href)
+                    }
+                  }}
+                  className="cursor-pointer transition-colors hover:bg-[color:var(--color-row-hover)] focus:bg-[color:var(--color-row-hover)] focus:outline-none"
+                >
                   <td className="px-4 py-3 align-top">
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-[15px] font-medium text-ink">

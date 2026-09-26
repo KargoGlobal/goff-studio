@@ -56,13 +56,13 @@ export function NewEnvironmentDialog({
       }
     >
       <div className="space-y-3">
-        <p className="text-[13px] text-ink-soft">
+        <p className="text-sm text-ink-soft">
           An environment is a top-level directory of flag files. Studio will create it with one
           empty file so your apps can point at it.
         </p>
 
         <div>
-          <label htmlFor="env-name" className="mb-1 block text-[12px] text-ink-soft">
+          <label htmlFor="env-name" className="mb-1.5 block text-sm font-medium text-ink-soft">
             Name
           </label>
           <Input
@@ -73,12 +73,12 @@ export function NewEnvironmentDialog({
               setError(null)
             }}
             placeholder="staging"
-            className="font-mono"
+            className="h-11 font-mono text-base"
           />
         </div>
 
         <div>
-          <label htmlFor="env-file" className="mb-1 block text-[12px] text-ink-soft">
+          <label htmlFor="env-file" className="mb-1.5 block text-sm font-medium text-ink-soft">
             First team
           </label>
           <Input
@@ -86,11 +86,11 @@ export function NewEnvironmentDialog({
             value={file}
             onChange={(e) => setFile(e.target.value)}
             placeholder="flags"
-            className="font-mono"
+            className="h-11 font-mono text-base"
           />
-          <p className="mt-1 text-[11.5px] text-ink-muted">
+          <p className="mt-1.5 text-[13px] text-ink-muted">
             One file per team. Creates{' '}
-            <code className="text-ink-soft">
+            <code className="font-mono text-ink">
               {(name.trim() || 'staging')}/{(file.trim() || 'flags').replace(/\.(goff\.)?ya?ml$/, '')}
               .goff.yaml
             </code>
@@ -99,7 +99,7 @@ export function NewEnvironmentDialog({
         </div>
 
         {error && (
-          <p role="alert" className="rounded-md border border-danger bg-danger-soft px-3 py-2 text-[12.5px] text-ink">
+          <p role="alert" className="rounded-md border border-danger bg-danger-soft px-3 py-2 text-sm text-ink">
             {error}
           </p>
         )}
