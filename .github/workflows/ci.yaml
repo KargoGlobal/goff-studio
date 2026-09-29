@@ -125,8 +125,13 @@ jobs:
           retention-days: 7
 
   docker:
-    name: Docker build
+    name: Docker build (${{ matrix.backend || 'core' }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # backend: ["", s3, gcs, azblob, configmap]
+        backend: [s3]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
@@ -136,11 +141,12 @@ jobs:
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
+          build-args: BACKEND=${{ matrix.backend }}
           push: false
           load: true
           tags: goff-studio:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.backend || 'core' }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.backend || 'core' }}
 
       - name: Smoke test the image with a mounted config
         run: |

@@ -24,15 +24,22 @@ FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 
 WORKDIR /src
 
+# Empty builds the core binary; otherwise the name of a directory under backends/.
+ARG BACKEND=""
+
 COPY go.mod go.sum ./
+COPY backends ./backends
 RUN --mount=type=cache,target=/go/pkg/mod \
+    if [ -n "$BACKEND" ]; then \
+      test -d "backends/$BACKEND" || { echo "unknown BACKEND: $BACKEND" >&2; exit 1; }; \
+      cd "backends/$BACKEND"; \
+    fi && \
     go mod download
 
 COPY cmd ./cmd
 COPY internal ./internal
 
-# Overwrite whatever placeholder dist the repo carried with the freshly built one.
-COPY --from=web /src/cmd/goff-studio/dist ./cmd/goff-studio/dist
+COPY --from=web /src/cmd/goff-studio/dist /web-dist
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -42,12 +49,19 @@ ARG TARGETARCH
 ENV CGO_ENABLED=0
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
+    if [ -n "$BACKEND" ]; then \
+      moddir="backends/$BACKEND"; pkg="cmd/goff-studio-$BACKEND"; \
+    else \
+      moddir="."; pkg="cmd/goff-studio"; \
+    fi && \
+    rm -rf "$moddir/$pkg/dist" && cp -r /web-dist "$moddir/$pkg/dist" && \
+    cd "$moddir" && \
     GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
     go build \
       -trimpath \
       -ldflags="-s -w" \
       -o /out/goff-studio \
-      ./cmd/goff-studio
+      "./$pkg"
 
 # ---------- stage 3: distroless runtime ----------
 FROM gcr.io/distroless/static-debian12:nonroot
