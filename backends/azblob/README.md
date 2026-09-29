@@ -72,32 +72,11 @@ different flag in the same file, Studio re-applies its change to the fresh blob
 and retries. If it was to the same flag, the user gets a conflict to review.
 `CreateFile` uses `If-None-Match: *`, so it cannot overwrite an existing blob.
 
-## Live testing
+## Verification
 
-The unit tests run against a fake of the `API` interface. `live_azblob_test.go`
-sits behind the `live` build tag and goes through the real Azure SDK. It
-creates, lists (including nested directories), reads and writes blobs, and
-checks that the service rejects a stale ETag. Each run writes under its own
-`run-<timestamp>` prefix.
-
-Against real Azure:
-
-```sh
-LIVE_AZBLOB_CONTAINER=flags \
-LIVE_AZBLOB_ACCOUNT_URL=https://myaccount.blob.core.windows.net \
-  go test -tags live -run TestLive -v ./...
-```
-
-Against [Azurite](https://github.com/Azure/Azurite), with its well-known
-development account:
-
-```sh
-npx azurite-blob --inMemoryPersistence &
-AZURE_STORAGE_CONNECTION_STRING='DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;' \
-LIVE_AZBLOB_CONTAINER=flags LIVE_AZBLOB_CREATE_CONTAINER=1 \
-  go test -tags live -run TestLive -v ./...
-```
-
-Verified against Azurite on 2026-09-29. Azurite does not support blob
-versioning, so history and attribution are covered by the unit tests only. The
-backend has not yet been run against real Azure.
+The unit tests run against a fake of the `API` interface; nothing in the test
+suite talks to Azure. Checked by hand on 2026-09-29 through the real Azure SDK
+against [Azurite](https://github.com/Azure/Azurite): create and no-overwrite,
+nested listing, not-found, a conditional write, and the service rejecting a
+stale ETag. Azurite has no blob versioning, so history is covered by the unit
+tests only. Not yet checked against real Azure.

@@ -61,24 +61,11 @@ build concurrency on, no object listing to discover environments, and it reads
 one fixed key. Fine for an SDK that only reads one file; not enough for an
 editor. This backend uses the AWS SDK directly.
 
-## Live testing
+## Verification
 
-The unit tests run against a fake S3 API. To exercise real S3, including that
-`If-Match` is genuinely enforced:
-
-```sh
-LIVE_S3_BUCKET=your-bucket \
-LIVE_S3_REGION=us-east-1 \
-LIVE_S3_PREFIX=goff-studio-test \
-  go test -tags live -run TestLive -v ./...
-```
-
-Behind a build tag so a normal `go test ./...` never touches AWS. The tests need
-`GetObject`, `PutObject` and `ListObjectsV2` on the prefix; `Check` also calls
-`GetBucketVersioning` but tolerates being denied it.
-
-Verified against real S3 on 2026-09-23: reads return a bare ETag, listing
-discovers environments, a write changes the ETag, a stale version conflicts
-rather than clobbering, S3 rejected a mismatched `If-Match` with 412, and
-`CreateFile` refused to overwrite. GO Feature Flag's own `s3retrieverv2` then
-read the file Studio had written and evaluated the flag with no error.
+The unit tests run against a fake S3 API; nothing in the test suite talks to
+AWS. Checked by hand against real S3 on 2026-09-23: reads return a bare ETag,
+listing discovers environments, a write changes the ETag, a stale version
+conflicts rather than clobbering, S3 rejected a mismatched `If-Match` with 412,
+and `CreateFile` refused to overwrite. GO Feature Flag's own `s3retrieverv2`
+then read the file Studio had written and evaluated the flag with no error.

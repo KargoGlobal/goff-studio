@@ -105,6 +105,7 @@ backend with review.
 | `s3` | with bucket versioning | with bucket versioning, in object metadata | no |
 | `gcs` | with object versioning | with object versioning, in object metadata | no |
 | `azblob` | with blob versioning | with blob versioning, in blob metadata | no |
+| `configmap` | no | no | no |
 | `file` | no | no | no |
 
 Studio reports these as capabilities to the UI: history shows the per-flag
@@ -114,7 +115,7 @@ UI hides or rewords anything a backend cannot do.
 
 | Config key | Env var | Notes |
 | --- | --- | --- |
-| `storage.backend` | `GOFF_STUDIO_STORAGE` | `github` (default), `file`, `s3`, `gcs`, or `azblob` |
+| `storage.backend` | `GOFF_STUDIO_STORAGE` | `github` (default), `file`, `s3`, `gcs`, `azblob`, or `configmap` |
 | `environments` | `GOFF_STUDIO_ENVIRONMENTS` | `dev,production`, or YAML for `display`/`protected`/`order`; at least one required |
 | `discoverEnvironments` | `GOFF_STUDIO_DISCOVER_ENVIRONMENTS` | `true` finds directories itself, instead of listing them |
 | `permissions` | `GOFF_STUDIO_PERMISSIONS` | YAML or JSON list, e.g. `[{group: admins, allow: ["*"]}]` |
@@ -211,6 +212,20 @@ and attribution. See [backends/azblob/README.md](backends/azblob/README.md).
 | `storage.bucket` | `GOFF_STUDIO_STORAGE_BUCKET` | **required**; the container name |
 | `storage.prefix` | `GOFF_STUDIO_STORAGE_PREFIX` | optional blob name prefix |
 | `storage.options` | `GOFF_STUDIO_STORAGE_OPTIONS` | YAML map; `{accountURL: "https://<account>.blob.core.windows.net"}`, required unless `AZURE_STORAGE_CONNECTION_STRING` is set |
+
+**`configmap`** — Kubernetes ConfigMaps. Needs the separate
+`goff-studio-configmap` binary, built from `backends/configmap`. Each
+environment is one ConfigMap named `<prefix><environment>`, and each team file
+is one key in it, which is the shape GO Feature Flag's Kubernetes retriever
+reads. Studio uses its pod's service account; writes are conditional on the
+ConfigMap's `resourceVersion`, so a stale write conflicts rather than
+clobbering. There is no history, attribution or review. See
+[backends/configmap/README.md](backends/configmap/README.md).
+
+| Config key | Env var | Notes |
+| --- | --- | --- |
+| `storage.prefix` | `GOFF_STUDIO_STORAGE_PREFIX` | prepended to the environment name to form the ConfigMap name |
+| `storage.options` | `GOFF_STUDIO_STORAGE_OPTIONS` | YAML map; `namespace` (default: Studio's own), and `apiServer` for `kubectl proxy` in local development |
 
 ## Flag file layout
 
@@ -456,7 +471,7 @@ concurrent edit on the same flag.
 ## Project status
 
 Working today: the HTTP API, GOFF adapter, OIDC auth, permissions, and the write
-path across all five storage backends. The React UI covers the flag list with
+path across all six storage backends. The React UI covers the flag list with
 search, team filter and inline toggles; flag detail with variations, percentage
 sliders and a visual rule builder including negated and nested condition groups;
 creating, renaming and deleting flags and teams; editing progressive rollouts and

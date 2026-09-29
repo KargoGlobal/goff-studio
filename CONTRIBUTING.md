@@ -106,6 +106,7 @@ charts/goff-studio/   Helm chart
 backends/s3/          S3 backend, its own Go module and binary
 backends/gcs/         Google Cloud Storage backend, its own Go module and binary
 backends/azblob/      Azure Blob Storage backend, its own Go module and binary
+backends/configmap/   Kubernetes ConfigMap backend, its own Go module and binary
 ```
 
 Rough dependency direction: `config` and `permissions` are leaves; `goff` depends
