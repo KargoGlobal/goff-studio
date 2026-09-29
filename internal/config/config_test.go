@@ -661,6 +661,20 @@ func TestS3BackendNeedsABucketAndMustBeCompiledIn(t *testing.T) {
 	}
 }
 
+func TestGCSBackendNeedsABucketAndMustBeCompiledIn(t *testing.T) {
+	body := strings.Replace(base(t), "github:", "storage:\n  backend: gcs\n\ngithub:", 1)
+	_, err := Load(write(t, body))
+	if err == nil || !strings.Contains(err.Error(), "storage.bucket") {
+		t.Fatalf("the gcs backend needs a bucket, got %v", err)
+	}
+
+	body = strings.Replace(base(t), "github:", "storage:\n  backend: gcs\n  bucket: my-flags-bucket\n\ngithub:", 1)
+	_, err = Load(write(t, body))
+	if err == nil || !strings.Contains(err.Error(), "not compiled into this binary") {
+		t.Fatalf("the core binary has no gcs backend, so this must fail with a hint, got %v", err)
+	}
+}
+
 func TestUsesGitHubOnlyForTheGitHubBackend(t *testing.T) {
 	dir := t.TempDir()
 	body := strings.Replace(base(t), "github:", "storage:\n  backend: file\n  path: "+dir+"\n\ngithub:", 1)

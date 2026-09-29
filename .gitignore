@@ -3,6 +3,8 @@
 !/cmd/goff-studio/dist/.gitkeep
 /backends/s3/cmd/goff-studio-s3/dist/*
 !/backends/s3/cmd/goff-studio-s3/dist/.gitkeep
+/backends/gcs/cmd/goff-studio-gcs/dist/*
+!/backends/gcs/cmd/goff-studio-gcs/dist/.gitkeep
 node_modules/
 *.pem
 studio.yaml

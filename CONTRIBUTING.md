@@ -104,6 +104,7 @@ web/                  React 19 + TypeScript + Vite + Tailwind 4 frontend
 e2e/                  Playwright suite (separate npm project + Go module)
 charts/goff-studio/   Helm chart
 backends/s3/          S3 backend, its own Go module and binary
+backends/gcs/         Google Cloud Storage backend, its own Go module and binary
 ```
 
 Rough dependency direction: `config` and `permissions` are leaves; `goff` depends

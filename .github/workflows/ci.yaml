@@ -42,7 +42,7 @@ jobs:
 
       - name: go vet
         run: |
-          for mod in . backends/s3 e2e/harness; do
+          for mod in . backends/s3 backends/gcs e2e/harness; do
             (cd "$mod" && go vet ./...) || exit 1
           done
 
@@ -53,7 +53,7 @@ jobs:
 
       - name: go test
         run: |
-          for mod in . backends/s3; do
+          for mod in . backends/s3 backends/gcs; do
             (cd "$mod" && go test -race -count=1 ./...) || exit 1
           done
 
