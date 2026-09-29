@@ -579,6 +579,19 @@ func TestStorageBackendDefaultsToGitHub(t *testing.T) {
 	}
 }
 
+func TestBackendNameIsNormalizedForTheRegistry(t *testing.T) {
+	dir := t.TempDir()
+	body := strings.Replace(base(t), "github:", "storage:\n  backend: \" File \"\n  path: "+dir+"\n\ngithub:", 1)
+
+	cfg, err := Load(write(t, body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Storage.Backend != "file" {
+		t.Errorf("backend = %q, want \"file\": storage.Open looks the name up as given", cfg.Storage.Backend)
+	}
+}
+
 func TestFileBackendNeedsAPathAndSkipsGitHubValidation(t *testing.T) {
 	dir := t.TempDir()
 
@@ -658,6 +671,20 @@ func TestS3BackendNeedsABucketAndMustBeCompiledIn(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not compiled into this binary") {
 		t.Errorf("error should explain that a different image is needed, got %v", err)
+	}
+}
+
+func TestGCSBackendNeedsABucketAndMustBeCompiledIn(t *testing.T) {
+	body := strings.Replace(base(t), "github:", "storage:\n  backend: gcs\n\ngithub:", 1)
+	_, err := Load(write(t, body))
+	if err == nil || !strings.Contains(err.Error(), "storage.bucket") {
+		t.Fatalf("the gcs backend needs a bucket, got %v", err)
+	}
+
+	body = strings.Replace(base(t), "github:", "storage:\n  backend: gcs\n  bucket: my-flags-bucket\n\ngithub:", 1)
+	_, err = Load(write(t, body))
+	if err == nil || !strings.Contains(err.Error(), "not compiled into this binary") {
+		t.Fatalf("the core binary has no gcs backend, so this must fail with a hint, got %v", err)
 	}
 }
 

@@ -17,6 +17,14 @@ updates:
       aws:
         patterns: ["*"]
 
+  - package-ecosystem: gomod
+    directory: /backends/gcs
+    schedule:
+      interval: weekly
+    groups:
+      gcs:
+        patterns: ["*"]
+
   - package-ecosystem: npm
     directory: /web
     schedule:

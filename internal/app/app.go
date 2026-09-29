@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-feature-flag/studio/internal/auth"
@@ -126,6 +127,9 @@ func checkStorage(cfg *config.Config, repo storage.Backend, budget time.Duration
 	case cfg.UsesGitHub():
 		target = fmt.Sprintf("%s/%s on %s", cfg.GitHub.Owner, cfg.GitHub.Repo, cfg.GitHub.Branch)
 		hint = "check the credentials, that the repository exists, and that the GitHub App is installed on it"
+	case cfg.Storage.Bucket != "" && strings.EqualFold(cfg.Storage.Backend, "gcs"):
+		target = fmt.Sprintf("gs://%s/%s", cfg.Storage.Bucket, cfg.Storage.Prefix)
+		hint = "check the bucket name and that this pod's Google credentials can list and write it"
 	case cfg.Storage.Bucket != "":
 		target = fmt.Sprintf("s3://%s/%s", cfg.Storage.Bucket, cfg.Storage.Prefix)
 		hint = "check the bucket name, the region, and that this pod's credentials can list and write it"

@@ -103,6 +103,7 @@ backend with review.
 | --- | --- | --- | --- |
 | `github` | yes, commits | yes, commit author and trailers | yes, via CODEOWNERS |
 | `s3` | with bucket versioning | with bucket versioning, in object metadata | no |
+| `gcs` | with object versioning | with object versioning, in object metadata | no |
 | `file` | no | no | no |
 
 Studio reports these as capabilities to the UI: history shows the per-flag
@@ -112,7 +113,7 @@ UI hides or rewords anything a backend cannot do.
 
 | Config key | Env var | Notes |
 | --- | --- | --- |
-| `storage.backend` | `GOFF_STUDIO_STORAGE` | `github` (default), `file`, or `s3` |
+| `storage.backend` | `GOFF_STUDIO_STORAGE` | `github` (default), `file`, `s3`, or `gcs` |
 | `environments` | `GOFF_STUDIO_ENVIRONMENTS` | `dev,production`, or YAML for `display`/`protected`/`order`; at least one required |
 | `discoverEnvironments` | `GOFF_STUDIO_DISCOVER_ENVIRONMENTS` | `true` finds directories itself, instead of listing them |
 | `permissions` | `GOFF_STUDIO_PERMISSIONS` | YAML or JSON list, e.g. `[{group: admins, allow: ["*"]}]` |
@@ -172,6 +173,24 @@ lifecycle rule to expire noncurrent versions you no longer need.
 | `storage.region` | `GOFF_STUDIO_STORAGE_REGION` | |
 | `storage.prefix` | `GOFF_STUDIO_STORAGE_PREFIX` | optional key prefix |
 | `storage.options` | `GOFF_STUDIO_STORAGE_OPTIONS` | YAML map; `{endpoint: "http://minio:9000"}` for S3-compatible storage |
+
+**`gcs`** — Google Cloud Storage. Needs the separate `goff-studio-gcs` binary,
+built from `backends/gcs`. Credentials come from Google Application Default
+Credentials, so Workload Identity works with no extra configuration.
+
+Writes are conditional on the object's generation, so a stale write is rejected
+rather than clobbering. Every object Studio writes carries the same attribution
+as S3 (`studio-user-name`, `studio-user-email`, `studio-user-id`,
+`studio-message`) as GCS custom metadata; GCS accepts UTF-8 there, so nothing is
+encoded. Turn on object versioning for history and attribution; Studio checks at
+startup and hides the history panel if it is off. See
+[backends/gcs/README.md](backends/gcs/README.md).
+
+| Config key | Env var | Notes |
+| --- | --- | --- |
+| `storage.bucket` | `GOFF_STUDIO_STORAGE_BUCKET` | **required** |
+| `storage.prefix` | `GOFF_STUDIO_STORAGE_PREFIX` | optional object name prefix |
+| `storage.options` | `GOFF_STUDIO_STORAGE_OPTIONS` | YAML map; `{endpoint: "http://localhost:4443"}` for an emulator (sent without credentials) |
 
 ## Flag file layout
 
@@ -417,7 +436,7 @@ concurrent edit on the same flag.
 ## Project status
 
 Working today: the HTTP API, GOFF adapter, OIDC auth, permissions, and the write
-path across all three storage backends. The React UI covers the flag list with
+path across all four storage backends. The React UI covers the flag list with
 search, team filter and inline toggles; flag detail with variations, percentage
 sliders and a visual rule builder including negated and nested condition groups;
 creating, renaming and deleting flags and teams; editing progressive rollouts and

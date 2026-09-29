@@ -33,6 +33,11 @@ storage:
 #   backend: s3
 #   bucket: my-flags-bucket
 #   region: us-east-1
+#
+# Google Cloud Storage, which needs the goff-studio-gcs binary; see backends/gcs/README.md.
+# storage:
+#   backend: gcs
+#   bucket: my-flags-bucket
 
 github:
   owner: your-org
