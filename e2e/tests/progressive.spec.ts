@@ -1,4 +1,13 @@
-import { confirmReview, detailPath, dump, expect, expectSuccessToast, signIn, test } from './support/studio'
+import {
+  confirmReview,
+  detailPath,
+  dump,
+  expect,
+  expectSuccessToast,
+  pickDateTime,
+  signIn,
+  test,
+} from './support/studio'
 
 const PLATFORM = 'production/platform.goff.yaml'
 
@@ -19,8 +28,8 @@ test('a ramp can be edited and lands in the file', async ({ page }) => {
 
   await page.getByLabel('initial percentage').fill('10')
   await page.getByLabel('end percentage').fill('90')
-  await page.getByLabel('initial date').fill('2027-01-01T09:00')
-  await page.getByLabel('end date').fill('2027-03-01T09:00')
+  await pickDateTime(page, 'initial date', '2027-01-01T09:00')
+  await pickDateTime(page, 'end date', '2027-03-01T09:00')
 
   await page.getByRole('button', { name: 'Review change' }).click()
 
@@ -41,8 +50,8 @@ test('a ramp can be edited and lands in the file', async ({ page }) => {
 test('the end date must be after the start date', async ({ page }) => {
   await page.getByRole('button', { name: 'Edit ramp' }).click()
 
-  await page.getByLabel('initial date').fill('2027-06-01T09:00')
-  await page.getByLabel('end date').fill('2027-01-01T09:00')
+  await pickDateTime(page, 'initial date', '2027-06-01T09:00')
+  await pickDateTime(page, 'end date', '2027-01-01T09:00')
   await page.getByRole('button', { name: 'Review change' }).click()
 
   await expect(page.getByRole('alert')).toContainText('end date must be after')
