@@ -39,6 +39,9 @@ func init() {
 const (
 	defaultEndpoint = "https://storage.googleapis.com"
 	scope           = "https://www.googleapis.com/auth/devstorage.read_write"
+	// requestTimeout bounds each API call, since the server sets no request
+	// deadline and a stalled endpoint would otherwise hang a handler.
+	requestTimeout = 30 * time.Second
 )
 
 type Config struct {
@@ -63,13 +66,14 @@ func New(ctx context.Context, cfg Config) (*Backend, error) {
 	}
 
 	if cfg.Endpoint != "" {
-		return NewWithClient(http.DefaultClient, cfg.Endpoint, cfg.Bucket, cfg.Prefix), nil
+		return NewWithClient(&http.Client{Timeout: requestTimeout}, cfg.Endpoint, cfg.Bucket, cfg.Prefix), nil
 	}
 
 	client, err := google.DefaultClient(ctx, scope)
 	if err != nil {
 		return nil, fmt.Errorf("loading google application default credentials: %w", err)
 	}
+	client.Timeout = requestTimeout
 	return NewWithClient(client, defaultEndpoint, cfg.Bucket, cfg.Prefix), nil
 }
 
