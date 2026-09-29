@@ -280,6 +280,24 @@ func TestListing(t *testing.T) {
 	}
 }
 
+func TestListDirectoriesReturnsNamesRelativeToDir(t *testing.T) {
+	f := newFake()
+	f.seed("production/eu/flags.goff.yaml", "a: {}\n")
+	for _, prefix := range []string{"", "flags"} {
+		if prefix != "" {
+			f = &fakeGCS{objects: map[string][]fakeGeneration{}, next: 100}
+			f.seed("flags/production/eu/flags.goff.yaml", "a: {}\n")
+		}
+		dirs, err := backendWithPrefix(t, f, prefix).ListDirectories(context.Background(), "production")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(dirs) != 1 || dirs[0] != "eu" {
+			t.Errorf("prefix %q: dirs = %v, want [eu] like the file and github backends", prefix, dirs)
+		}
+	}
+}
+
 func TestWriteUsesGenerationMatchSoAStaleVersionCannotClobber(t *testing.T) {
 	f := newFake()
 	b := backend(t, f)

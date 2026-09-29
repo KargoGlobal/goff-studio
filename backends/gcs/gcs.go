@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -225,8 +226,10 @@ func (b *Backend) ListDirectories(ctx context.Context, dir string) ([]string, er
 
 	var out []string
 	for _, p := range prefixes {
-		name := strings.Trim(b.unkey(strings.TrimSuffix(p, "/")), "/")
-		if name != "" && !strings.HasPrefix(name, ".") {
+		// A delimited listing returns full prefixes like "production/eu/";
+		// callers expect just "eu", as the file and github backends return.
+		name := path.Base(strings.TrimSuffix(p, "/"))
+		if name != "" && name != "." && !strings.HasPrefix(name, ".") {
 			out = append(out, name)
 		}
 	}
