@@ -65,3 +65,32 @@ Studio makes five calls: read, list, conditional upload, versioned list and
 bucket get. The client library would bring in gRPC and a large dependency tree
 to make them. Plain HTTP with `golang.org/x/oauth2/google` keeps the binary
 small, and the tests can run against an `httptest` fake of the API.
+
+## Live testing
+
+The unit tests run against an `httptest` fake. `live_gcs_test.go` sits behind
+the `live` build tag, so a plain `go test ./...` never runs it. It creates,
+lists, reads and writes objects, checks that the server rejects a stale
+generation, and reads back attribution when the bucket has versioning. Each run
+writes under its own `run-<timestamp>` prefix.
+
+Against real GCS, with credentials from Application Default Credentials:
+
+```sh
+LIVE_GCS_BUCKET=your-bucket LIVE_GCS_PREFIX=goff-studio-test \
+  go test -tags live -run TestLive -v ./...
+```
+
+Against [fake-gcs-server](https://github.com/fsouza/fake-gcs-server), an
+independent emulator (versioning needs `-backend memory`):
+
+```sh
+fake-gcs-server -scheme http -port 4443 -backend memory &
+curl -X POST localhost:4443/storage/v1/b -H 'Content-Type: application/json' \
+  -d '{"name":"live-bucket","versioning":{"enabled":true}}'
+LIVE_GCS_BUCKET=live-bucket LIVE_GCS_ENDPOINT=http://localhost:4443 \
+  go test -tags live -run TestLive -v ./...
+```
+
+Verified against fake-gcs-server on 2026-09-29 with versioning on and off. It
+has not yet been run against real GCS.
