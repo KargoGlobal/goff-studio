@@ -66,18 +66,24 @@ func New(ctx context.Context, cfg Config) (*Backend, error) {
 	}
 
 	if cfg.Endpoint != "" {
-		return NewWithClient(&http.Client{Timeout: requestTimeout}, cfg.Endpoint, cfg.Bucket, cfg.Prefix), nil
+		return NewWithClient(&http.Client{}, cfg.Endpoint, cfg.Bucket, cfg.Prefix), nil
 	}
 
 	client, err := google.DefaultClient(ctx, scope)
 	if err != nil {
 		return nil, fmt.Errorf("loading google application default credentials: %w", err)
 	}
-	client.Timeout = requestTimeout
 	return NewWithClient(client, defaultEndpoint, cfg.Bucket, cfg.Prefix), nil
 }
 
+// NewWithClient uses client as given, except that a client with no timeout
+// gets requestTimeout; the caller's client is not modified.
 func NewWithClient(client *http.Client, endpoint, bucket, prefix string) *Backend {
+	if client.Timeout == 0 {
+		bounded := *client
+		bounded.Timeout = requestTimeout
+		client = &bounded
+	}
 	return &Backend{
 		client:   client,
 		endpoint: strings.TrimSuffix(endpoint, "/"),

@@ -526,6 +526,22 @@ func TestAttributionFitsTheMetadataLimit(t *testing.T) {
 	}
 }
 
+func TestEveryClientGetsATimeoutWithoutTouchingTheCallers(t *testing.T) {
+	caller := &http.Client{}
+	b := NewWithClient(caller, "http://localhost", "b", "")
+	if b.client.Timeout != requestTimeout {
+		t.Errorf("timeout = %s, want %s", b.client.Timeout, requestTimeout)
+	}
+	if caller.Timeout != 0 {
+		t.Error("the caller's client must not be modified")
+	}
+
+	custom := &http.Client{Timeout: time.Second}
+	if NewWithClient(custom, "http://localhost", "b", "").client != custom {
+		t.Error("a client that already has a timeout should be used as is")
+	}
+}
+
 func TestNewRequiresABucket(t *testing.T) {
 	if _, err := New(context.Background(), Config{}); err == nil {
 		t.Error("a bucket is required")
