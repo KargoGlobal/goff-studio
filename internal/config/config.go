@@ -325,8 +325,8 @@ func (c *Config) validateStorage() error {
 	backend := strings.ToLower(strings.TrimSpace(c.Storage.Backend))
 	if backend == "" {
 		backend = "github"
-		c.Storage.Backend = backend
 	}
+	c.Storage.Backend = backend
 
 	switch backend {
 	case "github":

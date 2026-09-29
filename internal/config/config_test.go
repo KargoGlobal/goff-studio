@@ -579,6 +579,19 @@ func TestStorageBackendDefaultsToGitHub(t *testing.T) {
 	}
 }
 
+func TestBackendNameIsNormalizedForTheRegistry(t *testing.T) {
+	dir := t.TempDir()
+	body := strings.Replace(base(t), "github:", "storage:\n  backend: \" File \"\n  path: "+dir+"\n\ngithub:", 1)
+
+	cfg, err := Load(write(t, body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Storage.Backend != "file" {
+		t.Errorf("backend = %q, want \"file\": storage.Open looks the name up as given", cfg.Storage.Backend)
+	}
+}
+
 func TestFileBackendNeedsAPathAndSkipsGitHubValidation(t *testing.T) {
 	dir := t.TempDir()
 
