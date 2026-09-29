@@ -371,6 +371,12 @@ func (c *Config) validateStorage() error {
 		}
 		c.warnf("storage.backend is azblob, so changes have no review; Studio's permission config is the only control over who may change a flag, and history and attribution need blob versioning")
 		return nil
+	case "configmap":
+		if !storage.Registered("configmap") {
+			return fieldErr("storage.backend", envStorage, "configmap is not compiled into this binary; use an image built with the configmap backend, or pick one of: "+strings.Join(storage.Available(), ", "))
+		}
+		c.warnf("storage.backend is configmap, so changes have no history, attribution or review; Studio's permission config is the only control over who may change a flag")
+		return nil
 	default:
 		if storage.Registered(backend) {
 			return nil

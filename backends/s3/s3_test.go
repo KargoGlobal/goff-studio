@@ -390,6 +390,25 @@ func TestCreateFileRefusesToOverwrite(t *testing.T) {
 	}
 }
 
+func TestListDirectoriesReturnsNamesRelativeToDir(t *testing.T) {
+	for _, prefix := range []string{"", "flags"} {
+		f := newFake()
+		key := "production/eu/flags.goff.yaml"
+		if prefix != "" {
+			key = prefix + "/" + key
+		}
+		f.objects = map[string]string{key: "a: {}\n"}
+
+		dirs, err := NewWithAPI(f, "my-flags-bucket", prefix).ListDirectories(context.Background(), "production")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(dirs) != 1 || dirs[0] != "eu" {
+			t.Errorf("prefix %q: dirs = %v, want [eu] like the file and github backends", prefix, dirs)
+		}
+	}
+}
+
 func TestPrefixIsAppliedAndStripped(t *testing.T) {
 	f := newFake()
 	f.objects = map[string]string{

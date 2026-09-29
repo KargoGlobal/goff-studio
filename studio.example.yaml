@@ -45,6 +45,14 @@ storage:
 #   bucket: flags          # the container
 #   options:
 #     accountURL: https://myaccount.blob.core.windows.net
+#
+# Kubernetes ConfigMaps, which needs the goff-studio-configmap binary; see
+# backends/configmap/README.md. No history, attribution or review.
+# storage:
+#   backend: configmap
+#   prefix: goff-          # production -> ConfigMap goff-production
+#   options:
+#     namespace: flags     # defaults to Studio's own namespace
 
 github:
   owner: your-org
