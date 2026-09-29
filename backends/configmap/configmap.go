@@ -146,10 +146,9 @@ type configMap struct {
 }
 
 type objectMeta struct {
-	Name            string            `json:"name"`
-	Namespace       string            `json:"namespace,omitempty"`
-	ResourceVersion string            `json:"resourceVersion,omitempty"`
-	Labels          map[string]string `json:"labels,omitempty"`
+	Name            string `json:"name"`
+	Namespace       string `json:"namespace,omitempty"`
+	ResourceVersion string `json:"resourceVersion,omitempty"`
 }
 
 type configMapList struct {
@@ -192,6 +191,10 @@ func (b *Backend) objectURL(name string) string {
 }
 
 func (b *Backend) do(ctx context.Context, method, u string, body any, into any) error {
+	return b.doWithContentType(ctx, method, u, "application/json", body, into)
+}
+
+func (b *Backend) doWithContentType(ctx context.Context, method, u, contentType string, body any, into any) error {
 	var reader io.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
@@ -206,7 +209,7 @@ func (b *Backend) do(ctx context.Context, method, u string, body any, into any) 
 	}
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Type", contentType)
 	}
 	if b.token != nil {
 		token, err := b.token()
@@ -265,13 +268,19 @@ func (b *Backend) get(ctx context.Context, name string) (*configMap, error) {
 	return &cm, nil
 }
 
-// put replaces the ConfigMap only if it is still at cm's resourceVersion, and
-// returns the new resourceVersion.
-func (b *Backend) put(ctx context.Context, cm *configMap) (string, error) {
-	cm.APIVersion, cm.Kind = "v1", "ConfigMap"
+// patch sets one key with a JSON merge patch that carries the resourceVersion
+// the caller read, and returns the new resourceVersion. A merge patch touches
+// only that key, so fields Studio does not model (annotations, labels,
+// binaryData, ownerReferences, finalizers) are left exactly as they were, and
+// the API server rejects it with 409 if the ConfigMap changed since the read.
+func (b *Backend) patch(ctx context.Context, name, resourceVersion, key, value string) (string, error) {
+	body := map[string]any{
+		"metadata": map[string]string{"resourceVersion": resourceVersion},
+		"data":     map[string]string{key: value},
+	}
 	var out configMap
-	u := b.objectURL(cm.Metadata.Name) + "?" + url.Values{"fieldManager": {fieldManager}}.Encode()
-	if err := b.do(ctx, http.MethodPut, u, cm, &out); err != nil {
+	u := b.objectURL(name) + "?" + url.Values{"fieldManager": {fieldManager}}.Encode()
+	if err := b.doWithContentType(ctx, http.MethodPatch, u, "application/merge-patch+json", body, &out); err != nil {
 		return "", err
 	}
 	return out.Metadata.ResourceVersion, nil
@@ -421,8 +430,7 @@ func (b *Backend) Write(ctx context.Context, op storage.ChangeOp, _ storage.Iden
 			return &storage.Result{Version: cm.Metadata.ResourceVersion}, nil
 		}
 
-		cm.Data[key] = string(next)
-		version, err := b.put(ctx, cm)
+		version, err := b.patch(ctx, name, cm.Metadata.ResourceVersion, key, string(next))
 		if err == nil {
 			return &storage.Result{Version: version, Retried: retried}, nil
 		}
@@ -457,11 +465,7 @@ func (b *Backend) CreateFile(ctx context.Context, p string, content []byte, _ st
 			if _, exists := cm.Data[key]; exists {
 				return fmt.Errorf("%s already exists", p)
 			}
-			if cm.Data == nil {
-				cm.Data = map[string]string{}
-			}
-			cm.Data[key] = string(content)
-			_, err = b.put(ctx, cm)
+			_, err = b.patch(ctx, name, cm.Metadata.ResourceVersion, key, string(content))
 		}
 		if err == nil {
 			return nil

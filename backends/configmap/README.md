@@ -100,9 +100,12 @@ error.
 
 ## Concurrency
 
-The file version is the ConfigMap's `resourceVersion`. A write is a `PUT`
-carrying the `resourceVersion` it read, so if anything changed the ConfigMap
-in between, the API server answers 409 instead of applying it. Every file in an
+The file version is the ConfigMap's `resourceVersion`. A write is a JSON merge
+patch that sets only the one key and carries the `resourceVersion` it read, so
+if anything changed the ConfigMap in between, the API server answers 409
+instead of applying it. Because it is a patch, not a replacement, fields Studio
+does not manage are never touched: annotations and labels (which Helm and Argo
+CD use to track the ConfigMap), `binaryData`, owner references and finalizers. Every file in an
 environment shares one ConfigMap, so a change to another team's file also moves
 the version. In that case Studio re-reads, confirms the flag being saved did
 not change, re-applies the edit and retries. If the same flag did change, the

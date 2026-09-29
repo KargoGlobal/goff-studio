@@ -15,15 +15,17 @@ import (
 	"github.com/go-feature-flag/studio/internal/storage"
 )
 
-// fakeAPI implements the ConfigMap slice of the Kubernetes API, including
-// resourceVersion optimistic concurrency: a PUT whose resourceVersion is
-// stale gets 409, and a POST for an existing name gets 409.
+// fakeAPI implements the ConfigMap slice of the Kubernetes API. It stores
+// whole objects, including fields Studio does not model, so a write that
+// dropped them would show. It enforces resourceVersion on merge patches (409
+// when stale) and on creates (409 when the name exists), and refuses PUT, which
+// would replace the whole object.
 type fakeAPI struct {
 	mu        sync.Mutex
 	namespace string
-	maps      map[string]configMap
+	maps      map[string]map[string]any
 	rv        int
-	puts      int
+	writes    int
 	gets      int
 	tokens    []string
 	pageSize  int
@@ -31,7 +33,7 @@ type fakeAPI struct {
 }
 
 func newFake() *fakeAPI {
-	f := &fakeAPI{namespace: "flags", maps: map[string]configMap{}}
+	f := &fakeAPI{namespace: "flags", maps: map[string]map[string]any{}}
 	f.set("goff-production", map[string]string{
 		"payments.goff.yaml": "flag-one:\n  variations:\n    on: true\n  defaultRule:\n    variation: \"on\"\n",
 		"growth.goff.yaml":   "flag-two:\n  variations:\n    on: true\n  defaultRule:\n    variation: \"on\"\n",
@@ -42,13 +44,28 @@ func newFake() *fakeAPI {
 	return f
 }
 
+// set stores a ConfigMap with the given data, keeping any other fields it
+// already had, and bumps its resourceVersion.
 func (f *fakeAPI) set(name string, data map[string]string) {
 	f.rv++
-	f.maps[name] = configMap{
-		APIVersion: "v1", Kind: "ConfigMap",
-		Metadata: objectMeta{Name: name, Namespace: f.namespace, ResourceVersion: strconv.Itoa(f.rv)},
-		Data:     data,
+	obj, ok := f.maps[name]
+	if !ok {
+		obj = map[string]any{
+			"apiVersion": "v1", "kind": "ConfigMap",
+			"metadata": map[string]any{"name": name, "namespace": f.namespace},
+		}
+		f.maps[name] = obj
 	}
+	d := map[string]any{}
+	for k, v := range data {
+		d[k] = v
+	}
+	obj["data"] = d
+	obj["metadata"].(map[string]any)["resourceVersion"] = strconv.Itoa(f.rv)
+}
+
+func (f *fakeAPI) version(name string) string {
+	return f.maps[name]["metadata"].(map[string]any)["resourceVersion"].(string)
 }
 
 func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -57,11 +74,11 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.tokens = append(f.tokens, r.Header.Get("Authorization"))
 
 	base := "/api/v1/namespaces/" + f.namespace + "/configmaps"
-	name := strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, base), "/")
 	if !strings.HasPrefix(r.URL.Path, base) {
 		http.Error(w, `{"message":"wrong namespace"}`, http.StatusForbidden)
 		return
 	}
+	name := strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, base), "/")
 
 	switch {
 	case r.Method == http.MethodGet && name == "":
@@ -75,57 +92,84 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if f.pageSize > 0 && start+f.pageSize < end {
 			end = start + f.pageSize
 		}
-		list := configMapList{}
+		items := []any{}
 		for _, n := range names[start:end] {
-			list.Items = append(list.Items, f.maps[n])
+			items = append(items, f.maps[n])
 		}
+		meta := map[string]any{}
 		if end < len(names) {
-			list.Metadata.Continue = strconv.Itoa(end)
+			meta["continue"] = strconv.Itoa(end)
 		}
-		writeJSON(w, list)
+		writeJSON(w, map[string]any{"items": items, "metadata": meta})
 
 	case r.Method == http.MethodGet:
 		f.gets++
 		if f.mutate != nil {
 			f.mutate(f, f.gets)
 		}
-		cm, ok := f.maps[name]
+		obj, ok := f.maps[name]
 		if !ok {
 			http.Error(w, `{"message":"configmaps not found"}`, http.StatusNotFound)
 			return
 		}
-		writeJSON(w, cm)
+		writeJSON(w, obj)
 
-	case r.Method == http.MethodPut:
-		var cm configMap
-		_ = json.NewDecoder(r.Body).Decode(&cm)
-		cur, ok := f.maps[name]
+	case r.Method == http.MethodPatch:
+		if r.Header.Get("Content-Type") != "application/merge-patch+json" {
+			http.Error(w, `{"message":"unsupported patch type"}`, http.StatusUnsupportedMediaType)
+			return
+		}
+		var patch struct {
+			Metadata struct {
+				ResourceVersion string `json:"resourceVersion"`
+			} `json:"metadata"`
+			Data map[string]string `json:"data"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&patch)
+		obj, ok := f.maps[name]
 		if !ok {
 			http.Error(w, `{"message":"not found"}`, http.StatusNotFound)
 			return
 		}
-		if cm.Metadata.ResourceVersion != cur.Metadata.ResourceVersion {
+		if patch.Metadata.ResourceVersion != "" && patch.Metadata.ResourceVersion != f.version(name) {
 			http.Error(w, `{"message":"the object has been modified"}`, http.StatusConflict)
 			return
 		}
-		f.puts++
-		f.set(name, cm.Data)
+		merged := map[string]string{}
+		if d, ok := obj["data"].(map[string]any); ok {
+			for k, v := range d {
+				merged[k] = v.(string)
+			}
+		}
+		for k, v := range patch.Data {
+			merged[k] = v
+		}
+		f.writes++
+		f.set(name, merged)
 		writeJSON(w, f.maps[name])
 
 	case r.Method == http.MethodPost:
-		var cm configMap
-		_ = json.NewDecoder(r.Body).Decode(&cm)
-		if _, exists := f.maps[cm.Metadata.Name]; exists {
+		var obj map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&obj)
+		n := obj["metadata"].(map[string]any)["name"].(string)
+		if _, exists := f.maps[n]; exists {
 			http.Error(w, `{"message":"already exists"}`, http.StatusConflict)
 			return
 		}
-		f.puts++
-		f.set(cm.Metadata.Name, cm.Data)
+		f.writes++
+		f.maps[n] = obj
+		data := map[string]string{}
+		if d, ok := obj["data"].(map[string]any); ok {
+			for k, v := range d {
+				data[k] = v.(string)
+			}
+		}
+		f.set(n, data)
 		w.WriteHeader(http.StatusCreated)
-		writeJSON(w, f.maps[cm.Metadata.Name])
+		writeJSON(w, f.maps[n])
 
 	default:
-		http.Error(w, `{"message":"unexpected"}`, http.StatusMethodNotAllowed)
+		http.Error(w, `{"message":"unexpected `+r.Method+`"}`, http.StatusMethodNotAllowed)
 	}
 }
 
@@ -148,7 +192,9 @@ func backend(t *testing.T, f *fakeAPI) *Backend {
 func data(f *fakeAPI, name, key string) string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.maps[name].Data[key]
+	d, _ := f.maps[name]["data"].(map[string]any)
+	v, _ := d[key].(string)
+	return v
 }
 
 func TestRegisteredUnderConfigmap(t *testing.T) {
@@ -166,7 +212,7 @@ func TestReadFileMapsPathsToConfigMapKeys(t *testing.T) {
 	if !strings.Contains(string(file.Content), "flag-one") {
 		t.Errorf("content = %q", file.Content)
 	}
-	if file.Version != f.maps["goff-production"].Metadata.ResourceVersion {
+	if file.Version != f.version("goff-production") {
 		t.Errorf("version = %q, want the ConfigMap's resourceVersion", file.Version)
 	}
 	for _, token := range f.tokens {
@@ -249,10 +295,47 @@ func TestWriteUsesResourceVersionSoAStaleVersionCannotClobber(t *testing.T) {
 		t.Error("writing one key must keep the ConfigMap's other keys")
 	}
 
-	stale := f.maps["goff-production"]
-	stale.Metadata.ResourceVersion = before.Version
-	if _, err := b.put(ctx, &stale); !errors.Is(err, errConflict) {
-		t.Errorf("a PUT with a stale resourceVersion must conflict, got %v", err)
+	if _, err := b.patch(ctx, "goff-production", before.Version, "payments.goff.yaml", "x"); !errors.Is(err, errConflict) {
+		t.Errorf("a patch with a stale resourceVersion must conflict, got %v", err)
+	}
+}
+
+func TestWritesKeepFieldsStudioDoesNotModel(t *testing.T) {
+	// Helm and Argo CD track ConfigMaps by annotations and labels, and a
+	// ConfigMap may carry binaryData, owner references or finalizers. Saving a
+	// flag must leave all of them in place.
+	f := newFake()
+	meta := f.maps["goff-production"]["metadata"].(map[string]any)
+	meta["annotations"] = map[string]any{"meta.helm.sh/release-name": "flags"}
+	meta["labels"] = map[string]any{"app.kubernetes.io/managed-by": "Helm"}
+	meta["ownerReferences"] = []any{map[string]any{"kind": "Deployment", "name": "relay"}}
+	meta["finalizers"] = []any{"example.com/keep"}
+	f.maps["goff-production"]["binaryData"] = map[string]any{"logo.png": "iVBORw0K"}
+
+	b := backend(t, f)
+	ctx := context.Background()
+	if _, err := b.Write(ctx, storage.ChangeOp{
+		Path:  "production/payments.goff.yaml",
+		Apply: func(c []byte) ([]byte, error) { return append(c, '\n'), nil },
+	}, storage.Identity{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.CreateFile(ctx, "production/search.goff.yaml", []byte("# new\n"), "", storage.Identity{}); err != nil {
+		t.Fatal(err)
+	}
+
+	obj := f.maps["goff-production"]
+	meta = obj["metadata"].(map[string]any)
+	for _, field := range []string{"annotations", "labels", "ownerReferences", "finalizers"} {
+		if meta[field] == nil {
+			t.Errorf("metadata.%s was dropped by a save", field)
+		}
+	}
+	if obj["binaryData"] == nil {
+		t.Error("binaryData was dropped by a save")
+	}
+	if data(f, "goff-production", "growth.goff.yaml") == "" {
+		t.Error("another team's file was dropped by a save")
 	}
 }
 
@@ -267,7 +350,7 @@ func TestSameFlagChangedElsewhereConflicts(t *testing.T) {
 	if !errors.Is(err, storage.ErrConflict) {
 		t.Errorf("want ErrConflict, got %v", err)
 	}
-	if f.puts != 0 {
+	if f.writes != 0 {
 		t.Error("nothing should have been written on conflict")
 	}
 }
@@ -282,10 +365,9 @@ func TestAnotherFilesChangeInTheSameEnvironmentRetriesSilently(t *testing.T) {
 	// its PUT, which moves the shared resourceVersion.
 	f.mutate = func(f *fakeAPI, gets int) {
 		if gets == 2 {
-			cm := f.maps["goff-production"]
 			next := map[string]string{}
-			for k, v := range cm.Data {
-				next[k] = v
+			for k, v := range f.maps["goff-production"]["data"].(map[string]any) {
+				next[k] = v.(string)
 			}
 			next["growth.goff.yaml"] += "unrelated: {}\n"
 			f.set("goff-production", next)
@@ -323,7 +405,7 @@ func TestNoOpWriteSkipsThePut(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f.puts != 0 {
+	if f.writes != 0 {
 		t.Error("an unchanged file should not be written")
 	}
 }
