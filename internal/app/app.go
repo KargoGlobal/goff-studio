@@ -130,6 +130,9 @@ func checkStorage(cfg *config.Config, repo storage.Backend, budget time.Duration
 	case cfg.Storage.Bucket != "" && strings.EqualFold(cfg.Storage.Backend, "gcs"):
 		target = fmt.Sprintf("gs://%s/%s", cfg.Storage.Bucket, cfg.Storage.Prefix)
 		hint = "check the bucket name and that this pod's Google credentials can list and write it"
+	case cfg.Storage.Bucket != "" && strings.EqualFold(cfg.Storage.Backend, "azblob"):
+		target = fmt.Sprintf("azure container %s/%s", cfg.Storage.Bucket, cfg.Storage.Prefix)
+		hint = "check the container name, the account URL or connection string, and that this pod's Azure identity can list and write it"
 	case cfg.Storage.Bucket != "":
 		target = fmt.Sprintf("s3://%s/%s", cfg.Storage.Bucket, cfg.Storage.Prefix)
 		hint = "check the bucket name, the region, and that this pod's credentials can list and write it"

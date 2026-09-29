@@ -38,6 +38,13 @@ storage:
 # storage:
 #   backend: gcs
 #   bucket: my-flags-bucket
+#
+# Azure Blob Storage, which needs the goff-studio-azblob binary; see backends/azblob/README.md.
+# storage:
+#   backend: azblob
+#   bucket: flags          # the container
+#   options:
+#     accountURL: https://myaccount.blob.core.windows.net
 
 github:
   owner: your-org

@@ -362,6 +362,15 @@ func (c *Config) validateStorage() error {
 		}
 		c.warnf("storage.backend is gcs, so changes have no review; Studio's permission config is the only control over who may change a flag, and history and attribution need object versioning")
 		return nil
+	case "azblob":
+		if strings.TrimSpace(c.Storage.Bucket) == "" {
+			return fieldErr("storage.bucket", envStorageBucket, "is required when storage.backend is azblob; it is the container name")
+		}
+		if !storage.Registered("azblob") {
+			return fieldErr("storage.backend", envStorage, "azblob is not compiled into this binary; use an image built with the azblob backend, or pick one of: "+strings.Join(storage.Available(), ", "))
+		}
+		c.warnf("storage.backend is azblob, so changes have no review; Studio's permission config is the only control over who may change a flag, and history and attribution need blob versioning")
+		return nil
 	default:
 		if storage.Registered(backend) {
 			return nil

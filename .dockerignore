@@ -13,6 +13,7 @@ web/dist
 cmd/goff-studio/dist
 backends/s3/cmd/goff-studio-s3/dist
 backends/gcs/cmd/goff-studio-gcs/dist
+backends/azblob/cmd/goff-studio-azblob/dist
 
 # Locally built binaries
 /goff-studio
