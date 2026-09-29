@@ -36,6 +36,7 @@ type fakeGCS struct {
 	uploads    int
 	reads      int
 	mutate     func(f *fakeGCS, reads int)
+	pageSize   int // when set, listings return this many items per page
 }
 
 func newFake() *fakeGCS {
@@ -189,7 +190,17 @@ func (f *fakeGCS) list(w http.ResponseWriter, q url.Values) {
 			})
 		}
 	}
-	writeJSON(w, map[string]any{"items": items, "prefixes": prefixes})
+	resp := map[string]any{"prefixes": prefixes}
+	if f.pageSize > 0 {
+		start, _ := strconv.Atoi(q.Get("pageToken"))
+		end := min(start+f.pageSize, len(items))
+		if end < len(items) {
+			resp["nextPageToken"] = strconv.Itoa(end)
+		}
+		items = items[start:end]
+	}
+	resp["items"] = items
+	writeJSON(w, resp)
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
@@ -479,6 +490,24 @@ func TestHistoryFollowsObjectVersioningAndCarriesAttribution(t *testing.T) {
 	}
 	if commits[1].Author != unknownAuthor {
 		t.Errorf("a generation written without metadata should show an unknown author, got %q", commits[1].Author)
+	}
+}
+
+func TestHistoryReadsEveryPageBecauseGCSListsOldestFirst(t *testing.T) {
+	f := newFake()
+	f.versioning = true
+	for i := range 15 {
+		f.put("production/flags.goff.yaml", "v", map[string]string{metaMessage: "change " + strconv.Itoa(i)})
+	}
+	f.pageSize = 1
+	b := backend(t, f)
+
+	commits, err := b.History(context.Background(), "production/flags.goff.yaml", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(commits) != 3 || commits[0].Message != "change 14" {
+		t.Errorf("commits = %+v, want the newest three, starting with change 14", commits)
 	}
 }
 

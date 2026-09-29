@@ -398,9 +398,6 @@ func (b *Backend) CreateFile(ctx context.Context, path string, content []byte, m
 	return err
 }
 
-// maxVersionPages bounds list calls for one history read.
-const maxVersionPages = 10
-
 const unknownAuthor = "unknown"
 
 // History lists the object's generations, newest first. Unlike S3, a versioned
@@ -425,7 +422,9 @@ func (b *Backend) History(ctx context.Context, path string, limit int) ([]storag
 
 	var generations []object
 	token := ""
-	for page := 0; page < maxVersionPages; page++ {
+	// GCS lists generations oldest first, so the newest are on the last page;
+	// every page has to be read before the limit is applied.
+	for {
 		query := url.Values{"prefix": {key}, "versions": {"true"}}
 		if token != "" {
 			query.Set("pageToken", token)
