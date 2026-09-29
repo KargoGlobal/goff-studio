@@ -1,7 +1,7 @@
 BINARY := goff-studio
 
 # Nested modules are invisible to ./... , so every target has to name them.
-GO_MODULES := . backends/s3 backends/gcs e2e/harness
+GO_MODULES := . backends/s3 backends/gcs backends/azblob e2e/harness
 
 .PHONY: build web test lint e2e dev clean
 

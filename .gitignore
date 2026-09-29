@@ -5,6 +5,8 @@
 !/backends/s3/cmd/goff-studio-s3/dist/.gitkeep
 /backends/gcs/cmd/goff-studio-gcs/dist/*
 !/backends/gcs/cmd/goff-studio-gcs/dist/.gitkeep
+/backends/azblob/cmd/goff-studio-azblob/dist/*
+!/backends/azblob/cmd/goff-studio-azblob/dist/.gitkeep
 node_modules/
 *.pem
 studio.yaml

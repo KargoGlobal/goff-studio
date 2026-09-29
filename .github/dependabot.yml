@@ -25,6 +25,14 @@ updates:
       gcs:
         patterns: ["*"]
 
+  - package-ecosystem: gomod
+    directory: /backends/azblob
+    schedule:
+      interval: weekly
+    groups:
+      azblob:
+        patterns: ["*"]
+
   - package-ecosystem: npm
     directory: /web
     schedule:

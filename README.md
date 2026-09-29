@@ -104,6 +104,7 @@ backend with review.
 | `github` | yes, commits | yes, commit author and trailers | yes, via CODEOWNERS |
 | `s3` | with bucket versioning | with bucket versioning, in object metadata | no |
 | `gcs` | with object versioning | with object versioning, in object metadata | no |
+| `azblob` | with blob versioning | with blob versioning, in blob metadata | no |
 | `file` | no | no | no |
 
 Studio reports these as capabilities to the UI: history shows the per-flag
@@ -113,7 +114,7 @@ UI hides or rewords anything a backend cannot do.
 
 | Config key | Env var | Notes |
 | --- | --- | --- |
-| `storage.backend` | `GOFF_STUDIO_STORAGE` | `github` (default), `file`, `s3`, or `gcs` |
+| `storage.backend` | `GOFF_STUDIO_STORAGE` | `github` (default), `file`, `s3`, `gcs`, or `azblob` |
 | `environments` | `GOFF_STUDIO_ENVIRONMENTS` | `dev,production`, or YAML for `display`/`protected`/`order`; at least one required |
 | `discoverEnvironments` | `GOFF_STUDIO_DISCOVER_ENVIRONMENTS` | `true` finds directories itself, instead of listing them |
 | `permissions` | `GOFF_STUDIO_PERMISSIONS` | YAML or JSON list, e.g. `[{group: admins, allow: ["*"]}]` |
@@ -191,6 +192,25 @@ startup and hides the history panel if it is off. See
 | `storage.bucket` | `GOFF_STUDIO_STORAGE_BUCKET` | **required** |
 | `storage.prefix` | `GOFF_STUDIO_STORAGE_PREFIX` | optional object name prefix |
 | `storage.options` | `GOFF_STUDIO_STORAGE_OPTIONS` | YAML map; `{endpoint: "http://localhost:4443"}` for an emulator (sent without credentials) |
+
+**`azblob`** — Azure Blob Storage. Needs the separate `goff-studio-azblob` binary,
+built from `backends/azblob`. Studio authenticates with `DefaultAzureCredential`
+(managed identity, Workload Identity, or the Azure CLI locally), or with a
+connection string in `AZURE_STORAGE_CONNECTION_STRING`, which takes precedence
+and is how you reach the Azurite emulator. The connection string carries the
+account key, so it is read from the environment, never from the config file.
+
+Writes use `If-Match` on the blob's ETag, and creates use `If-None-Match: *`.
+Attribution is stored as blob metadata (`studio_user_name`,
+`studio_user_email`, `studio_user_id`, `studio_message`; Azure requires
+identifier-style names), encoded like S3's. Turn on blob versioning for history
+and attribution. See [backends/azblob/README.md](backends/azblob/README.md).
+
+| Config key | Env var | Notes |
+| --- | --- | --- |
+| `storage.bucket` | `GOFF_STUDIO_STORAGE_BUCKET` | **required**; the container name |
+| `storage.prefix` | `GOFF_STUDIO_STORAGE_PREFIX` | optional blob name prefix |
+| `storage.options` | `GOFF_STUDIO_STORAGE_OPTIONS` | YAML map; `{accountURL: "https://<account>.blob.core.windows.net"}`, required unless `AZURE_STORAGE_CONNECTION_STRING` is set |
 
 ## Flag file layout
 
@@ -436,7 +456,7 @@ concurrent edit on the same flag.
 ## Project status
 
 Working today: the HTTP API, GOFF adapter, OIDC auth, permissions, and the write
-path across all four storage backends. The React UI covers the flag list with
+path across all five storage backends. The React UI covers the flag list with
 search, team filter and inline toggles; flag detail with variations, percentage
 sliders and a visual rule builder including negated and nested condition groups;
 creating, renaming and deleting flags and teams; editing progressive rollouts and
