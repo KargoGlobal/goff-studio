@@ -104,8 +104,8 @@ func TestLiveRoundTrip(t *testing.T) {
 		t.Fatalf("content = %q", after.Content)
 	}
 
-	t.Logf("versioning=%v", b.versioning)
-	if b.versioning {
+	t.Logf("versioning=%v", b.versioning.Load())
+	if b.versioning.Load() {
 		commits, err := b.History(ctx, path, 10)
 		if err != nil || len(commits) < 2 {
 			t.Fatalf("history = %+v, %v", commits, err)

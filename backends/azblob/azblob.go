@@ -10,6 +10,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-feature-flag/studio/internal/storage"
@@ -72,10 +73,12 @@ type Config struct {
 }
 
 type Backend struct {
-	api        API
-	container  string
-	prefix     string
-	versioning bool
+	api       API
+	container string
+	prefix    string
+	// versioning is set by Check and by the first versioned upload, and read
+	// by concurrent requests, so it is atomic.
+	versioning atomic.Bool
 }
 
 func New(_ context.Context, cfg Config) (*Backend, error) {
@@ -103,7 +106,8 @@ func (b *Backend) Name() string { return "azblob" }
 // on: every version carries its author in metadata, but without versioning
 // there is nothing to show it in. There is never a review step.
 func (b *Backend) Capabilities() storage.Capabilities {
-	return storage.Capabilities{History: b.versioning, Attribution: b.versioning, Review: false}
+	v := b.versioning.Load()
+	return storage.Capabilities{History: v, Attribution: v, Review: false}
 }
 
 func (b *Backend) key(p string) (string, error) {
@@ -256,7 +260,7 @@ func (b *Backend) upload(ctx context.Context, p string, content []byte, ifMatch 
 	}
 	// A version ID proves versioning is on even if Check saw no versions yet.
 	if versionID != "" {
-		b.versioning = true
+		b.versioning.Store(true)
 	}
 	return etag, nil
 }
@@ -276,7 +280,7 @@ const unknownAuthor = "unknown"
 // call (per page) and no per-version reads. Versions written before Studio
 // recorded attribution show an unknown author.
 func (b *Backend) History(ctx context.Context, p string, limit int) ([]storage.Commit, error) {
-	if !b.versioning {
+	if !b.versioning.Load() {
 		return nil, nil
 	}
 	if limit <= 0 {
@@ -351,11 +355,11 @@ func (b *Backend) Check(ctx context.Context) error {
 	}
 	for _, item := range items {
 		if item.VersionID != "" {
-			b.versioning = true
+			b.versioning.Store(true)
 			break
 		}
 	}
 	return nil
 }
 
-func (b *Backend) SetVersioning(enabled bool) { b.versioning = enabled }
+func (b *Backend) SetVersioning(enabled bool) { b.versioning.Store(enabled) }

@@ -475,3 +475,29 @@ func TestNewRequiresAContainerAndAWayToAuthenticate(t *testing.T) {
 		t.Error("an account URL or a connection string is required")
 	}
 }
+
+func TestVersioningFlagIsSafeUnderConcurrentRequests(t *testing.T) {
+	// Uploads switch history on while other requests read the capabilities;
+	// run with -race.
+	f := &fakeAzure{blobs: map[string][]fakeVersion{}, versioning: true}
+	b := backend(t, f)
+	ctx := context.Background()
+
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_ = b.CreateFile(ctx, fmt.Sprintf("dev/f%d.goff.yaml", i), []byte("# x\n"), "", storage.Identity{})
+		}()
+		go func() {
+			defer wg.Done()
+			_ = b.Capabilities()
+			_, _ = b.History(ctx, "dev/f0.goff.yaml", 5)
+		}()
+	}
+	wg.Wait()
+	if !b.Capabilities().History {
+		t.Error("a versioned upload should have turned history on")
+	}
+}
