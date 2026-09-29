@@ -135,3 +135,55 @@ export async function chipValues(
 ) {
   return chipGroup(scope, index).locator('span').allTextContents()
 }
+
+// The flag list renders each flag as a clickable row rather than a key link.
+export function flagRow(page: Page, key: string): Locator {
+  return page.locator('tbody tr').filter({ has: page.getByText(key, { exact: true }) })
+}
+
+// Picks a value in one of the custom single-selects (a combobox button plus a listbox).
+export async function chooseOption(scope: Page | Locator, label: string, option: string): Promise<void> {
+  const page = 'page' in scope ? scope.page() : scope
+  await scope.getByRole('combobox', { name: label, exact: true }).click()
+  await page.getByRole('listbox').getByRole('option', { name: option, exact: true }).click()
+  await expect(page.getByRole('listbox')).toBeHidden()
+}
+
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+
+// Sets a DateTimeInput through its calendar popover. `when` is local time, `YYYY-MM-DDTHH:MM`.
+export async function pickDateTime(page: Page, label: string, when: string): Promise<void> {
+  const [datePart, timePart] = when.split('T')
+  const [year, month, day] = datePart.split('-').map(Number)
+  const [hours, minutes] = timePart.split(':')
+
+  const trigger = page.getByRole('button', { name: label, exact: true })
+  await trigger.click()
+  const picker = page.getByRole('dialog', { name: `${label} picker` })
+  await expect(picker).toBeVisible()
+
+  const shown = (await picker.getByRole('grid').getAttribute('aria-label')) ?? ''
+  const [shownMonth, shownYear] = shown.split(' ')
+  const steps = (year - Number(shownYear)) * 12 + (month - 1 - MONTHS.indexOf(shownMonth))
+  const nav = picker.getByRole('button', {
+    name: steps > 0 ? 'Go to the Next Month' : 'Go to the Previous Month',
+  })
+  for (let i = 0; i < Math.abs(steps); i++) await nav.click()
+
+  const monthName = MONTHS[month - 1]
+  await expect(picker.getByRole('grid', { name: `${monthName} ${year}` })).toBeVisible()
+  await picker
+    .getByRole('button', { name: new RegExp(`${monthName} ${day}(st|nd|rd|th), ${year}`) })
+    .click()
+
+  await picker.getByLabel('Hours').fill(hours)
+  await picker.getByLabel('Minutes').fill(minutes)
+  await picker.getByLabel('Minutes').blur()
+  await page.keyboard.press('Escape')
+  await expect(picker).toBeHidden()
+
+  await expect(trigger).toHaveText(`${datePart} · ${hours}:${minutes}`)
+}

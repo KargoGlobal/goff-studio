@@ -1,4 +1,4 @@
-import { expect, listPath, test, USER_EMAIL, USER_NAME } from './support/studio'
+import { expect, flagRow, listPath, test, USER_EMAIL, USER_NAME } from './support/studio'
 
 test('an unauthenticated visitor sees the sign-in page', async ({ page }) => {
   await page.goto('/')
@@ -27,13 +27,15 @@ test('the flag list shows every flag in the repo', async ({ page }) => {
   await page.goto(listPath())
 
   await expect(page.getByRole('heading', { name: 'Feature flags' })).toBeVisible()
-  await expect(page.getByText('3 flags in Production')).toBeVisible()
+  await expect(page.getByText('3 of 3 items')).toBeVisible()
 
-  await expect(page.getByRole('link', { name: 'new-checkout', exact: true })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'banner-test', exact: true })).toBeVisible()
+  // The list is read-only now: each row opens the flag, and the Serving column
+  // (fifth column) shows whether it is on. Toggling moved to the detail page.
+  await expect(flagRow(page, 'new-checkout')).toBeVisible()
+  await expect(flagRow(page, 'banner-test')).toBeVisible()
 
-  await expect(page.getByRole('switch', { name: 'Turn new-checkout off' })).toBeVisible()
-  await expect(page.getByRole('switch', { name: 'Turn banner-test off' })).toBeVisible()
+  await expect(flagRow(page, 'new-checkout').locator('td').nth(4)).toHaveText('true')
+  await expect(flagRow(page, 'banner-test').locator('td').nth(4)).toHaveText('true')
 })
 
 test(
@@ -48,13 +50,14 @@ test(
   },
 )
 
-test('a flag key link opens the detail page', async ({ page }) => {
+test('a flag row opens the detail page', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page.getByText(USER_EMAIL)).toBeVisible()
 
   await page.goto(listPath())
-  await page.getByRole('link', { name: 'new-checkout', exact: true }).click()
+  await flagRow(page, 'new-checkout').click()
 
+  await expect(page).toHaveURL(/\/env\/production\/flags\/new-checkout$/)
   await expect(page.getByRole('heading', { name: 'new-checkout', exact: true })).toBeVisible()
 })
