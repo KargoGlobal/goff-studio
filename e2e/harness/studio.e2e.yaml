@@ -16,16 +16,7 @@ github:
   devToken: fake-token
 
 expectedPollSeconds: 30
-discoverEnvironments: true
-
-environments:
-  - name: production
-    display: Production
-    protected: true
-    order: 1
-  - name: staging
-    display: Staging
-    order: 2
+protectedEnvironments: [production]
 
 permissions:
   - group: flags-admins

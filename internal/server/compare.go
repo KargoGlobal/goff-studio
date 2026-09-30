@@ -31,7 +31,6 @@ var CopyableFields = []string{
 
 type CompareSide struct {
 	Environment string     `json:"environment"`
-	Display     string     `json:"display"`
 	Present     bool       `json:"present"`
 	Enabled     bool       `json:"enabled"`
 	Summary     string     `json:"summary"`
@@ -97,15 +96,15 @@ func (s *Service) Compare(ctx context.Context, sess auth.Session, key, from, to 
 }
 
 func (s *Service) compareSide(ctx context.Context, sess auth.Session, key, env string) (*CompareSide, error) {
-	known := s.Environments(ctx, sess)
+	known, err := s.Environments(ctx, sess)
+	if err != nil {
+		return nil, err
+	}
 	var found bool
-	side := &CompareSide{Environment: env, Display: env}
+	side := &CompareSide{Environment: env}
 	for _, e := range known {
 		if e.Name == env {
 			found = true
-			if e.Display != "" {
-				side.Display = e.Display
-			}
 		}
 	}
 	if !found {

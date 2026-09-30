@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -74,10 +75,36 @@ const rampFile = `ramped:
 `
 
 type repoState struct {
-	mu    sync.Mutex
-	files map[string]string
-	shas  map[string]string
-	puts  []map[string]any
+	mu       sync.Mutex
+	files    map[string]string
+	shas     map[string]string
+	puts     []map[string]any
+	listings int
+}
+
+func (r *repoState) listing(dir string) []map[string]string {
+	prefix := ""
+	if dir != "" {
+		prefix = dir + "/"
+	}
+	var entries []map[string]string
+	seenDirs := map[string]bool{}
+	for name := range r.files {
+		rest, ok := strings.CutPrefix(name, prefix)
+		if !ok {
+			continue
+		}
+		if sub, _, nested := strings.Cut(rest, "/"); nested {
+			if !seenDirs[sub] {
+				seenDirs[sub] = true
+				entries = append(entries, map[string]string{"name": sub, "path": prefix + sub, "type": "dir"})
+			}
+			continue
+		}
+		entries = append(entries, map[string]string{"name": rest, "path": name, "type": "file"})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i]["path"] < entries[j]["path"] })
+	return entries
 }
 
 func newRepo() *repoState {
@@ -115,16 +142,8 @@ func (r *repoState) server(t *testing.T) *httptest.Server {
 				})
 				return
 			}
-			var entries []map[string]string
-			for name := range r.files {
-				if strings.HasPrefix(name, path+"/") {
-					entries = append(entries, map[string]string{
-						"name": strings.TrimPrefix(name, path+"/"),
-						"path": name,
-						"type": "file",
-					})
-				}
-			}
+			r.listings++
+			entries := r.listing(path)
 			if entries == nil {
 				w.WriteHeader(http.StatusNotFound)
 				_, _ = w.Write([]byte(`{"message":"Not Found"}`))
@@ -165,13 +184,10 @@ func testServer(t *testing.T, repo *repoState, rules []permissions.Rule) (*Serve
 
 	gh := repo.server(t)
 	cfg := &config.Config{
-		Server: config.Server{SessionSecret: "0123456789abcdef0123"},
-		GitHub: config.GitHub{Owner: "acme", Repo: "flags", Branch: "main"},
-		Environments: []config.Environment{
-			{Name: "dev", Display: "Dev", Order: 1},
-			{Name: "production", Display: "Production", Protected: true, Order: 2},
-		},
-		PollSeconds: 30,
+		Server:                config.Server{SessionSecret: "0123456789abcdef0123"},
+		GitHub:                config.GitHub{Owner: "acme", Repo: "flags", Branch: "main"},
+		ProtectedEnvironments: []string{"production"},
+		PollSeconds:           30,
 	}
 
 	perms, err := permissions.New(rules)
@@ -470,9 +486,9 @@ func TestMeReportsOnlyVisibleEnvironments(t *testing.T) {
 	}
 
 	var out struct {
-		Name         string               `json:"name"`
-		Environments []config.Environment `json:"environments"`
-		PollSeconds  int                  `json:"pollSeconds"`
+		Name         string        `json:"name"`
+		Environments []Environment `json:"environments"`
+		PollSeconds  int           `json:"pollSeconds"`
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
 
@@ -600,12 +616,17 @@ func TestEnvironmentJSONUsesLowercaseKeys(t *testing.T) {
 	rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/me", "")
 	body := rec.Body.String()
 
-	for _, want := range []string{`"name"`, `"display"`, `"protected"`, `"order"`} {
+	for _, want := range []string{`"name"`, `"protected"`, `"canCreateEnvironments"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("environment json missing %s, the frontend types depend on it:\n%s", want, body)
 		}
 	}
-	for _, unwanted := range []string{`"Name"`, `"Display"`, `"Protected"`} {
+	for _, unwanted := range []string{`"display"`, `"order"`} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("environment json still carries %s, which was removed:\n%s", unwanted, body)
+		}
+	}
+	for _, unwanted := range []string{`"Name"`, `"Protected"`} {
 		if strings.Contains(body, unwanted) {
 			t.Errorf("environment json leaks the Go field name %s:\n%s", unwanted, body)
 		}

@@ -19,7 +19,6 @@ const (
 	envBaseURL        = "GOFF_STUDIO_BASE_URL"
 	envSessionSecret  = "GOFF_STUDIO_SESSION_SECRET"
 	envSecureCookies  = "GOFF_STUDIO_SECURE_COOKIES"
-	envDiscoverEnvs   = "GOFF_STUDIO_DISCOVER_ENVIRONMENTS"
 	envStorage        = "GOFF_STUDIO_STORAGE"
 	envStoragePath    = "GOFF_STUDIO_STORAGE_PATH"
 	envStorageBucket  = "GOFF_STUDIO_STORAGE_BUCKET"
@@ -38,18 +37,14 @@ const (
 	envGitHubKeyPath  = "GOFF_STUDIO_GITHUB_PRIVATE_KEY_PATH"
 	envGitHubDevToken = "GOFF_STUDIO_GITHUB_DEV_TOKEN"
 	envPollSeconds    = "GOFF_STUDIO_EXPECTED_POLL_SECONDS"
-	envEnvironments   = "GOFF_STUDIO_ENVIRONMENTS"
+	envProtectedEnvs  = "GOFF_STUDIO_PROTECTED_ENVIRONMENTS"
 	envPermissions    = "GOFF_STUDIO_PERMISSIONS"
+
+	legacyEnvEnvironments = "GOFF_STUDIO_ENVIRONMENTS"
+	legacyEnvDiscoverEnvs = "GOFF_STUDIO_DISCOVER_ENVIRONMENTS"
 )
 
 var environmentName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
-
-type Environment struct {
-	Name      string `yaml:"name" json:"name"`
-	Display   string `yaml:"display" json:"display"`
-	Protected bool   `yaml:"protected" json:"protected"`
-	Order     int    `yaml:"order" json:"order"`
-}
 
 type Server struct {
 	Addr          string `yaml:"addr"`
@@ -85,14 +80,13 @@ type GitHub struct {
 }
 
 type Config struct {
-	Server               Server             `yaml:"server"`
-	OIDC                 OIDC               `yaml:"oidc"`
-	GitHub               GitHub             `yaml:"github"`
-	Storage              Storage            `yaml:"storage"`
-	Environments         []Environment      `yaml:"environments"`
-	DiscoverEnvironments bool               `yaml:"discoverEnvironments"`
-	Permissions          []permissions.Rule `yaml:"permissions"`
-	PollSeconds          int                `yaml:"expectedPollSeconds"`
+	Server                Server             `yaml:"server"`
+	OIDC                  OIDC               `yaml:"oidc"`
+	GitHub                GitHub             `yaml:"github"`
+	Storage               Storage            `yaml:"storage"`
+	ProtectedEnvironments []string           `yaml:"protectedEnvironments"`
+	Permissions           []permissions.Rule `yaml:"permissions"`
+	PollSeconds           int                `yaml:"expectedPollSeconds"`
 
 	warnings []string
 }
@@ -117,6 +111,9 @@ func load(path string, optional bool) (*Config, error) {
 			if err := yaml.Unmarshal(raw, cfg); err != nil {
 				return nil, fmt.Errorf("parsing config: %w", err)
 			}
+			if err := legacyFileKeys(raw); err != nil {
+				return nil, err
+			}
 		case os.IsNotExist(err) && optional:
 			missingFile = true
 		default:
@@ -124,6 +121,9 @@ func load(path string, optional bool) (*Config, error) {
 		}
 	}
 
+	if err := legacyEnvVars(); err != nil {
+		return nil, err
+	}
 	if err := cfg.applyEnv(); err != nil {
 		return nil, err
 	}
@@ -184,7 +184,6 @@ func (c *Config) applyEnv() error {
 	str(envBaseURL, &c.Server.BaseURL)
 	str(envSessionSecret, &c.Server.SessionSecret)
 	boolean(envSecureCookies, &c.Server.SecureCookies)
-	boolean(envDiscoverEnvs, &c.DiscoverEnvironments)
 	str(envStorage, &c.Storage.Backend)
 	str(envStoragePath, &c.Storage.Path)
 	str(envStorageBucket, &c.Storage.Bucket)
@@ -192,16 +191,12 @@ func (c *Config) applyEnv() error {
 	str(envStoragePrefix, &c.Storage.Prefix)
 	yamlList(envStorageOptions, &c.Storage.Options)
 
-	if v := strings.TrimSpace(os.Getenv(envEnvironments)); v != "" {
-		if strings.HasPrefix(v, "[") || strings.Contains(v, "name:") {
-			yamlList(envEnvironments, &c.Environments)
+	if v := strings.TrimSpace(os.Getenv(envProtectedEnvs)); v != "" {
+		if strings.HasPrefix(v, "[") {
+			c.ProtectedEnvironments = nil
+			yamlList(envProtectedEnvs, &c.ProtectedEnvironments)
 		} else {
-			c.Environments = nil
-			for _, name := range strings.Split(v, ",") {
-				if name = strings.TrimSpace(name); name != "" {
-					c.Environments = append(c.Environments, Environment{Name: name})
-				}
-			}
+			c.ProtectedEnvironments = splitList(v)
 		}
 	}
 	yamlList(envPermissions, &c.Permissions)
@@ -448,31 +443,82 @@ func (c *Config) validateGitHub() error {
 }
 
 func (c *Config) validateEnvironments() error {
-	if len(c.Environments) == 0 && !c.DiscoverEnvironments {
-		return fmt.Errorf("at least one environment is required; each entry names a top-level directory in %s/%s", c.GitHub.Owner, c.GitHub.Repo)
-	}
-
 	seen := map[string]bool{}
-	for i := range c.Environments {
-		env := &c.Environments[i]
-		if env.Name == "" {
-			return fmt.Errorf("environments[%d] has no name; each entry needs the directory name it maps to in the flags repository", i)
+	for i, name := range c.ProtectedEnvironments {
+		key := fmt.Sprintf("protectedEnvironments[%d]", i)
+		if !environmentName.MatchString(name) {
+			return fieldErr(key, envProtectedEnvs,
+				fmt.Sprintf("%q is not usable as a folder name; use letters, digits, dots, dashes and underscores", name))
 		}
-		if !environmentName.MatchString(env.Name) {
-			return fmt.Errorf("environments[%d] name %q is not usable as a directory or URL segment; use letters, digits, dots, dashes and underscores", i, env.Name)
+		if seen[name] {
+			return fieldErr(key, envProtectedEnvs, fmt.Sprintf("repeats %q; list each environment once", name))
 		}
-		if seen[env.Name] {
-			return fmt.Errorf("environments[%d] repeats the name %q; environment names must be unique", i, env.Name)
-		}
-		seen[env.Name] = true
-		if env.Display == "" {
-			env.Display = strings.ToUpper(env.Name[:1]) + env.Name[1:]
-		}
-		if env.Order == 0 {
-			env.Order = i + 1
-		}
+		seen[name] = true
 	}
 	return nil
+}
+
+func (c *Config) IsProtected(environment string) bool {
+	for _, name := range c.ProtectedEnvironments {
+		if name == environment {
+			return true
+		}
+	}
+	return false
+}
+
+func legacyFileKeys(raw []byte) error {
+	var legacy struct {
+		Environments         yaml.Node `yaml:"environments"`
+		DiscoverEnvironments yaml.Node `yaml:"discoverEnvironments"`
+	}
+	if err := yaml.Unmarshal(raw, &legacy); err != nil {
+		return fmt.Errorf("parsing config: %w", err)
+	}
+	if legacy.Environments.Kind != 0 {
+		var old []struct {
+			Name      string `yaml:"name"`
+			Protected bool   `yaml:"protected"`
+		}
+		_ = legacy.Environments.Decode(&old)
+		var protected []string
+		for _, e := range old {
+			if e.Protected && e.Name != "" {
+				protected = append(protected, e.Name)
+			}
+		}
+		if len(protected) == 0 {
+			return fmt.Errorf("environments is no longer supported; Studio now finds environments from the folders in storage. Remove it, and list any that need typed confirmation in protectedEnvironments: [production]")
+		}
+		return fmt.Errorf("environments is no longer supported; Studio now finds environments from the folders in storage. Replace it with protectedEnvironments: [%s]",
+			strings.Join(protected, ", "))
+	}
+	if legacy.DiscoverEnvironments.Kind != 0 {
+		return fmt.Errorf("discoverEnvironments is no longer supported; Studio now always finds environments from the folders in storage. Remove it, and list any that need typed confirmation in protectedEnvironments: [production]")
+	}
+	return nil
+}
+
+func legacyEnvVars() error {
+	if strings.TrimSpace(os.Getenv(legacyEnvEnvironments)) != "" {
+		return fmt.Errorf("%s is no longer supported; Studio now finds environments from the folders in storage. Unset it and move protected ones to %s=production",
+			legacyEnvEnvironments, envProtectedEnvs)
+	}
+	if strings.TrimSpace(os.Getenv(legacyEnvDiscoverEnvs)) != "" {
+		return fmt.Errorf("%s is no longer supported; Studio now always finds environments from the folders in storage. Unset it, and list any that need typed confirmation in %s=production",
+			legacyEnvDiscoverEnvs, envProtectedEnvs)
+	}
+	return nil
+}
+
+func splitList(v string) []string {
+	var out []string
+	for _, item := range strings.Split(v, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func (c *Config) validatePermissions() error {
@@ -482,20 +528,6 @@ func (c *Config) validatePermissions() error {
 
 	if len(c.Permissions) == 0 {
 		c.warnf("permissions is empty, so Studio will deny every request; add at least one rule granting a group access")
-		return nil
-	}
-
-	known := map[string]bool{}
-	for _, env := range c.Environments {
-		known[env.Name] = true
-	}
-	for i, rule := range c.Permissions {
-		for _, name := range rule.Environments {
-			if !known[name] {
-				c.warnf("permissions[%d] for group %q references environment %q, which is not in environments %v, so that rule can never match",
-					i, rule.Group, name, c.EnvironmentNames())
-			}
-		}
 	}
 	return nil
 }
@@ -576,23 +608,6 @@ func readable(path string) error {
 
 func (c *Config) UsingDevToken() bool {
 	return c.GitHub.DevToken != ""
-}
-
-func (c *Config) EnvironmentNames() []string {
-	out := make([]string, 0, len(c.Environments))
-	for _, e := range c.Environments {
-		out = append(out, e.Name)
-	}
-	return out
-}
-
-func (c *Config) Environment(name string) (Environment, bool) {
-	for _, e := range c.Environments {
-		if e.Name == name {
-			return e, true
-		}
-	}
-	return Environment{}, false
 }
 
 func (c *Config) RedirectURL() string {

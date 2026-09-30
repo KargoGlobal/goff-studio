@@ -70,21 +70,8 @@ github:
 # Only feeds the "live in apps within about N seconds" message; match your apps' polling interval.
 expectedPollSeconds: 30
 
-# Treat every top-level directory in the flags repo as an environment.
-# Entries below then only override display name, order, and protected.
-discoverEnvironments: true
-
-# Top-level directory names in the flags repo; at least one is required.
-environments:
-  - name: dev
-    order: 1
-  - name: staging
-    order: 2
-  - name: production
-    display: Production
-    # Forces a diff plus typed confirmation before any change is saved.
-    protected: true
-    order: 3
+# Environments are found from storage folders; these ones force a diff plus typed confirmation before saving.
+protectedEnvironments: [production]
 
 # Default deny: no matching rule means no access. Actions and patterns documented in README.md.
 permissions:

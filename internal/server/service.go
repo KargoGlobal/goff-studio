@@ -2,11 +2,13 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-feature-flag/studio/internal/auth"
 	"github.com/go-feature-flag/studio/internal/config"
@@ -24,7 +26,15 @@ type Service struct {
 	cacheMu sync.Mutex
 	cache   map[string]cachedFile
 	history map[cacheKey]map[string]goff.Flag
+
+	envMu       sync.Mutex
+	envNames    []string
+	envLoadedAt time.Time
+	envTTL      time.Duration
+	now         func() time.Time
 }
+
+const environmentCacheTTL = 30 * time.Second
 
 type cacheKey struct {
 	file string
@@ -83,7 +93,7 @@ func (s *Service) knownSHA(file, sha string) bool {
 }
 
 func NewService(cfg *config.Config, repo storage.Backend, perms *permissions.Set) *Service {
-	return &Service{cfg: cfg, repo: repo, adapter: goff.New(), perms: perms}
+	return &Service{cfg: cfg, repo: repo, adapter: goff.New(), perms: perms, envTTL: environmentCacheTTL, now: time.Now}
 }
 
 type FlagView struct {
@@ -1090,48 +1100,77 @@ func (s *Service) Capabilities() storage.Capabilities {
 	return s.repo.Capabilities()
 }
 
-func (s *Service) Environments(ctx context.Context, sess auth.Session) []config.Environment {
-	known := map[string]config.Environment{}
-	order := 0
-	for _, env := range s.cfg.Environments {
-		known[env.Name] = env
-		if env.Order > order {
-			order = env.Order
+type Environment struct {
+	Name      string `json:"name"`
+	Protected bool   `json:"protected"`
+}
+
+func (s *Service) Environments(ctx context.Context, sess auth.Session) ([]Environment, error) {
+	names, err := s.environmentNames(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := []Environment{}
+	for _, name := range names {
+		if s.perms.AllowedAnywhere(sess.Groups, name, permissions.View) {
+			out = append(out, Environment{Name: name, Protected: s.cfg.IsProtected(name)})
 		}
+	}
+	return out, nil
+}
+
+func (s *Service) CanCreateEnvironments(sess auth.Session) bool {
+	return s.perms.CanCreateEnvironments(sess.Groups)
+}
+
+func (s *Service) environmentNames(ctx context.Context) ([]string, error) {
+	s.envMu.Lock()
+	defer s.envMu.Unlock()
+
+	if s.envNames != nil && s.now().Sub(s.envLoadedAt) < s.envTTL {
+		return s.envNames, nil
+	}
+	names, err := s.discoverEnvironments(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.envNames, s.envLoadedAt = names, s.now()
+	return names, nil
+}
+
+func (s *Service) invalidateEnvironments() {
+	s.envMu.Lock()
+	defer s.envMu.Unlock()
+	s.envNames = nil
+}
+
+func (s *Service) discoverEnvironments(ctx context.Context) ([]string, error) {
+	dirs, err := s.repo.ListDirectories(ctx, "")
+	if errors.Is(err, storage.ErrNotFound) {
+		return []string{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("listing environments: %w", err)
 	}
 
-	if s.cfg.DiscoverEnvironments {
-		if dirs, err := s.repo.ListDirectories(ctx, ""); err == nil {
-			for _, name := range dirs {
-				if strings.HasPrefix(name, ".") {
-					continue
-				}
-				if _, configured := known[name]; configured {
-					continue
-				}
-				order++
-				known[name] = config.Environment{
-					Name:    name,
-					Display: strings.ToUpper(name[:1]) + name[1:],
-					Order:   order,
-				}
-			}
+	names := []string{}
+	for _, dir := range dirs {
+		if strings.HasPrefix(dir, ".") || validEnvironment(dir) != nil {
+			continue
+		}
+		files, err := s.repo.ListFiles(ctx, dir)
+		if errors.Is(err, storage.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("listing environment %s: %w", dir, err)
+		}
+		if len(files) > 0 {
+			names = append(names, dir)
 		}
 	}
-
-	var out []config.Environment
-	for _, env := range known {
-		if s.perms.AllowedAnywhere(sess.Groups, env.Name, permissions.View) {
-			out = append(out, env)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Order != out[j].Order {
-			return out[i].Order < out[j].Order
-		}
-		return out[i].Name < out[j].Name
-	})
-	return out
+	sort.Strings(names)
+	return names, nil
 }
 
 func (s *Service) CreateEnvironment(ctx context.Context, sess auth.Session, name, seedFile string) error {
@@ -1144,13 +1183,17 @@ func (s *Service) CreateEnvironment(ctx context.Context, sess auth.Session, name
 		return ErrForbidden
 	}
 
-	for _, existing := range s.Environments(ctx, sess) {
-		if existing.Name == name {
+	existing, err := s.environmentNames(ctx)
+	if err != nil {
+		return err
+	}
+	for _, other := range existing {
+		if other == name {
 			return fmt.Errorf("%w: environment %q already exists", ErrInvalid, name)
 		}
 	}
 
-	seedFile, err := seedFileName(seedFile)
+	seedFile, err = seedFileName(seedFile)
 	if err != nil {
 		return err
 	}
@@ -1158,11 +1201,8 @@ func (s *Service) CreateEnvironment(ctx context.Context, sess auth.Session, name
 	path := name + "/" + seedFile
 	seed := fmt.Sprintf("# Feature flags for %s.\n# Managed by GO Feature Flag Studio.\n", name)
 
-	return s.repo.CreateFile(ctx, path, []byte(seed), fmt.Sprintf("[%s] created environment", name), storage.Identity{
-		Name:    sess.DisplayName(),
-		Email:   sess.Email,
-		Subject: sess.Subject,
-	})
+	defer s.invalidateEnvironments()
+	return s.repo.CreateFile(ctx, path, []byte(seed), fmt.Sprintf("[%s] created environment", name), identityOf(sess))
 }
 
 func (s *Service) CreateTeam(ctx context.Context, sess auth.Session, environment, name string) error {
@@ -1192,6 +1232,7 @@ func (s *Service) CreateTeam(ctx context.Context, sess auth.Session, environment
 	}
 
 	seed := fmt.Sprintf("# Feature flags owned by %s in %s.\n# Managed by GO Feature Flag Studio.\n", name, environment)
+	defer s.invalidateEnvironments()
 	return s.repo.CreateFile(ctx, path, []byte(seed), fmt.Sprintf("[%s] created team %s", environment, name), identityOf(sess))
 }
 

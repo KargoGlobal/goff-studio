@@ -31,11 +31,20 @@ func (g *GitHubBackend) ReadFile(ctx context.Context, path string) (*File, error
 }
 
 func (g *GitHubBackend) ListFiles(ctx context.Context, dir string) ([]string, error) {
-	return g.client.ListFiles(ctx, dir)
+	files, err := g.client.ListFiles(ctx, dir)
+	return files, notFound(err)
 }
 
 func (g *GitHubBackend) ListDirectories(ctx context.Context, dir string) ([]string, error) {
-	return g.client.ListDirectories(ctx, dir)
+	dirs, err := g.client.ListDirectories(ctx, dir)
+	return dirs, notFound(err)
+}
+
+func notFound(err error) error {
+	if errors.Is(err, githubapp.ErrNotFound) {
+		return fmt.Errorf("%w: %w", ErrNotFound, err)
+	}
+	return err
 }
 
 func (g *GitHubBackend) Write(ctx context.Context, op ChangeOp, who Identity) (*Result, error) {

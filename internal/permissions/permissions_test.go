@@ -200,3 +200,50 @@ func TestEmptyActionIsDenied(t *testing.T) {
 		t.Error("a request with no action must be denied")
 	}
 }
+
+func TestCanCreateEnvironments(t *testing.T) {
+	set, err := New([]Rule{
+		{Group: "admins", Allow: []string{"*"}},
+		{Group: "starred", Allow: []string{"*"}, Environments: []string{"*"}, Actions: []string{"create"}},
+		{Group: "scoped", Allow: []string{"*"}, Environments: []string{"dev"}, Actions: []string{"create"}},
+		{Group: "editors", Allow: []string{"*"}, Actions: []string{"toggle", "rollout"}},
+		{Group: "viewers", Allow: []string{"*"}, Actions: []string{"view"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		groups []string
+		want   bool
+	}{
+		{[]string{"admins"}, true},
+		{[]string{"starred"}, true},
+		{[]string{"scoped"}, false},
+		{[]string{"editors"}, false},
+		{[]string{"viewers"}, false},
+		{[]string{"stranger"}, false},
+		{nil, false},
+		{[]string{"viewers", "admins"}, true},
+	}
+	for _, tc := range cases {
+		if got := set.CanCreateEnvironments(tc.groups); got != tc.want {
+			t.Errorf("CanCreateEnvironments(%v) = %v, want %v", tc.groups, got, tc.want)
+		}
+	}
+
+	var empty *Set
+	if empty.CanCreateEnvironments([]string{"admins"}) {
+		t.Error("a nil set must deny")
+	}
+}
+
+func TestCanCreateEnvironmentsHonoursTheWildcardGroup(t *testing.T) {
+	set, err := New([]Rule{{Group: "*", Allow: []string{"*"}, Actions: []string{"create"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !set.CanCreateEnvironments([]string{"anyone"}) {
+		t.Error(`group "*" matches every signed-in user`)
+	}
+}

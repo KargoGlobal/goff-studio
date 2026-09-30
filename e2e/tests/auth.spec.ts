@@ -15,7 +15,7 @@ test('signing in completes the OIDC round trip and shows the signed-in user', as
   await expect(page.getByText(USER_NAME)).toBeVisible()
   await expect(page.getByText(USER_EMAIL)).toBeVisible()
 
-  await expect(page.getByRole('link', { name: 'Production' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'production' })).toBeVisible()
   await expect(page.getByText(/You are editing/)).toBeVisible()
 })
 

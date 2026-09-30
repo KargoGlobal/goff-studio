@@ -25,12 +25,7 @@ github:
   installationID: "456"
   privateKeyPath: /etc/goff-studio/key.pem
 
-environments:
-  - name: dev
-  - name: staging
-  - name: production
-    protected: true
-    display: Production
+protectedEnvironments: [production, staging]
 
 permissions:
   - group: flags-admins
@@ -65,17 +60,11 @@ func TestLoadParsesEverything(t *testing.T) {
 	if cfg.GitHub.Branch != "main" {
 		t.Errorf("branch should default to main, got %q", cfg.GitHub.Branch)
 	}
-	if len(cfg.Environments) != 3 {
-		t.Fatalf("environments = %+v", cfg.Environments)
+	if len(cfg.ProtectedEnvironments) != 2 || !cfg.IsProtected("production") || !cfg.IsProtected("staging") {
+		t.Errorf("protectedEnvironments = %v", cfg.ProtectedEnvironments)
 	}
-	if !cfg.Environments[2].Protected {
-		t.Error("production should be protected")
-	}
-	if cfg.Environments[0].Display != "Dev" {
-		t.Errorf("display should default from the name, got %q", cfg.Environments[0].Display)
-	}
-	if cfg.Environments[1].Order != 2 {
-		t.Errorf("order should default to position, got %d", cfg.Environments[1].Order)
+	if cfg.IsProtected("dev") {
+		t.Error("dev is not listed, so it must not be protected")
 	}
 	if cfg.PollSeconds != 60 {
 		t.Errorf("poll seconds = %d", cfg.PollSeconds)
@@ -148,19 +137,19 @@ func TestDevTokenSatisfiesGitHubCredentials(t *testing.T) {
 	}
 }
 
-func TestNoEnvironmentsRejected(t *testing.T) {
-	full := base(t)
-	body := full[:strings.Index(full, "environments:")] + "permissions:\n  - group: g\n    allow: [\"*\"]\n"
-	if _, err := Load(write(t, body)); err == nil {
-		t.Error("a config with no environments must be rejected")
+func TestNoProtectedEnvironmentsIsValid(t *testing.T) {
+	cfg, err := Load(write(t, replace(t, "protectedEnvironments: [production, staging]\n", "")))
+	if err != nil {
+		t.Fatalf("environments come from storage, so a config naming none must still load: %v", err)
+	}
+	if len(cfg.ProtectedEnvironments) != 0 || cfg.IsProtected("production") {
+		t.Errorf("nothing should be protected, got %v", cfg.ProtectedEnvironments)
 	}
 }
 
-func TestDuplicateEnvironmentRejected(t *testing.T) {
-	body := strings.Replace(sample, "  - name: staging", "  - name: dev", 1)
-	if _, err := Load(write(t, body)); err == nil {
-		t.Error("duplicate environments must be rejected")
-	}
+func TestDuplicateProtectedEnvironmentRejected(t *testing.T) {
+	msg := loadErr(t, replace(t, "[production, staging]", "[production, production]"))
+	assertMentions(t, msg, "protectedEnvironments[1]", "production", "GOFF_STUDIO_PROTECTED_ENVIRONMENTS")
 }
 
 func TestInvalidPermissionActionRejectedAtLoad(t *testing.T) {
@@ -247,8 +236,8 @@ func TestExampleConfigLoads(t *testing.T) {
 	if len(cfg.Warnings()) != 0 {
 		t.Errorf("the example config should warn about nothing, got %v", cfg.Warnings())
 	}
-	if cfg.PollSeconds != 30 || len(cfg.Environments) != 3 {
-		t.Errorf("example parsed unexpectedly: poll=%d envs=%d", cfg.PollSeconds, len(cfg.Environments))
+	if cfg.PollSeconds != 30 || len(cfg.ProtectedEnvironments) != 1 || !cfg.IsProtected("production") {
+		t.Errorf("example parsed unexpectedly: poll=%d protected=%v", cfg.PollSeconds, cfg.ProtectedEnvironments)
 	}
 }
 
@@ -485,34 +474,16 @@ func TestLocalhostBaseURLIsQuiet(t *testing.T) {
 	}
 }
 
-func TestEnvironmentNameMustBeUsableAsPathSegment(t *testing.T) {
-	for _, name := range []string{"pro duction", "../etc", "prod/us"} {
-		msg := loadErr(t, replace(t, "  - name: staging", "  - name: "+name))
-		assertMentions(t, msg, "environments[1]")
+func TestProtectedEnvironmentNameMustBeUsableAsPathSegment(t *testing.T) {
+	for _, name := range []string{`"pro duction"`, "../etc", "prod/us", `""`, ".hidden"} {
+		msg := loadErr(t, replace(t, "[production, staging]", "[production, "+name+"]"))
+		assertMentions(t, msg, "protectedEnvironments[1]", "GOFF_STUDIO_PROTECTED_ENVIRONMENTS")
 	}
-}
-
-func TestEnvironmentErrorsUseIndexedKeys(t *testing.T) {
-	msg := loadErr(t, replace(t, "  - name: staging", "  - name: dev"))
-	assertMentions(t, msg, "environments[1]", "dev")
-
-	msg = loadErr(t, replace(t, "  - name: staging", "  - display: Staging"))
-	assertMentions(t, msg, "environments[1]")
 }
 
 func TestPermissionsErrorIsPrefixed(t *testing.T) {
 	msg := loadErr(t, replace(t, "actions: [toggle, rollout]", "actions: [toggle, launch_missiles]"))
 	assertMentions(t, msg, "permissions", "launch_missiles")
-}
-
-func TestUnknownPermissionEnvironmentWarns(t *testing.T) {
-	cfg, err := Load(write(t, replace(t, "environments: [production]", "environments: [prodution]")))
-	if err != nil {
-		t.Fatalf("a typo'd environment should warn, not fail: %v", err)
-	}
-	if !warned(cfg, "prodution") {
-		t.Errorf("expected a warning naming the unmatched environment, got %v", cfg.Warnings())
-	}
 }
 
 func TestEmptyPermissionsWarns(t *testing.T) {
@@ -544,26 +515,6 @@ func warned(cfg *Config, substr string) bool {
 		}
 	}
 	return false
-}
-
-func TestEnvironmentLookup(t *testing.T) {
-	cfg, err := Load(write(t, base(t)))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	env, ok := cfg.Environment("production")
-	if !ok || !env.Protected {
-		t.Errorf("production lookup = %+v %v", env, ok)
-	}
-	if _, ok := cfg.Environment("nope"); ok {
-		t.Error("unknown environment should not be found")
-	}
-
-	names := cfg.EnvironmentNames()
-	if len(names) != 3 || names[0] != "dev" {
-		t.Errorf("names = %v", names)
-	}
 }
 
 func TestStorageBackendDefaultsToGitHub(t *testing.T) {
@@ -734,7 +685,7 @@ func TestLoadOptionalRunsWithNoConfigFileAtAll(t *testing.T) {
 	t.Setenv("GOFF_STUDIO_OIDC_CLIENT_SECRET", "secret")
 	t.Setenv("GOFF_STUDIO_STORAGE", "file")
 	t.Setenv("GOFF_STUDIO_STORAGE_PATH", dir)
-	t.Setenv("GOFF_STUDIO_ENVIRONMENTS", "dev, production")
+	t.Setenv("GOFF_STUDIO_PROTECTED_ENVIRONMENTS", "dev, production")
 	t.Setenv("GOFF_STUDIO_PERMISSIONS", `[{group: flags-admins, allow: ["*"]}]`)
 
 	cfg, err := LoadOptional(filepath.Join(dir, "absent.yaml"))
@@ -742,8 +693,8 @@ func TestLoadOptionalRunsWithNoConfigFileAtAll(t *testing.T) {
 		t.Fatalf("a container with only env vars must start: %v", err)
 	}
 
-	if len(cfg.Environments) != 2 || cfg.Environments[0].Name != "dev" || cfg.Environments[1].Name != "production" {
-		t.Errorf("environments = %+v, want dev and production", cfg.Environments)
+	if len(cfg.ProtectedEnvironments) != 2 || cfg.ProtectedEnvironments[0] != "dev" || cfg.ProtectedEnvironments[1] != "production" {
+		t.Errorf("protectedEnvironments = %v, want dev and production", cfg.ProtectedEnvironments)
 	}
 	if len(cfg.Permissions) != 1 || cfg.Permissions[0].Group != "flags-admins" {
 		t.Errorf("permissions = %+v", cfg.Permissions)
@@ -766,12 +717,9 @@ func TestLoadStillFailsOnAMissingFileWhenAskedForOne(t *testing.T) {
 	}
 }
 
-func TestEnvironmentsAcceptFullYAMLForDisplayAndProtection(t *testing.T) {
+func envOnly(t *testing.T) string {
+	t.Helper()
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "prod"), 0o750); err != nil {
-		t.Fatal(err)
-	}
-
 	t.Setenv("GOFF_STUDIO_SESSION_SECRET", "0123456789abcdef0123456789abcdef")
 	t.Setenv("GOFF_STUDIO_OIDC_ISSUER_URL", "https://issuer.example.com")
 	t.Setenv("GOFF_STUDIO_OIDC_CLIENT_ID", "client")
@@ -779,18 +727,110 @@ func TestEnvironmentsAcceptFullYAMLForDisplayAndProtection(t *testing.T) {
 	t.Setenv("GOFF_STUDIO_STORAGE", "file")
 	t.Setenv("GOFF_STUDIO_STORAGE_PATH", dir)
 	t.Setenv("GOFF_STUDIO_PERMISSIONS", `[{group: "*", allow: ["*"]}]`)
-	t.Setenv("GOFF_STUDIO_ENVIRONMENTS", `[{name: prod, display: Production, protected: true}]`)
+	return filepath.Join(dir, "absent.yaml")
+}
 
-	cfg, err := LoadOptional(filepath.Join(dir, "absent.yaml"))
+func TestProtectedEnvironmentsAcceptAYAMLListFromTheEnvironment(t *testing.T) {
+	path := envOnly(t)
+	t.Setenv("GOFF_STUDIO_PROTECTED_ENVIRONMENTS", `[prod, eu-prod]`)
+
+	cfg, err := LoadOptional(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if len(cfg.Environments) != 1 {
-		t.Fatalf("environments = %+v", cfg.Environments)
+	if !cfg.IsProtected("prod") || !cfg.IsProtected("eu-prod") || len(cfg.ProtectedEnvironments) != 2 {
+		t.Errorf("protectedEnvironments = %v", cfg.ProtectedEnvironments)
 	}
-	if !cfg.Environments[0].Protected || cfg.Environments[0].Display != "Production" {
-		t.Errorf("full YAML should carry display and protected, got %+v", cfg.Environments[0])
+}
+
+func TestInvalidProtectedEnvironmentFromTheEnvironmentRejected(t *testing.T) {
+	path := envOnly(t)
+	t.Setenv("GOFF_STUDIO_PROTECTED_ENVIRONMENTS", "production,../etc")
+	_, err := LoadOptional(path)
+	if err == nil {
+		t.Fatal("a protected name that cannot be a folder must fail")
+	}
+	assertMentions(t, err.Error(), "protectedEnvironments[1]", "GOFF_STUDIO_PROTECTED_ENVIRONMENTS")
+
+	t.Setenv("GOFF_STUDIO_PROTECTED_ENVIRONMENTS", "production, production")
+	if _, err := LoadOptional(path); err == nil || !strings.Contains(err.Error(), "repeats") {
+		t.Errorf("a duplicate from the env var must fail, got %v", err)
+	}
+}
+
+func TestProtectedEnvironmentWithoutAFolderIsQuiet(t *testing.T) {
+	path := envOnly(t)
+	t.Setenv("GOFF_STUDIO_PROTECTED_ENVIRONMENTS", "production")
+	cfg, err := LoadOptional(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range cfg.Warnings() {
+		if strings.Contains(w, "production") {
+			t.Errorf("a protected name with no folder yet is fine and must not warn, got %q", w)
+		}
+	}
+}
+
+func TestLegacyEnvironmentKeysFailWithAMigrationHint(t *testing.T) {
+	cases := []struct {
+		name string
+		yaml string
+		want []string
+	}{
+		{
+			name: "environments with a protected entry",
+			yaml: "environments:\n  - name: dev\n  - name: production\n    display: Production\n    protected: true\n",
+			want: []string{"environments is no longer supported", "folders in storage", "protectedEnvironments: [production]"},
+		},
+		{
+			name: "environments with nothing protected",
+			yaml: "environments:\n  - name: dev\n",
+			want: []string{"environments is no longer supported", "protectedEnvironments: [production]"},
+		},
+		{
+			name: "discoverEnvironments",
+			yaml: "discoverEnvironments: true\n",
+			want: []string{"discoverEnvironments is no longer supported", "protectedEnvironments"},
+		},
+		{
+			name: "discoverEnvironments false",
+			yaml: "discoverEnvironments: false\n",
+			want: []string{"discoverEnvironments is no longer supported"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := replace(t, "protectedEnvironments: [production, staging]\n", tc.yaml)
+			assertMentions(t, loadErr(t, body), tc.want...)
+		})
+	}
+}
+
+func TestPermissionEnvironmentsAreNotMistakenForTheLegacyKey(t *testing.T) {
+	if _, err := Load(write(t, base(t))); err != nil {
+		t.Fatalf("permissions[].environments is still a valid key: %v", err)
+	}
+}
+
+func TestLegacyEnvironmentVariablesFailWithAMigrationHint(t *testing.T) {
+	cases := []struct {
+		key, value string
+		want       []string
+	}{
+		{"GOFF_STUDIO_ENVIRONMENTS", "dev,production", []string{"GOFF_STUDIO_ENVIRONMENTS is no longer supported", "folders in storage", "GOFF_STUDIO_PROTECTED_ENVIRONMENTS=production"}},
+		{"GOFF_STUDIO_DISCOVER_ENVIRONMENTS", "true", []string{"GOFF_STUDIO_DISCOVER_ENVIRONMENTS is no longer supported", "GOFF_STUDIO_PROTECTED_ENVIRONMENTS"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.key, func(t *testing.T) {
+			path := envOnly(t)
+			t.Setenv(tc.key, tc.value)
+			_, err := LoadOptional(path)
+			if err == nil {
+				t.Fatal("a removed variable must fail at startup rather than be ignored")
+			}
+			assertMentions(t, err.Error(), tc.want...)
+		})
 	}
 }
 
@@ -818,7 +858,6 @@ func TestStorageOptionsCanComeFromTheEnvironment(t *testing.T) {
 	t.Setenv("GOFF_STUDIO_OIDC_CLIENT_SECRET", "secret")
 	t.Setenv("GOFF_STUDIO_STORAGE", "file")
 	t.Setenv("GOFF_STUDIO_STORAGE_PATH", dir)
-	t.Setenv("GOFF_STUDIO_ENVIRONMENTS", "dev")
 	t.Setenv("GOFF_STUDIO_PERMISSIONS", `[{group: "*", allow: ["*"]}]`)
 	t.Setenv("GOFF_STUDIO_STORAGE_OPTIONS", `{endpoint: "http://minio:9000"}`)
 
@@ -840,7 +879,7 @@ func TestEnvVarsOverrideAFileAndReplaceListsWholesale(t *testing.T) {
 
 	path := filepath.Join(dir, "studio.yaml")
 	body := "server:\n  addr: \":9999\"\nstorage:\n  backend: file\n  path: " + dir +
-		"\nenvironments:\n  - name: fromfile\npermissions:\n  - group: file-group\n    allow: [\"*\"]\n"
+		"\nprotectedEnvironments: [fromfile, other]\npermissions:\n  - group: file-group\n    allow: [\"*\"]\n"
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -850,7 +889,7 @@ func TestEnvVarsOverrideAFileAndReplaceListsWholesale(t *testing.T) {
 	t.Setenv("GOFF_STUDIO_OIDC_CLIENT_ID", "client")
 	t.Setenv("GOFF_STUDIO_OIDC_CLIENT_SECRET", "secret")
 	t.Setenv("GOFF_STUDIO_ADDR", ":7777")
-	t.Setenv("GOFF_STUDIO_ENVIRONMENTS", "fromenv")
+	t.Setenv("GOFF_STUDIO_PROTECTED_ENVIRONMENTS", "fromenv")
 
 	cfg, err := Load(path)
 	if err != nil {
@@ -860,8 +899,8 @@ func TestEnvVarsOverrideAFileAndReplaceListsWholesale(t *testing.T) {
 	if cfg.Server.Addr != ":7777" {
 		t.Errorf("addr = %q, want the env var to win", cfg.Server.Addr)
 	}
-	if len(cfg.Environments) != 1 || cfg.Environments[0].Name != "fromenv" {
-		t.Errorf("environments = %+v; an env list replaces the file's, it does not merge", cfg.Environments)
+	if len(cfg.ProtectedEnvironments) != 1 || cfg.ProtectedEnvironments[0] != "fromenv" {
+		t.Errorf("protectedEnvironments = %v; an env list replaces the file's, it does not merge", cfg.ProtectedEnvironments)
 	}
 	if len(cfg.Permissions) != 1 || cfg.Permissions[0].Group != "file-group" {
 		t.Errorf("permissions = %+v; an unset env var must leave the file alone", cfg.Permissions)

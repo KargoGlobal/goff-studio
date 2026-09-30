@@ -9,9 +9,7 @@ export type Action =
 
 export interface Environment {
   name: string
-  display: string
   protected: boolean
-  order: number
 }
 
 export interface Capabilities {
@@ -25,6 +23,7 @@ export interface Me {
   email: string
   groups: string[]
   environments: Environment[]
+  canCreateEnvironments: boolean
   pollSeconds: number
   capabilities: Capabilities
 }
@@ -61,7 +60,6 @@ export interface ProgressiveRollout {
 
 export interface CompareSide {
   environment: string
-  display: string
   present: boolean
   enabled: boolean
   summary: string
