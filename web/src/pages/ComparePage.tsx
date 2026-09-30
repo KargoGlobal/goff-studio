@@ -34,7 +34,7 @@ function SideCard({ side, label }: { side: CompareSide; label: string }) {
         {label}
       </p>
       <p className="mt-1.5 flex items-center gap-2 text-lg font-semibold text-ink">
-        {side.display}
+        {side.environment}
         {side.present && (
           <>
             <Badge tone={side.enabled ? 'ok' : 'neutral'}>{side.enabled ? 'on' : 'off'}</Badge>
@@ -93,7 +93,7 @@ export function ComparePage({ environments }: { environments: Environment[] }) {
   async function confirm() {
     try {
       await promote.mutateAsync(payload)
-      toast(`Promoted ${key} to ${targetEnv?.display ?? target}`)
+      toast(`Promoted ${key} to ${targetEnv?.name ?? target}`)
       setReviewing(false)
       navigate(`/env/${target}/flags/${encodeURIComponent(key)}`)
     } catch (e) {
@@ -143,7 +143,7 @@ export function ComparePage({ environments }: { environments: Environment[] }) {
             value={target}
             onChange={(v) => setTarget(v)}
             ariaLabel="Target environment"
-            options={others.map((e) => ({ value: e.name, label: e.display }))}
+            options={others.map((e) => ({ value: e.name, label: e.name }))}
           />
         </div>
       </div>
@@ -195,10 +195,10 @@ export function ComparePage({ environments }: { environments: Environment[] }) {
 
           <Card className="p-6">
             <h2 className="text-xl font-semibold tracking-tight text-ink">
-              Promote to {data.to.display}
+              Promote to {data.to.environment}
             </h2>
             <p className="mt-1.5 text-[13px] text-ink-muted">
-              Copies the settings you pick from {data.from.display}. A flag that does not exist yet
+              Copies the settings you pick from {data.from.environment}. A flag that does not exist yet
               is created turned off.
             </p>
 
@@ -239,7 +239,7 @@ export function ComparePage({ environments }: { environments: Environment[] }) {
               </Button>
               {!data.to.writable && (
                 <span className="text-sm text-ink-muted">
-                  You cannot write to {data.to.display}.
+                  You cannot write to {data.to.environment}.
                 </span>
               )}
             </div>
@@ -251,7 +251,7 @@ export function ComparePage({ environments }: { environments: Environment[] }) {
         open={reviewing}
         onClose={() => setReviewing(false)}
         onConfirm={() => void confirm()}
-        title={`Promote ${key} to ${targetEnv?.display ?? target}`}
+        title={`Promote ${key} to ${targetEnv?.name ?? target}`}
         diff={diff}
         loading={loadingDiff}
         saving={promote.isPending}

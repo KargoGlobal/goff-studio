@@ -160,8 +160,7 @@ jobs:
           storage:
             backend: file
             path: /flags
-          environments:
-            - name: dev
+          protectedEnvironments: [production]
           permissions:
             - group: ci-admins
               allow: ["*"]
@@ -187,7 +186,7 @@ jobs:
             -e GOFF_STUDIO_OIDC_CLIENT_SECRET=ci-placeholder-secret \
             -e GOFF_STUDIO_STORAGE=file \
             -e GOFF_STUDIO_STORAGE_PATH=/flags \
-            -e GOFF_STUDIO_ENVIRONMENTS=dev,production \
+            -e GOFF_STUDIO_PROTECTED_ENVIRONMENTS=dev,production \
             -e 'GOFF_STUDIO_PERMISSIONS=[{group: ci-admins, allow: ["*"]}]' \
             -v "$PWD/ci-flags:/flags" \
             goff-studio:ci

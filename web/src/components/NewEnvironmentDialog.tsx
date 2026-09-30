@@ -7,9 +7,11 @@ import { useToast } from '@/components/ui/Toast'
 export function NewEnvironmentDialog({
   open,
   onClose,
+  onCreated,
 }: {
   open: boolean
   onClose: () => void
+  onCreated?: (name: string) => void
 }) {
   const create = useCreateEnvironment()
   const toast = useToast()
@@ -33,6 +35,7 @@ export function NewEnvironmentDialog({
       toast(`Created ${trimmed}.`)
       onClose()
       setName('')
+      onCreated?.(trimmed)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not create the environment')
     }
@@ -59,6 +62,10 @@ export function NewEnvironmentDialog({
         <p className="text-sm text-ink-soft">
           An environment is a top-level directory of flag files. Studio will create it with one
           empty file so your apps can point at it.
+        </p>
+        <p className="text-[13px] text-ink-muted">
+          To require typed confirmation before changes, add it to{' '}
+          <code className="font-mono text-ink">protectedEnvironments</code> in Studio's config.
         </p>
 
         <div>

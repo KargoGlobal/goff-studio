@@ -154,13 +154,19 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, sess auth.Session) {
+	environments, err := s.svc.Environments(r.Context(), sess)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"name":         sess.DisplayName(),
-		"email":        sess.Email,
-		"groups":       sess.Groups,
-		"environments": s.svc.Environments(r.Context(), sess),
-		"pollSeconds":  s.cfg.PollSeconds,
-		"capabilities": s.svc.Capabilities(),
+		"name":                  sess.DisplayName(),
+		"email":                 sess.Email,
+		"groups":                sess.Groups,
+		"environments":          environments,
+		"canCreateEnvironments": s.svc.CanCreateEnvironments(sess),
+		"pollSeconds":           s.cfg.PollSeconds,
+		"capabilities":          s.svc.Capabilities(),
 	})
 }
 

@@ -119,15 +119,7 @@ config:
 
   expectedPollSeconds: 30
 
-  environments:
-    - name: dev
-      order: 1
-    - name: staging
-      order: 2
-    - name: production
-      display: Production
-      protected: true
-      order: 3
+  protectedEnvironments: [production]
 
   permissions: []
 

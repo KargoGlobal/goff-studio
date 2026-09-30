@@ -10,7 +10,7 @@ test('the compare view shows which settings differ between environments', async 
   await page.goto('/env/staging/flags/new-checkout/compare')
 
   await expect(page.getByRole('heading', { name: 'new-checkout' })).toBeVisible()
-  await expect(page.getByRole('combobox', { name: 'Target environment' })).toHaveText('Production')
+  await expect(page.getByRole('combobox', { name: 'Target environment' })).toHaveText('production')
 
   await expect(page.getByText('Targeting rules').first()).toBeVisible()
   await expect(page.getByText('Not defined in this environment.')).toBeHidden()
@@ -35,7 +35,7 @@ test('promoting staging targeting to production commits only that change', async
 
   await page.getByRole('button', { name: 'Review promotion' }).click()
 
-  const dialog = page.getByRole('dialog', { name: 'Promote new-checkout to Production' })
+  const dialog = page.getByRole('dialog', { name: 'Promote new-checkout to production' })
   await expect(dialog).toBeVisible()
   await expect(dialog.getByText('Working out what will change…')).toBeHidden()
   await expect(dialog).toContainText('Promote new-checkout from staging to production')

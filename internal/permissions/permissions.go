@@ -127,6 +127,18 @@ func (s *Set) AllowedAnywhere(groups []string, environment string, action Action
 	return false
 }
 
+func (s *Set) CanCreateEnvironments(groups []string) bool {
+	if s == nil {
+		return false
+	}
+	for _, rule := range s.rules {
+		if hasGroup(groups, rule.Group) && environmentMatches(rule, "*") && actionMatches(rule, Create) {
+			return true
+		}
+	}
+	return false
+}
+
 func hasGroup(groups []string, want string) bool {
 	if want == "*" {
 		return true

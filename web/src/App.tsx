@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes, useParams } from 'react-router-dom'
+import { useState } from 'react'
+import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
 import { Logo } from '@/components/Logo'
 import { useMe } from '@/hooks/useFlags'
 import { ApiError } from '@/lib/api'
@@ -7,6 +8,7 @@ import { FlagListPage } from '@/pages/FlagListPage'
 import { FlagDetailPage } from '@/pages/FlagDetailPage'
 import { ComparePage } from '@/pages/ComparePage'
 import { CreateFlagPage } from '@/pages/CreateFlagPage'
+import { NewEnvironmentDialog } from '@/components/NewEnvironmentDialog'
 import { Button, Card, Spinner } from '@/components/ui/primitives'
 
 function SignIn() {
@@ -31,10 +33,34 @@ function NoAccess({ name }: { name: string }) {
       <Card className="w-full max-w-md p-8 text-center">
         <h1 className="text-lg font-semibold">No environments available</h1>
         <p className="mt-2 text-[13px] text-ink-soft">
-          You are signed in as {name}, but your groups do not grant access to any environment yet.
-          Ask an administrator to add you to a permission group.
+          You are signed in as {name}, but there is no environment you can open. Either none has
+          been created yet, or your groups do not grant access to one. Ask an administrator.
         </p>
       </Card>
+    </div>
+  )
+}
+
+function FirstEnvironment() {
+  const [open, setOpen] = useState(false)
+  const navigate = useNavigate()
+
+  return (
+    <div className="flex min-h-screen items-center justify-center p-6">
+      <Card className="w-full max-w-md p-8 text-center">
+        <h1 className="text-lg font-semibold">Create your first environment</h1>
+        <p className="mt-2 text-[13px] text-ink-soft">
+          Environments are the top-level folders of flag files in storage, and there are none yet.
+        </p>
+        <Button className="mt-6" onClick={() => setOpen(true)}>
+          New environment
+        </Button>
+      </Card>
+      <NewEnvironmentDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        onCreated={(name) => navigate(`/env/${name}`, { replace: true })}
+      />
     </div>
   )
 }
@@ -45,7 +71,12 @@ function Shell() {
   if (!me) return null
 
   return (
-    <AppShell user={me} environments={me.environments} currentEnv={env}>
+    <AppShell
+      user={me}
+      environments={me.environments}
+      canCreateEnvironments={me.canCreateEnvironments}
+      currentEnv={env}
+    >
       <Routes>
         <Route path="" element={<FlagListPage environments={me.environments} />} />
         <Route path="flags/new" element={<CreateFlagPage environments={me.environments} />} />
@@ -70,7 +101,9 @@ export function App() {
   if (error instanceof ApiError && error.isUnauthenticated) return <SignIn />
   if (error) return <SignIn />
   if (!me) return <SignIn />
-  if (me.environments.length === 0) return <NoAccess name={me.name} />
+  if (me.environments.length === 0) {
+    return me.canCreateEnvironments ? <FirstEnvironment /> : <NoAccess name={me.name} />
+  }
 
   return (
     <Routes>

@@ -65,9 +65,9 @@ Single stdlib-only Go program, no module dependencies.
   clean repo through the auto-use `freshRepo` fixture in `tests/support/studio.ts`.
 
 The configured user is `Jaime Moncayo <jaime@acme.com>`, in `flags-admins`,
-which `harness/studio.e2e.yaml` grants `["*"]`. `production` is the only
-environment and it is **protected**, so every write goes through the review
-dialog.
+which `harness/studio.e2e.yaml` grants `["*"]`. Studio finds `production` and
+`staging` from the fixture folders; `production` is listed in
+`protectedEnvironments`, so every write there goes through the review dialog.
 
 ### Fixtures
 
@@ -84,6 +84,7 @@ several tests assert it is byte-identical after a commit to the other file.
 | File | Covers |
 | --- | --- |
 | `auth.spec.ts` | Sign-in page, OIDC round trip, both flags listed |
+| `environments.spec.ts` | Environments from storage folders, a created environment appearing at once |
 | `toggle.spec.ts` | Review dialog gating, diff reveal, cancel, commit + trailer, untouched-file check |
 | `rollout.spec.ts` | Slider values, totals, committed percentages |
 | `preview.spec.ts` | Evaluate, default fall-through, invalid JSON |

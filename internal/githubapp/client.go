@@ -43,6 +43,8 @@ func (s StaticToken) Token(context.Context) (string, error) { return string(s), 
 
 var ErrFlagConflict = errors.New("this flag was changed by someone else")
 
+var ErrNotFound = errors.New("not found")
+
 func New(cfg Config, tokens TokenSource, client *http.Client) *Client {
 	if cfg.APIBase == "" {
 		cfg.APIBase = "https://api.github.com"
@@ -325,7 +327,7 @@ func (c *Client) do(ctx context.Context, method, endpoint string, body, out any)
 	case res.StatusCode == http.StatusConflict, res.StatusCode == http.StatusPreconditionFailed:
 		return errStaleSHA
 	case res.StatusCode == http.StatusNotFound:
-		return fmt.Errorf("not found: %s", shortPath(endpoint))
+		return fmt.Errorf("%w: %s", ErrNotFound, shortPath(endpoint))
 	case res.StatusCode < 200 || res.StatusCode >= 300:
 		return fmt.Errorf("github %s %s: %s", method, shortPath(endpoint), apiError(payload, res.StatusCode))
 	}

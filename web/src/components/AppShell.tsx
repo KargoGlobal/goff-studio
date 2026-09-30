@@ -21,11 +21,13 @@ function useTheme() {
 export function AppShell({
   user,
   environments,
+  canCreateEnvironments,
   currentEnv,
   children,
 }: {
   user: { name: string; email: string }
   environments: Environment[]
+  canCreateEnvironments: boolean
   currentEnv?: string
   children: ReactNode
 }) {
@@ -79,7 +81,7 @@ export function AppShell({
                       : 'text-[color:var(--color-sidebar-ink)]',
                   )}
                 />
-                <span className="flex-1 truncate">{env.display}</span>
+                <span className="flex-1 truncate">{env.name}</span>
                 {env.protected && (
                   <ShieldAlert
                     className={cn(
@@ -94,14 +96,16 @@ export function AppShell({
             )
           })}
 
-          <button
-            type="button"
-            onClick={() => setNewEnv(true)}
-            className="mt-1 flex items-center gap-2 rounded-md px-3 py-1.5 text-left text-[13px] text-[color:var(--color-sidebar-ink-muted)] transition-colors hover:bg-[color:var(--color-sidebar-hover)] hover:text-[color:var(--color-sidebar-ink)]"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            New environment
-          </button>
+          {canCreateEnvironments && (
+            <button
+              type="button"
+              onClick={() => setNewEnv(true)}
+              className="mt-1 flex items-center gap-2 rounded-md px-3 py-1.5 text-left text-[13px] text-[color:var(--color-sidebar-ink-muted)] transition-colors hover:bg-[color:var(--color-sidebar-hover)] hover:text-[color:var(--color-sidebar-ink)]"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New environment
+            </button>
+          )}
         </nav>
 
         <div className="shrink-0 px-3 pb-6 pt-4">
@@ -160,7 +164,7 @@ export function AppShell({
           <div className="flex items-center gap-2 border-b border-[color:var(--color-flare)]/40 bg-[color:var(--color-flare-soft)] px-6 py-2 text-[12.5px] text-[color:var(--color-flare)]">
             <ShieldAlert className="h-3.5 w-3.5" />
             <span>
-              You are editing <strong>{active.display}</strong>. Changes go live for real users.
+              You are editing <strong>{active.name}</strong>. Changes go live for real users.
             </span>
           </div>
         ) : (
@@ -173,7 +177,7 @@ export function AppShell({
         </div>
       </main>
 
-      <NewEnvironmentDialog open={newEnv} onClose={() => setNewEnv(false)} />
+      {canCreateEnvironments && <NewEnvironmentDialog open={newEnv} onClose={() => setNewEnv(false)} />}
     </div>
   )
 }
@@ -181,7 +185,7 @@ export function AppShell({
 export function EnvBadge({ env }: { env: Environment }) {
   return (
     <Badge tone={env.protected ? 'warn' : 'neutral'}>
-      {env.display}
+      {env.name}
     </Badge>
   )
 }

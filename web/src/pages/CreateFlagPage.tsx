@@ -137,7 +137,7 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
       <div>
         <h1 className="text-4xl font-bold tracking-tight">Create a flag</h1>
         <p className="mt-1 text-base text-ink-muted">
-          In {environment?.display ?? env}. It starts off serving the default to everyone; add
+          In {environment?.name ?? env}. It starts off serving the default to everyone; add
           targeting afterwards.
         </p>
       </div>

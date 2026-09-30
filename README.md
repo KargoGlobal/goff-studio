@@ -41,7 +41,7 @@ docker run -p 8080:8080 \
   -e GOFF_STUDIO_GITHUB_APP_ID=123 \
   -e GOFF_STUDIO_GITHUB_INSTALLATION_ID=456 \
   -e GOFF_STUDIO_GITHUB_PRIVATE_KEY_PATH=/etc/goff-studio/app.pem \
-  -e GOFF_STUDIO_ENVIRONMENTS=dev,production \
+  -e GOFF_STUDIO_PROTECTED_ENVIRONMENTS=production \
   -e GOFF_STUDIO_PERMISSIONS='[{group: flags-admins, allow: ["*"]}]' \
   -v "$PWD/app.pem:/etc/goff-studio/app.pem:ro" \
   ghcr.io/OWNER/REPO:latest
@@ -51,14 +51,15 @@ Mount a `studio.yaml` at `/etc/goff-studio/studio.yaml` to do it the other way
 round; env vars still override anything in the file.
 
 For a shared deployment that is usually the better split: keep `permissions` and
-`environments` in a mounted file so policy changes get reviewed like code, and
+`protectedEnvironments` in a mounted file so policy changes get reviewed like code, and
 pass only the secrets as env. A long `GOFF_STUDIO_PERMISSIONS` value works, but it
 is awkward to diff and easy to get wrong in a single line.
 
-You need three things before it will start: an OIDC app (Okta, Entra, Auth0,
-Keycloak — anything with discovery), somewhere to keep the flag files, and at
-least one environment. For local poking, `github.devToken` takes a PAT instead of
-a GitHub App.
+You need two things before it will start: an OIDC app (Okta, Entra, Auth0,
+Keycloak — anything with discovery) and somewhere to keep the flag files.
+Environments are found from storage, so an empty repository is fine; the first
+person allowed to create one is offered a "Create your first environment" button.
+For local poking, `github.devToken` takes a PAT instead of a GitHub App.
 
 Two things about the OIDC side catch people out:
 
@@ -77,8 +78,8 @@ configurable.
 
 Every config key can be overridden with a `GOFF_STUDIO_*` environment variable,
 which is how you should inject secrets. For the two list-shaped keys,
-`GOFF_STUDIO_ENVIRONMENTS` and `GOFF_STUDIO_PERMISSIONS`, the variable replaces
-the file's list outright rather than merging into it.
+`GOFF_STUDIO_PROTECTED_ENVIRONMENTS` and `GOFF_STUDIO_PERMISSIONS`, the variable
+replaces the file's list outright rather than merging into it.
 
 ### Server and auth
 
@@ -116,9 +117,14 @@ UI hides or rewords anything a backend cannot do.
 | Config key | Env var | Notes |
 | --- | --- | --- |
 | `storage.backend` | `GOFF_STUDIO_STORAGE` | `github` (default), `file`, `s3`, `gcs`, `azblob`, or `configmap` |
-| `environments` | `GOFF_STUDIO_ENVIRONMENTS` | `dev,production`, or YAML for `display`/`protected`/`order`; at least one required |
-| `discoverEnvironments` | `GOFF_STUDIO_DISCOVER_ENVIRONMENTS` | `true` finds directories itself, instead of listing them |
+| `protectedEnvironments` | `GOFF_STUDIO_PROTECTED_ENVIRONMENTS` | `production,eu-production` or a YAML list; changes there need a diff review and typed confirmation. A name with no folder yet is fine |
 | `permissions` | `GOFF_STUDIO_PERMISSIONS` | YAML or JSON list, e.g. `[{group: admins, allow: ["*"]}]` |
+
+Upgrading from a release with `environments` or `discoverEnvironments`
+(`GOFF_STUDIO_ENVIRONMENTS`, `GOFF_STUDIO_DISCOVER_ENVIRONMENTS`): Studio refuses
+to start while they are set. Delete them and list the entries that had
+`protected: true` in `protectedEnvironments`. `display` and `order` are gone; the
+UI shows folder names as they are, in alphabetical order.
 
 **`github`** — commits as a GitHub App, so every change is reviewable history.
 
@@ -239,8 +245,14 @@ flags-repo/
     growth.goff.yaml
 ```
 
-Environments are top-level directories, and inside each one file per team named
-after the team: `production/growth.goff.yaml` is the team `growth`. That pairs
+Environments are discovered, not configured: every top-level directory holding
+at least one `.yaml`/`.yml` file is an environment, shown under its folder name
+and sorted alphabetically. A directory with no flag files (say `docs/`) is not
+one, and dot-directories are ignored. The list is cached for 30 seconds, and
+creating an environment in Studio refreshes it straight away; a folder added
+outside Studio shows up within the cache window. Inside each environment there
+is one file per team named after the team: `production/growth.goff.yaml` is the
+team `growth`. That pairs
 naturally with CODEOWNERS, and a save only ever rewrites the one file it touched.
 Flag keys must be unique across all files in an environment — Studio reports
 duplicates instead of letting one silently win.
@@ -290,6 +302,9 @@ Rules:
 - `create` is checked against the derived path, so a user who may not write
   `production/billing.goff.yaml` can neither create a flag in team `billing` nor
   create the team itself. The team dropdown only offers what you may create in.
+- Creating an environment is checked as `create` in that environment name. The
+  UI only offers "New environment" to groups with a `create` rule that has no
+  `environments` restriction (or `"*"`), since the name is not known up front.
 
 ### Input validation
 
@@ -440,7 +455,7 @@ All `/api` routes require a session cookie and return `401` without one.
 | `GET` | `/auth/login` | start the OIDC flow (PKCE) |
 | `GET` | `/auth/callback` | OIDC redirect target |
 | `POST` | `/auth/logout` | clear the session cookie |
-| `GET` | `/api/me` | user, groups, visible environments, poll seconds, backend capabilities |
+| `GET` | `/api/me` | user, groups, visible environments, whether you may create one, poll seconds, backend capabilities |
 | `GET` | `/api/environments/{env}/flags` | flag list, selectable teams, unparseable/duplicate flags |
 | `POST` | `/api/environments/{env}/flags` | create a flag in a team |
 | `GET` | `/api/environments/{env}/flags/{key}` | one flag |
