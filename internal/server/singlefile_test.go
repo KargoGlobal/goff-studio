@@ -229,3 +229,19 @@ func TestSingleFileMeReportsTheLayout(t *testing.T) {
 		t.Errorf("/api/me should report the layout, got %s", rec.Body)
 	}
 }
+
+func TestSingleFileEmptyEnvironmentStillOffersCreate(t *testing.T) {
+	repo := singleFileRepo()
+	repo.files["production/flags.goff.yaml"] = ""
+	srv, sealer := singleFileServer(t, repo, teamRules())
+
+	if list := listFor(t, srv, sealer, payer()); !list.CanCreate || len(list.Teams) != 0 {
+		t.Errorf("an empty environment has no teams but must still allow create, got canCreate=%v teams=%+v", list.CanCreate, list.Teams)
+	}
+
+	viewer := &auth.Session{Subject: "okta|v", Groups: []string{"viewers"}}
+	srv, sealer = singleFileServer(t, repo, append(teamRules(), permissions.Rule{Group: "viewers", Allow: []string{"*"}, Actions: []string{"view"}}))
+	if list := listFor(t, srv, sealer, viewer); list.CanCreate {
+		t.Error("a view-only group must not be offered create")
+	}
+}

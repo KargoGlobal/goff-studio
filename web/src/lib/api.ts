@@ -136,6 +136,7 @@ export interface FlagList {
   flags: Flag[]
   broken: Broken[] | null
   teams: TeamOption[] | null
+  canCreate?: boolean
 }
 
 export interface SaveResult {

@@ -153,6 +153,8 @@ type ListResult struct {
 	Flags  []FlagView    `json:"flags"`
 	Broken []goff.Broken `json:"broken"`
 	Teams  []TeamOption  `json:"teams"`
+	// CanCreate stays true with no teams listed, since a new team can be made from the create page.
+	CanCreate bool `json:"canCreate"`
 }
 
 func (s *Service) List(ctx context.Context, sess auth.Session, environment string) (*ListResult, error) {
@@ -168,7 +170,7 @@ func (s *Service) List(ctx context.Context, sess auth.Session, environment strin
 		return nil, err
 	}
 
-	out := &ListResult{}
+	out := &ListResult{CanCreate: s.perms.AllowedAnywhere(sess.Groups, environment, permissions.Create)}
 	seen := map[string]string{}
 	teams := map[string]bool{}
 	single := s.cfg.SingleFile()

@@ -131,7 +131,7 @@ export function FlagListPage({ environments: _environments }: { environments: En
           />
         </div>
         <div className="ml-auto">
-          {(data?.teams ?? []).length > 0 && (
+          {(data?.canCreate || (data?.teams ?? []).length > 0) && (
             <Link to={`/env/${env}/flags/new`}>
               <Button size="sm">
                 <Plus className="h-3.5 w-3.5" />
