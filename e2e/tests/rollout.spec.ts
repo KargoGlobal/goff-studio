@@ -21,7 +21,7 @@ test.beforeEach(async ({ page }) => {
 test('the sliders start at the percentages stored in the file', async ({ page }) => {
   await expect(page.getByLabel('on percentage')).toHaveValue('20')
   await expect(page.getByLabel('off percentage')).toHaveValue('80')
-  await expect(page.getByText(/Weights, relative to each other/)).toBeVisible()
+  await expect(page.getByText('Always adds up to 100%.')).toBeVisible()
 })
 
 test('moving a slider surfaces the new split and the review button', async ({ page }) => {
@@ -30,15 +30,13 @@ test('moving a slider surfaces the new split and the review button', async ({ pa
   await page.getByLabel('on percentage').fill('55')
 
   await expect(page.getByLabel('on percentage')).toHaveValue('55')
-  await expect(page.getByText(/Total 135/)).toBeVisible()
+  await expect(page.getByLabel('off percentage')).toHaveValue('45')
   await expect(page.getByRole('button', { name: /^Review the split for/ })).toBeVisible()
 })
 
 test('saving new rollout percentages commits them to the rule', async ({ page }) => {
   await page.getByLabel('on percentage').fill('55')
-  await page.getByLabel('off percentage').fill('45')
-
-  await expect(page.getByText(/Weights, relative to each other/)).toBeVisible()
+  await expect(page.getByLabel('off percentage')).toHaveValue('45')
 
   await page.getByRole('button', { name: /^Review the split for/ }).click()
 
@@ -76,4 +74,12 @@ test('a rollout commit does not disturb the growth file', async ({ page }) => {
   await waitForCommits(1)
 
   expect((await dump()).files[GROWTH]).toBe(before)
+})
+
+test('two variations cannot both be set to 100', async ({ page }) => {
+  await page.getByLabel('on percentage').fill('100')
+  await page.getByLabel('off percentage').fill('100')
+
+  await expect(page.getByLabel('on percentage')).toHaveValue('0')
+  await expect(page.getByLabel('off percentage')).toHaveValue('100')
 })

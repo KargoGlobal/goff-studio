@@ -414,7 +414,8 @@ touches only that flag. Comments, key order, and quoting all survive.
   draft, so preview matches production.
 - **Percentages do not have to sum to 100.** GOFF's validation only rejects an
   empty or all-zero percentage map — sums of 20, 200, negative values, and
-  fractions all pass. A UI forcing a sum of exactly 100 is wrong.
+  fractions all pass. Studio's sliders always total 100 and show hand-written
+  weights as their real share; the file is only rewritten when you save a split.
 - **Percentages behave as relative weights, not absolute percentages.** A rule
   with `a: 10, b: 10` splits matching users ~50/50; it does *not* leave 80%
   falling through to the next rule. Once a rule's query matches, evaluation stops

@@ -57,6 +57,8 @@ import { ConditionView } from '@/components/ConditionView'
 import { ScheduleBadge } from '@/components/ScheduleBadge'
 import { describeEffectiveState, effectiveState } from '@/lib/schedule'
 import type { RuleGroupType } from 'react-querybuilder'
+import { normalizeSplit, sumsTo100, type Split } from '@/lib/split'
+import { SplitSliders } from '@/components/SplitSliders'
 
 type Pending =
   | { kind: 'state'; enabled: boolean }
@@ -113,6 +115,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
   const [renaming, setRenaming] = useState<string | null>(null)
   const [newRuleName, setNewRuleName] = useState('')
   const [newRuleVariation, setNewRuleVariation] = useState('')
+  const [newRuleSplit, setNewRuleSplit] = useState<Split | null>(null)
   const [draftPct, setDraftPct] = useState<Record<string, Record<string, number>>>({})
 
   const [targetingKey, setTargetingKey] = useState('user-123')
@@ -338,8 +341,12 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
 
   function pctFor(ruleName: string, outcome: Outcome): Record<string, number> {
     if (draftPct[ruleName]) return draftPct[ruleName]
-    if (outcome?.percentage) return outcome.percentage
-    return Object.fromEntries(variationNames.map((n, i) => [n, i === 0 ? 100 : 0]))
+    if (outcome?.percentage) return normalizeSplit(variationNames, outcome.percentage)
+    return evenSplit()
+  }
+
+  function evenSplit(): Split {
+    return normalizeSplit(variationNames, Object.fromEntries(variationNames.map((n) => [n, 1])))
   }
 
   function move(index: number, delta: number) {
@@ -530,6 +537,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                     setAddingRule(true)
                     setNewRuleName('')
                     setNewRuleVariation(variationNames[0] ?? '')
+                    setNewRuleSplit(null)
                     setDraftGroup(emptyGroup)
                   }}
                 >
@@ -546,7 +554,8 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
               {rules.map((rule, i) => {
                 const pct = pctFor(rule.name, rule.outcome)
                 const isSplit = Boolean(rule.outcome?.percentage) || Boolean(draftPct[rule.name])
-                const sum = Math.round(Object.values(pct).reduce((a, b) => a + b, 0) * 100) / 100
+                const stored = rule.outcome?.percentage
+                const storedSum = stored ? Object.values(stored).reduce((a, b) => a + b, 0) : 100
                 const changed = Boolean(draftPct[rule.name])
 
                 return (
@@ -718,35 +727,17 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
 
                       {isSplit ? (
                         <div className="space-y-2">
-                          {variationNames.map((name) => (
-                            <div key={name} className="flex items-center gap-3">
-                              <span className="w-24 shrink-0 font-mono text-[12.5px] text-ink-soft">
-                                {name}
-                              </span>
-                              <input
-                                type="range"
-                                min={0}
-                                max={100}
-                                step={1}
-                                value={pct[name] ?? 0}
-                                disabled={!can('rollout')}
-                                aria-label={`${name} percentage`}
-                                onChange={(e) =>
-                                  setDraftPct((prev) => ({
-                                    ...prev,
-                                    [rule.name]: { ...pct, [name]: Number(e.target.value) },
-                                  }))
-                                }
-                                className="flex-1 accent-[var(--color-brand)]"
-                              />
-                              <span className="w-12 text-right font-mono text-[12.5px]">
-                                {pct[name] ?? 0}%
-                              </span>
-                            </div>
-                          ))}
+                          <SplitSliders
+                            names={variationNames}
+                            value={pct}
+                            disabled={!can('rollout')}
+                            onChange={(next) => setDraftPct((prev) => ({ ...prev, [rule.name]: next }))}
+                          />
                           <div className="flex items-center justify-between pt-1">
                             <span className="text-[12px] text-ink-muted">
-                              Weights, relative to each other. Total {sum}.
+                              {stored && !sumsTo100(stored) && !changed
+                                ? `Stored as weights totalling ${Math.round(storedSum * 100) / 100}; shown as each one's real share.`
+                                : 'Always adds up to 100%.'}
                             </span>
                             {changed && (
                               <Button
@@ -790,13 +781,37 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                     />
                     <div className="w-56">
                       <Select
-                        value={newRuleVariation}
-                        onChange={(v) => setNewRuleVariation(v)}
-                        ariaLabel="New rule serves"
-                        options={variationNames.map((n) => ({ value: n, label: `serves ${n}` }))}
+                        value={newRuleSplit ? 'split' : 'single'}
+                        onChange={(v) => setNewRuleSplit(v === 'split' ? evenSplit() : null)}
+                        ariaLabel="What the new rule serves"
+                        options={[
+                          { value: 'single', label: 'one variation' },
+                          { value: 'split', label: 'a percentage split' },
+                        ]}
                       />
                     </div>
+                    {!newRuleSplit && (
+                      <div className="w-56">
+                        <Select
+                          value={newRuleVariation}
+                          onChange={(v) => setNewRuleVariation(v)}
+                          ariaLabel="New rule serves"
+                          options={variationNames.map((n) => ({ value: n, label: `serves ${n}` }))}
+                        />
+                      </div>
+                    )}
                   </div>
+
+                  {newRuleSplit && (
+                    <div className="mb-3">
+                      <SplitSliders
+                        names={variationNames}
+                        value={newRuleSplit}
+                        onChange={setNewRuleSplit}
+                        labelPrefix="New rule "
+                      />
+                    </div>
+                  )}
 
                   <RuleBuilder value={draftGroup} onChange={setDraftGroup} attributes={attributes ?? []} />
 
@@ -810,7 +825,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                           kind: 'addRule',
                           name: newRuleName.trim(),
                           query: queryFromGroup(draftGroup),
-                          outcome: { variation: newRuleVariation },
+                          outcome: newRuleSplit ? { percentage: newRuleSplit } : { variation: newRuleVariation },
                         })
                       }
                     >

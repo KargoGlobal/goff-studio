@@ -1,4 +1,4 @@
-import { expect, detailPath, dump, setChip, signIn, test } from './support/studio'
+import { expect, detailPath, dump, chooseOption, setChip, signIn, test } from './support/studio'
 
 async function review(page: import('@playwright/test').Page) {
   const dialog = page.getByRole('dialog')
@@ -119,4 +119,26 @@ test('every editing control on the detail page is reachable without a page error
   }
 
   expect(errors, `uncaught page errors: ${errors.join(' | ')}`).toHaveLength(0)
+})
+
+test('a new rule can serve a percentage split from the start', async ({ page }) => {
+  await signIn(page)
+  await page.goto(detailPath('new-checkout'))
+
+  await page.getByRole('button', { name: 'Add rule' }).click()
+  const panel = page.locator('.border-brand')
+  await panel.getByLabel('New rule name').fill('split-from-start')
+  await panel.getByLabel('Attribute').fill('region')
+  await setChip(panel, 'us')
+  await chooseOption(panel, 'What the new rule serves', 'a percentage split')
+  await expect(panel.getByLabel('New rule serves', { exact: true })).toBeHidden()
+  await panel.getByLabel('New rule on percentage').fill('30')
+  await expect(panel.getByLabel('New rule off percentage')).toHaveValue('70')
+  await page.getByRole('button', { name: 'Review the new rule' }).click()
+  await review(page)
+
+  const payments = (await dump()).files['production/payments.goff.yaml']
+  const added = payments.slice(payments.indexOf('name: split-from-start'))
+  expect(added).toMatch(/"on":\s*30/)
+  expect(added).toMatch(/"off":\s*70/)
 })
