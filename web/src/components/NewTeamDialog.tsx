@@ -9,11 +9,13 @@ export function NewTeamDialog({
   open,
   onClose,
   onCreated,
+  singleFile = false,
 }: {
   env: string
   open: boolean
   onClose: () => void
   onCreated: (name: string) => void
+  singleFile?: boolean
 }) {
   const create = useCreateTeam(env)
   const toast = useToast()
@@ -38,7 +40,7 @@ export function NewTeamDialog({
 
     try {
       await create.mutateAsync(trimmed)
-      toast(`Created ${trimmed}.`)
+      if (!singleFile) toast(`Created ${trimmed}.`)
       onCreated(trimmed)
       reset()
       onClose()
@@ -75,10 +77,17 @@ export function NewTeamDialog({
       }
     >
       <div className="space-y-3">
-        <p className="text-sm text-ink-soft">
-          Creates <code className="font-mono text-ink">{env}/{(name.trim() || '<team>')}.goff.yaml</code>.
-          One file per team; owns who can edit flags on it.
-        </p>
+        {singleFile ? (
+          <p className="text-sm text-ink-soft">
+            Teams live in each flag's <code className="font-mono text-ink">metadata.team</code>. This one
+            is saved with the flag you are creating, and disappears if you leave without creating it.
+          </p>
+        ) : (
+          <p className="text-sm text-ink-soft">
+            Creates <code className="font-mono text-ink">{env}/{(name.trim() || '<team>')}.goff.yaml</code>.
+            One file per team; owns who can edit flags on it.
+          </p>
+        )}
 
         <div>
           <label htmlFor="team-name" className="mb-1.5 block text-sm font-medium text-ink-soft">

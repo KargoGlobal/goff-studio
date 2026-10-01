@@ -39,6 +39,7 @@ const (
 	envPollSeconds    = "GOFF_STUDIO_EXPECTED_POLL_SECONDS"
 	envProtectedEnvs  = "GOFF_STUDIO_PROTECTED_ENVIRONMENTS"
 	envPermissions    = "GOFF_STUDIO_PERMISSIONS"
+	envLayout         = "GOFF_STUDIO_LAYOUT"
 
 	legacyEnvEnvironments = "GOFF_STUDIO_ENVIRONMENTS"
 	legacyEnvDiscoverEnvs = "GOFF_STUDIO_DISCOVER_ENVIRONMENTS"
@@ -87,6 +88,7 @@ type Config struct {
 	ProtectedEnvironments []string           `yaml:"protectedEnvironments"`
 	Permissions           []permissions.Rule `yaml:"permissions"`
 	PollSeconds           int                `yaml:"expectedPollSeconds"`
+	Layout                string             `yaml:"layout"`
 
 	warnings []string
 }
@@ -200,6 +202,7 @@ func (c *Config) applyEnv() error {
 		}
 	}
 	yamlList(envPermissions, &c.Permissions)
+	str(envLayout, &c.Layout)
 
 	str(envOIDCIssuerURL, &c.OIDC.IssuerURL)
 	str(envOIDCClientID, &c.OIDC.ClientID)
@@ -239,6 +242,9 @@ func (c *Config) validate() error {
 			fmt.Sprintf("must be a positive number of seconds, got %d; it is shown to users as \"live in apps within about N seconds\"", c.PollSeconds))
 	}
 	if err := c.validateEnvironments(); err != nil {
+		return err
+	}
+	if err := c.validateLayout(); err != nil {
 		return err
 	}
 	return c.validatePermissions()
@@ -456,6 +462,27 @@ func (c *Config) validateEnvironments() error {
 		seen[name] = true
 	}
 	return nil
+}
+
+const (
+	LayoutTeamFiles  = "team-files"
+	LayoutSingleFile = "single-file"
+)
+
+func (c *Config) validateLayout() error {
+	layout := strings.ToLower(strings.TrimSpace(c.Layout))
+	if layout == "" {
+		layout = LayoutTeamFiles
+	}
+	if layout != LayoutTeamFiles && layout != LayoutSingleFile {
+		return fieldErr("layout", envLayout, fmt.Sprintf("must be %q or %q, got %q", LayoutTeamFiles, LayoutSingleFile, c.Layout))
+	}
+	c.Layout = layout
+	return nil
+}
+
+func (c *Config) SingleFile() bool {
+	return c.Layout == LayoutSingleFile
 }
 
 func (c *Config) IsProtected(environment string) bool {

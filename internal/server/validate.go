@@ -71,10 +71,12 @@ func validEnvironment(env string) error {
 }
 
 // The seed file names a team, so the extension is Studio's to choose, not the caller's.
+const defaultSeedFile = "flags.goff.yaml"
+
 func seedFileName(raw string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
-		return "flags.goff.yaml", nil
+		return defaultSeedFile, nil
 	}
 
 	base := trimmed

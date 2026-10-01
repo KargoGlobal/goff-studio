@@ -94,6 +94,7 @@ replaces the file's list outright rather than merging into it.
 | `oidc.clientSecret` | `GOFF_STUDIO_OIDC_CLIENT_SECRET` | **required**; Studio is a confidential client |
 | `oidc.groupsClaim` | `GOFF_STUDIO_OIDC_GROUPS_CLAIM` | default `groups`; the ID token claim matched against `permissions[].group` |
 | `expectedPollSeconds` | `GOFF_STUDIO_EXPECTED_POLL_SECONDS` | default 60; only feeds the "live in about N seconds" message |
+| `layout` | `GOFF_STUDIO_LAYOUT` | `team-files` (default) or `single-file`; see [Flag file layout](#flag-file-layout) |
 
 ### Storage
 
@@ -263,6 +264,30 @@ implied by the filename. "New team" creates `<env>/<team>.goff.yaml` with a seed
 comment — Studio never invents a file as a side effect of saving a flag. A flag
 whose `metadata.team` is missing shows as unassigned, which is what you see for
 files written by hand before Studio.
+
+### Single-file layout
+
+With `layout: single-file`, each environment is one file, `<env>/flags.goff.yaml`,
+and a flag's team is only its `metadata.team`:
+
+```
+flags-store/
+  dev/flags.goff.yaml
+  production/flags.goff.yaml
+```
+
+This suits object storage, where the relay proxy needs one retriever per file:
+adding a team needs no relay change, only adding an environment does.
+
+- Permissions behave as if each team still had its own file. `allow: ["growth"]`
+  matches flags whose `metadata.team` is `growth`, and a flag with no team matches
+  only `*` rules.
+- Moving a flag to another team (editing `metadata.team`) needs `delete` on the old
+  team and `create` on the new one, checked against the file as it is written.
+- "New team" creates no file; the team exists once a flag carries it.
+- Every save in an environment touches the same file, so two saves at the same
+  moment are more likely to rebase or, when they touch the same flag, return 409.
+- CODEOWNERS cannot tell teams apart, so prefer `team-files` with the GitHub backend.
 
 ## Permission model
 

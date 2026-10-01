@@ -126,6 +126,29 @@ func teamFile(environment, team string) string {
 	return environment + "/" + team + ".goff.yaml"
 }
 
+// In the single-file layout a team has no file, so permissions match the path it would have had.
+func (s *Service) scope(environment, file, team string) string {
+	if s.cfg.SingleFile() {
+		return teamFile(environment, team)
+	}
+	return file
+}
+
+func (s *Service) scopeOf(v *FlagView) string {
+	return s.scope(v.Environment, v.File, v.Team)
+}
+
+func (s *Service) teamOf(v *FlagView) string {
+	if s.cfg.SingleFile() {
+		return v.Team
+	}
+	return teamNameOf(v.File)
+}
+
+func (s *Service) environmentFile(environment string) string {
+	return environment + "/" + defaultSeedFile
+}
+
 type ListResult struct {
 	Flags  []FlagView    `json:"flags"`
 	Broken []goff.Broken `json:"broken"`
@@ -147,9 +170,11 @@ func (s *Service) List(ctx context.Context, sess auth.Session, environment strin
 
 	out := &ListResult{}
 	seen := map[string]string{}
+	teams := map[string]bool{}
+	single := s.cfg.SingleFile()
 
 	for _, file := range files {
-		if !s.perms.Allowed(permissions.Request{
+		if !single && !s.perms.Allowed(permissions.Request{
 			Groups: sess.Groups, Environment: environment, File: file, Action: permissions.View,
 		}) {
 			continue
@@ -165,9 +190,22 @@ func (s *Service) List(ctx context.Context, sess auth.Session, environment strin
 			return nil, err
 		}
 		s.remember(file, f.Version, flags)
-		out.Broken = append(out.Broken, broken...)
+		if !single || s.perms.Allowed(permissions.Request{
+			Groups: sess.Groups, Environment: environment, File: s.scope(environment, file, ""), Action: permissions.View,
+		}) {
+			out.Broken = append(out.Broken, broken...)
+		}
 
 		for _, flag := range flags {
+			scope := s.scope(environment, file, flag.Team)
+			if flag.Team != "" {
+				teams[flag.Team] = true
+			}
+			if single && !s.perms.Allowed(permissions.Request{
+				Groups: sess.Groups, Environment: environment, File: scope, Action: permissions.View,
+			}) {
+				continue
+			}
 			if first, dupe := seen[flag.Key]; dupe {
 				out.Broken = append(out.Broken, goff.Broken{
 					Key:    flag.Key,
@@ -181,20 +219,30 @@ func (s *Service) List(ctx context.Context, sess auth.Session, environment strin
 			flag.Environment = environment
 			out.Flags = append(out.Flags, FlagView{
 				Flag:    flag,
-				Actions: s.perms.ActionsFor(sess.Groups, environment, file),
+				Actions: s.perms.ActionsFor(sess.Groups, environment, scope),
 				Summary: Summarize(flag),
 				FileSHA: f.Version,
 			})
 		}
 	}
 
-	for _, file := range files {
-		if !s.perms.Allowed(permissions.Request{
-			Groups: sess.Groups, Environment: environment, File: file, Action: permissions.Create,
-		}) {
-			continue
+	if single {
+		for team := range teams {
+			if s.perms.Allowed(permissions.Request{
+				Groups: sess.Groups, Environment: environment, File: teamFile(environment, team), Action: permissions.Create,
+			}) {
+				out.Teams = append(out.Teams, TeamOption{Name: team, File: s.environmentFile(environment)})
+			}
 		}
-		out.Teams = append(out.Teams, TeamOption{Name: teamNameOf(file), File: file})
+	} else {
+		for _, file := range files {
+			if !s.perms.Allowed(permissions.Request{
+				Groups: sess.Groups, Environment: environment, File: file, Action: permissions.Create,
+			}) {
+				continue
+			}
+			out.Teams = append(out.Teams, TeamOption{Name: teamNameOf(file), File: file})
+		}
 	}
 	sort.Slice(out.Teams, func(i, j int) bool { return out.Teams[i].Name < out.Teams[j].Name })
 
@@ -247,7 +295,11 @@ func (s *Service) Snapshot(file, sha, key string) (goff.Flag, bool) {
 }
 
 func (s *Service) Save(ctx context.Context, sess auth.Session, req SaveRequest) (*SaveResult, error) {
-	if !s.perms.Allowed(permissions.Request{
+	single := s.cfg.SingleFile()
+	if single && !s.perms.AllowedAnywhere(sess.Groups, req.Environment, req.Action) {
+		return nil, ErrForbidden
+	}
+	if !single && !s.perms.Allowed(permissions.Request{
 		Groups: sess.Groups, Environment: req.Environment, File: req.File, Action: req.Action,
 	}) {
 		return nil, ErrForbidden
@@ -275,7 +327,13 @@ func (s *Service) Save(ctx context.Context, sess auth.Session, req SaveRequest) 
 			return nil, ErrNotFound
 		}
 
-		req.Mutate(target)
+		if single {
+			if err := s.mutateTeamChecked(sess, req, target); err != nil {
+				return nil, err
+			}
+		} else {
+			req.Mutate(target)
+		}
 
 		next, err := s.adapter.Serialize(current, req.Key, *target)
 		if err != nil {
@@ -300,6 +358,26 @@ func (s *Service) Save(ctx context.Context, sess auth.Session, req SaveRequest) 
 	}
 
 	return s.saved(result), nil
+}
+
+// Checks the team read from the file being written, so a stale or forged view cannot pick the team.
+func (s *Service) mutateTeamChecked(sess auth.Session, req SaveRequest, target *goff.Flag) error {
+	allowed := func(team string, action permissions.Action) bool {
+		return s.perms.Allowed(permissions.Request{
+			Groups: sess.Groups, Environment: req.Environment, File: teamFile(req.Environment, team), Action: action,
+		})
+	}
+
+	before := goff.TeamOf(target.Metadata)
+	if !allowed(before, req.Action) {
+		return ErrForbidden
+	}
+	req.Mutate(target)
+	after := goff.TeamOf(target.Metadata)
+	if after != before && (!allowed(before, permissions.Delete) || !allowed(after, permissions.Create)) {
+		return ErrForbidden
+	}
+	return nil
 }
 
 func sameFlagState(a, b goff.Flag) bool {
@@ -380,8 +458,15 @@ type CreateRequest struct {
 	Enabled     bool
 }
 
-func (r CreateRequest) file() string {
+func (r CreateRequest) scope() string {
 	return teamFile(r.Environment, strings.TrimSpace(r.Team))
+}
+
+func (s *Service) createFile(r CreateRequest) string {
+	if s.cfg.SingleFile() {
+		return s.environmentFile(r.Environment)
+	}
+	return r.scope()
 }
 
 type VariationsRequest struct {
@@ -530,8 +615,7 @@ func (s *Service) locateKey(ctx context.Context, files []string, key string) (st
 	return "", false, nil
 }
 
-func (s *Service) buildCreate(current []byte, req CreateRequest) ([]byte, error) {
-	file := req.file()
+func (s *Service) buildCreate(current []byte, req CreateRequest, file string) ([]byte, error) {
 	flags, broken, err := s.adapter.Parse(file, current)
 	if err != nil {
 		return nil, err
@@ -571,10 +655,10 @@ func (s *Service) prepareCreate(ctx context.Context, sess auth.Session, req Crea
 	if err := validTeam(req.Team); err != nil {
 		return err
 	}
-	file := req.file()
+	file := s.createFile(req)
 
 	if !s.perms.Allowed(permissions.Request{
-		Groups: sess.Groups, Environment: req.Environment, File: file, Action: permissions.Create,
+		Groups: sess.Groups, Environment: req.Environment, File: req.scope(), Action: permissions.Create,
 	}) {
 		return ErrForbidden
 	}
@@ -597,6 +681,9 @@ func (s *Service) prepareCreate(ctx context.Context, sess auth.Session, req Crea
 			break
 		}
 	}
+	if !found && s.cfg.SingleFile() {
+		return invalid("%s has no %s yet; recreate the environment or add the file", req.Environment, file)
+	}
 	if !found {
 		return invalid("%q is not a team in %s; create it first", strings.TrimSpace(req.Team), req.Environment)
 	}
@@ -613,7 +700,7 @@ func (s *Service) Create(ctx context.Context, sess auth.Session, req CreateReque
 	if err := s.prepareCreate(ctx, sess, req); err != nil {
 		return nil, err
 	}
-	file := req.file()
+	file := s.createFile(req)
 	if req.FileSHA != "" && !s.knownSHA(file, req.FileSHA) {
 		return nil, ErrStaleView
 	}
@@ -623,7 +710,7 @@ func (s *Service) Create(ctx context.Context, sess auth.Session, req CreateReque
 		Key:         req.Key,
 		BaseVersion: req.FileSHA,
 		Message:     s.commitMessage(SaveRequest{Environment: req.Environment, Key: req.Key, File: file, Summary: "created"}),
-		Apply:       func(current []byte) ([]byte, error) { return s.buildCreate(current, req) },
+		Apply:       func(current []byte) ([]byte, error) { return s.buildCreate(current, req, file) },
 		// A create only conflicts when the key itself appeared; any other edit to the file just rebases and appends.
 		Changed: func(current []byte) (bool, error) { return false, nil },
 	}, identityOf(sess))
@@ -639,7 +726,7 @@ func (s *Service) Delete(ctx context.Context, sess auth.Session, environment, ke
 		return nil, err
 	}
 	if !s.perms.Allowed(permissions.Request{
-		Groups: sess.Groups, Environment: environment, File: view.File, Action: permissions.Delete,
+		Groups: sess.Groups, Environment: environment, File: s.scopeOf(view), Action: permissions.Delete,
 	}) {
 		return nil, ErrForbidden
 	}
@@ -686,12 +773,12 @@ func (s *Service) Rename(ctx context.Context, sess auth.Session, environment, ke
 
 	// Renaming moves nothing between files, so create rights on the current file are enough.
 	if !s.perms.Allowed(permissions.Request{
-		Groups: sess.Groups, Environment: environment, File: view.File, Action: permissions.Create,
+		Groups: sess.Groups, Environment: environment, File: s.scopeOf(view), Action: permissions.Create,
 	}) {
 		return nil, ErrForbidden
 	}
 	if !s.perms.Allowed(permissions.Request{
-		Groups: sess.Groups, Environment: environment, File: view.File, Action: permissions.Delete,
+		Groups: sess.Groups, Environment: environment, File: s.scopeOf(view), Action: permissions.Delete,
 	}) {
 		return nil, ErrForbidden
 	}
@@ -794,7 +881,7 @@ func (s *Service) SaveVariations(ctx context.Context, sess auth.Session, req Var
 	}
 
 	if !s.perms.Allowed(permissions.Request{
-		Groups: sess.Groups, Environment: req.Environment, File: req.File, Action: permissions.EditVariations,
+		Groups: sess.Groups, Environment: req.Environment, File: s.scopeOf(view), Action: permissions.EditVariations,
 	}) {
 		return nil, ErrForbidden
 	}
@@ -851,17 +938,17 @@ func (s *Service) DiffCreate(ctx context.Context, sess auth.Session, req CreateR
 		return nil, err
 	}
 
-	file, err := s.repo.ReadFile(ctx, req.file())
+	file, err := s.repo.ReadFile(ctx, s.createFile(req))
 	if err != nil {
 		return nil, err
 	}
-	next, err := s.buildCreate(file.Content, req)
+	next, err := s.buildCreate(file.Content, req, s.createFile(req))
 	if err != nil {
 		return nil, err
 	}
 
 	return &DiffResult{
-		Description: fmt.Sprintf("Create %s in %s: %s", req.Key, req.file(), Summarize(goff.Flag{
+		Description: fmt.Sprintf("Create %s in %s: %s", req.Key, s.createFile(req), Summarize(goff.Flag{
 			Enabled: req.Enabled, Variations: req.Variations, Default: goff.Outcome{Variation: req.Default},
 		})),
 		Diff: UnifiedDiff(string(file.Content), string(next), 3),
@@ -874,7 +961,7 @@ func (s *Service) DiffDelete(ctx context.Context, sess auth.Session, environment
 		return nil, err
 	}
 	if !s.perms.Allowed(permissions.Request{
-		Groups: sess.Groups, Environment: environment, File: view.File, Action: permissions.Delete,
+		Groups: sess.Groups, Environment: environment, File: s.scopeOf(view), Action: permissions.Delete,
 	}) {
 		return nil, ErrForbidden
 	}
@@ -906,7 +993,7 @@ func (s *Service) DiffRename(ctx context.Context, sess auth.Session, environment
 	}
 	for _, action := range []permissions.Action{permissions.Create, permissions.Delete} {
 		if !s.perms.Allowed(permissions.Request{
-			Groups: sess.Groups, Environment: environment, File: view.File, Action: action,
+			Groups: sess.Groups, Environment: environment, File: s.scopeOf(view), Action: action,
 		}) {
 			return nil, ErrForbidden
 		}
@@ -947,7 +1034,7 @@ func (s *Service) DiffVariations(ctx context.Context, sess auth.Session, req Var
 		req.Type = view.Type
 	}
 	if !s.perms.Allowed(permissions.Request{
-		Groups: sess.Groups, Environment: req.Environment, File: req.File, Action: permissions.EditVariations,
+		Groups: sess.Groups, Environment: req.Environment, File: s.scopeOf(view), Action: permissions.EditVariations,
 	}) {
 		return nil, ErrForbidden
 	}
@@ -1193,6 +1280,9 @@ func (s *Service) CreateEnvironment(ctx context.Context, sess auth.Session, name
 		}
 	}
 
+	if s.cfg.SingleFile() {
+		seedFile = ""
+	}
 	seedFile, err = seedFileName(seedFile)
 	if err != nil {
 		return err
@@ -1219,6 +1309,10 @@ func (s *Service) CreateTeam(ctx context.Context, sess auth.Session, environment
 		Groups: sess.Groups, Environment: environment, File: path, Action: permissions.Create,
 	}) {
 		return ErrForbidden
+	}
+	// A team in the single-file layout is just a label, so it exists once a flag carries it.
+	if s.cfg.SingleFile() {
+		return nil
 	}
 
 	files, err := s.environmentFiles(ctx, environment)

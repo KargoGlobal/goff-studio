@@ -49,7 +49,13 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
   const [enabled, setEnabled] = useState(true)
   const [fieldError, setFieldError] = useState<{ field: string; message: string } | null>(null)
 
-  const teams = data?.teams ?? []
+  const singleFile = me?.layout === 'single-file'
+  const [draftTeam, setDraftTeam] = useState('')
+  const listed = data?.teams ?? []
+  const teams =
+    draftTeam && !listed.some((t) => t.name === draftTeam)
+      ? [...listed, { name: draftTeam, file: `${env}/flags.goff.yaml` }]
+      : listed
   const chosenTeam = team || teams[0]?.name || ''
   const chosenFile = teams.find((t) => t.name === chosenTeam)?.file ?? ''
 
@@ -185,16 +191,27 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
             id="flag-team"
             value={chosenTeam}
             onChange={(v) => setTeam(v)}
-            options={teams.map((t) => ({ value: t.name, label: t.name }))}
+            options={teams.map((t) => ({
+              value: t.name,
+              label: t.name === draftTeam && !listed.some((l) => l.name === draftTeam) ? `${t.name} (new)` : t.name,
+            }))}
             placeholder={teams.length === 0 ? 'No teams yet' : 'Pick a team'}
             ariaLabel="Team"
           />
-          <p className="mt-1.5 text-[13px] text-ink-muted">
-            Written to <span className="font-mono">metadata.team</span> and stored in{' '}
-            <span className="font-mono">{chosenFile || `${env}/<team>.goff.yaml`}</span>, which
-            decides who may edit it
-            {me?.capabilities?.review !== false && ' and who reviews changes via CODEOWNERS'}.
-          </p>
+          {singleFile ? (
+            <p className="mt-1.5 text-[13px] text-ink-muted">
+              Written to <span className="font-mono">metadata.team</span>, which decides who may edit it.
+              {chosenTeam === draftTeam && !listed.some((l) => l.name === draftTeam) &&
+                ` ${draftTeam} is new and is only saved once you create this flag.`}
+            </p>
+          ) : (
+            <p className="mt-1.5 text-[13px] text-ink-muted">
+              Written to <span className="font-mono">metadata.team</span> and stored in{' '}
+              <span className="font-mono">{chosenFile || `${env}/<team>.goff.yaml`}</span>, which
+              decides who may edit it
+              {me?.capabilities?.review !== false && ' and who reviews changes via CODEOWNERS'}.
+            </p>
+          )}
         </div>
 
         <div>
@@ -358,7 +375,11 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
         env={env}
         open={teamDialogOpen}
         onClose={() => setTeamDialogOpen(false)}
-        onCreated={(name) => setTeam(name)}
+        onCreated={(name) => {
+          if (singleFile) setDraftTeam(name)
+          setTeam(name)
+        }}
+        singleFile={singleFile}
       />
     </div>
   )

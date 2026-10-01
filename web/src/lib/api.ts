@@ -24,6 +24,7 @@ export interface Me {
   groups: string[]
   environments: Environment[]
   canCreateEnvironments: boolean
+  layout?: 'team-files' | 'single-file'
   pollSeconds: number
   capabilities: Capabilities
 }

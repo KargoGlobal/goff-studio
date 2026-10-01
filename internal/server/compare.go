@@ -126,7 +126,7 @@ func (s *Service) compareSide(ctx context.Context, sess auth.Session, key, env s
 	side.Summary = view.Summary
 	side.File = view.File
 	side.FileSHA = view.FileSHA
-	side.Team = teamNameOf(view.File)
+	side.Team = s.teamOf(view)
 	side.Flag = &flag
 	side.Writable = allows(view.Actions, permissions.EditRules)
 	return side, nil

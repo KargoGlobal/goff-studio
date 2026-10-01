@@ -906,3 +906,37 @@ func TestEnvVarsOverrideAFileAndReplaceListsWholesale(t *testing.T) {
 		t.Errorf("permissions = %+v; an unset env var must leave the file alone", cfg.Permissions)
 	}
 }
+
+func TestLayoutDefaultsToTeamFiles(t *testing.T) {
+	cfg, err := Load(write(t, base(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Layout != LayoutTeamFiles || cfg.SingleFile() {
+		t.Errorf("layout = %q, want %q", cfg.Layout, LayoutTeamFiles)
+	}
+}
+
+func TestLayoutSingleFileFromFileAndEnv(t *testing.T) {
+	cfg, err := Load(write(t, base(t)+"layout: single-file\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.SingleFile() {
+		t.Errorf("layout = %q, want single-file", cfg.Layout)
+	}
+
+	t.Setenv("GOFF_STUDIO_LAYOUT", "Single-File")
+	cfg, err = Load(write(t, base(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.SingleFile() {
+		t.Errorf("env override layout = %q, want single-file", cfg.Layout)
+	}
+}
+
+func TestUnknownLayoutRejected(t *testing.T) {
+	msg := loadErr(t, base(t)+"layout: per-flag\n")
+	assertMentions(t, msg, "layout", "GOFF_STUDIO_LAYOUT", "single-file", "team-files")
+}
