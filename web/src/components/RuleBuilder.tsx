@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { QueryBuilder, type Field, type RuleGroupType } from 'react-querybuilder'
 import 'react-querybuilder/dist/query-builder.css'
-import { arityOf, VISIBLE_OPERATORS, fieldsFrom, queryFromGroup } from '@/lib/query'
+import { arityOf, VISIBLE_OPERATORS, attributeFields, queryFromGroup } from '@/lib/query'
 import { tokensFromGroup } from '@/lib/tokens'
 import { ConditionView } from '@/components/ConditionView'
 import { ChipInput } from '@/components/ChipInput'
@@ -21,7 +21,7 @@ export function RuleBuilder({
   disabled?: boolean
 }) {
   // A blank first field keeps a new condition empty but still renders every control.
-  const fields: Field[] = useMemo(() => fieldsFrom(['', ...attributes]), [attributes])
+  const fields: Field[] = useMemo(() => attributeFields(attributes), [attributes])
   const tokens = tokensFromGroup(value)
   const query = queryFromGroup(value)
 

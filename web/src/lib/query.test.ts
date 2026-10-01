@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RuleGroupType } from 'react-querybuilder'
-import { VISIBLE_OPERATORS, groupFromCondition, queryFromGroup } from './query'
+import { VISIBLE_OPERATORS, attributeFields, groupFromCondition, queryFromGroup } from './query'
 import { tokensFromGroup, tokensToText } from './tokens'
 
 const describeGroup = (g: RuleGroupType) => tokensToText(tokensFromGroup(g))
@@ -279,5 +279,15 @@ describe('inverted groups', () => {
     expect(
       describeGroup(notGroup('or', rule('a', 'eq', '1'), rule('b', 'eq', '2'))),
     ).toBe('not (a equals 1 or b equals 2)')
+  })
+})
+
+describe('attributeFields', () => {
+  it('offers targetingKey when the environment has no attributes yet, so the input still shows', () => {
+    expect(attributeFields([]).map((f) => f.name)).toEqual(['', 'targetingKey'])
+  })
+
+  it('keeps known attributes without repeating targetingKey', () => {
+    expect(attributeFields(['targetingKey', 'country']).map((f) => f.name)).toEqual(['', 'targetingKey', 'country'])
   })
 })

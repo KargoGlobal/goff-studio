@@ -153,3 +153,8 @@ function childToRule(condition: Condition): RuleType | RuleGroupType {
 export function fieldsFrom(attributes: string[]): Field[] {
   return attributes.map((name) => ({ name, label: name }))
 }
+
+// The builder hides the attribute input when its only field is blank, so targetingKey keeps it visible.
+export function attributeFields(attributes: string[]): Field[] {
+  return fieldsFrom(['', ...new Set(['targetingKey', ...attributes])])
+}
