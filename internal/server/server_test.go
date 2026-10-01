@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-feature-flag/studio/internal/auth"
 	"github.com/go-feature-flag/studio/internal/config"
@@ -205,8 +206,11 @@ func testServer(t *testing.T, repo *repoState, rules []permissions.Rule) (*Serve
 	}
 
 	svc := NewService(cfg, storage.NewGitHubBackend(client), perms)
+	svc.now = func() time.Time { return testNow }
 	return New(cfg, svc, nil, sealer, emptyFS{}), sealer
 }
+
+var testNow = time.Date(2030, 6, 15, 12, 0, 0, 0, time.UTC)
 
 type emptyFS struct{}
 

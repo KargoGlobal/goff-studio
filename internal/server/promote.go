@@ -204,17 +204,18 @@ func reachedPercentage(p goff.ProgressiveRollout, now time.Time) float64 {
 	return p.Initial.Percentage + (p.End.Percentage-p.Initial.Percentage)*elapsed
 }
 
-// team names the target's own file, so the target's value always wins.
+// Studio's own keys describe the target flag, so the target's values always win.
 func mergedMetadata(source, target map[string]any) map[string]any {
 	out := map[string]any{}
 	for k, v := range source {
-		if k == "team" {
-			continue
+		if !studioMetadata[k] {
+			out[k] = v
 		}
-		out[k] = v
 	}
-	if team, ok := target["team"]; ok {
-		out["team"] = team
+	for k, v := range target {
+		if studioMetadata[k] {
+			out[k] = v
+		}
 	}
 	if len(out) == 0 {
 		return nil

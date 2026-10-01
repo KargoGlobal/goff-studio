@@ -168,7 +168,7 @@ func sameVariations(a, b []goff.Variation) bool {
 	return true
 }
 
-// team is Studio's own label for the file, so it must not count as drift.
+// Studio's own keys differ per environment by design, so they must not count as drift.
 func sameMetadata(a, b map[string]any) bool {
 	strip := func(in map[string]any) map[string]any {
 		if len(in) == 0 {
@@ -176,7 +176,7 @@ func sameMetadata(a, b map[string]any) bool {
 		}
 		out := make(map[string]any, len(in))
 		for k, v := range in {
-			if k == "team" {
+			if studioMetadata[k] {
 				continue
 			}
 			out[k] = v

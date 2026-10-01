@@ -334,6 +334,7 @@ func (s *Service) Save(ctx context.Context, sess auth.Session, req SaveRequest) 
 		} else {
 			req.Mutate(target)
 		}
+		stamp(target, s.now(), false)
 
 		next, err := s.adapter.Serialize(current, req.Key, *target)
 		if err != nil {
@@ -640,6 +641,7 @@ func (s *Service) buildCreate(current []byte, req CreateRequest, file string) ([
 		Default:    goff.Outcome{Variation: req.Default},
 		Metadata:   map[string]any{"team": strings.TrimSpace(req.Team)},
 	}
+	stamp(&created, s.now(), true)
 
 	next, err := s.adapter.Serialize(current, req.Key, created)
 	if err != nil {
@@ -809,6 +811,9 @@ func (s *Service) Rename(ctx context.Context, sess auth.Session, environment, ke
 			if err != nil {
 				return nil, invalid("%s", err.Error())
 			}
+			if next, err = s.stampKey(next, view.File, newKey); err != nil {
+				return nil, err
+			}
 			if err := s.adapter.Validate(next); err != nil {
 				return nil, invalid("refusing to commit an invalid file: %v", err)
 			}
@@ -859,6 +864,7 @@ func (s *Service) buildVariations(current []byte, req VariationsRequest) ([]byte
 	if req.Default != "" {
 		target.Default = goff.Outcome{Variation: req.Default}
 	}
+	stamp(target, s.now(), false)
 
 	next, err := s.adapter.Serialize(current, req.Key, *target)
 	if err != nil {
@@ -919,6 +925,20 @@ func (s *Service) flagChanged(file, key string, loaded *goff.Flag) func([]byte) 
 		}
 		return true, nil
 	}
+}
+
+func (s *Service) stampKey(content []byte, file, key string) ([]byte, error) {
+	flags, _, err := s.adapter.Parse(file, content)
+	if err != nil {
+		return nil, err
+	}
+	for i := range flags {
+		if flags[i].Key == key {
+			stamp(&flags[i], s.now(), false)
+			return s.adapter.Serialize(content, key, flags[i])
+		}
+	}
+	return nil, ErrNotFound
 }
 
 func (s *Service) saved(result *storage.Result) *SaveResult {

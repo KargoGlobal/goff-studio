@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { AlertTriangle, ChevronDown, ChevronsUpDown, ChevronUp, ExternalLink, Plus, Search } from 'lucide-react'
-import { type Environment } from '@/lib/api'
+import { type Environment, type Flag } from '@/lib/api'
 import { useFlags } from '@/hooks/useFlags'
 import { Badge, Button, Card, Code, Input, Spinner } from '@/components/ui/primitives'
 import { ScheduleBadge } from '@/components/ScheduleBadge'
@@ -11,22 +11,20 @@ function fileLabel(path: string) {
   return base.replace(/\.goff\.ya?ml$/, '').replace(/\.ya?ml$/, '')
 }
 
-// Stable pseudo-random dummy timestamps derived from the flag key.
-// Same key always returns the same dates across reloads. Replace with real
-// data when the API exposes createdAt/updatedAt.
-function dummyDates(key: string): { created: Date; updated: Date } {
-  let h = 2166136261
-  for (const c of key) {
-    h ^= c.charCodeAt(0)
-    h = Math.imul(h, 16777619)
-  }
-  const now = Date.now()
-  const daysSinceCreated = 30 + (Math.abs(h) % 300) // 30–330 days ago
-  const daysSinceUpdated = Math.abs(h >> 8) % Math.max(1, daysSinceCreated) // between now and created
-  return {
-    created: new Date(now - daysSinceCreated * 86400000),
-    updated: new Date(now - daysSinceUpdated * 86400000),
-  }
+function metaDate(flag: Flag, field: 'createdAt' | 'updatedAt'): Date | null {
+  const raw = flag.metadata?.[field]
+  if (typeof raw !== 'string') return null
+  const d = new Date(raw)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+function DateCell({ date }: { date: Date | null }) {
+  if (!date) return <span className="text-sm text-ink-muted">—</span>
+  return (
+    <span className="font-mono text-sm text-ink" title={date.toLocaleString()}>
+      {relativeTime(date)}
+    </span>
+  )
 }
 
 function relativeTime(d: Date): string {
@@ -70,8 +68,12 @@ export function FlagListPage({ environments: _environments }: { environments: En
     return [...filtered].sort((a, b) => {
       if (sort.col === 'enabled') return (Number(a.enabled) - Number(b.enabled)) * dir
       if (sort.col === 'created' || sort.col === 'updated') {
-        const ta = dummyDates(a.key)[sort.col].getTime()
-        const tb = dummyDates(b.key)[sort.col].getTime()
+        const field = sort.col === 'created' ? 'createdAt' : 'updatedAt'
+        const ta = metaDate(a, field)?.getTime()
+        const tb = metaDate(b, field)?.getTime()
+        if (ta === tb) return 0
+        if (ta === undefined) return 1
+        if (tb === undefined) return -1
         return (ta - tb) * dir
       }
       const va = String(a[sort.col] ?? '').toLowerCase()
@@ -234,20 +236,10 @@ export function FlagListPage({ environments: _environments }: { environments: En
                     )}
                   </td>
                   <td className="w-32 px-4 py-3 text-center align-top">
-                    <span
-                      className="font-mono text-sm text-ink"
-                      title={dummyDates(flag.key).created.toLocaleString()}
-                    >
-                      {relativeTime(dummyDates(flag.key).created)}
-                    </span>
+                    <DateCell date={metaDate(flag, 'createdAt')} />
                   </td>
                   <td className="w-32 px-4 py-3 text-center align-top">
-                    <span
-                      className="font-mono text-sm text-ink"
-                      title={dummyDates(flag.key).updated.toLocaleString()}
-                    >
-                      {relativeTime(dummyDates(flag.key).updated)}
-                    </span>
+                    <DateCell date={metaDate(flag, 'updatedAt')} />
                   </td>
                   <td className="w-24 px-4 py-3 text-center align-top">
                     <span

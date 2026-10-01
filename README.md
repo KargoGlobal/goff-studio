@@ -289,6 +289,13 @@ adding a team needs no relay change, only adding an environment does.
   moment are more likely to rebase or, when they touch the same flag, return 409.
 - CODEOWNERS cannot tell teams apart, so prefer `team-files` with the GitHub backend.
 
+### Flag timestamps
+
+Studio writes `metadata.createdAt` when it creates a flag and `metadata.updatedAt` on
+every save, both as RFC 3339 UTC. Flags created outside Studio have no `createdAt`, and
+the flag list shows "—" for any missing date. Promotion never copies these keys
+between environments, and Compare does not count them as drift.
+
 ## Permission model
 
 Permissions map OIDC groups to file patterns, environments, and actions.
