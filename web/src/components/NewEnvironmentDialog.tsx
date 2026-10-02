@@ -3,6 +3,7 @@ import { Button, Input, Spinner } from '@/components/ui/primitives'
 import { Dialog } from '@/components/ui/Dialog'
 import { useCreateEnvironment, useMe } from '@/hooks/useFlags'
 import { useToast } from '@/components/ui/Toast'
+import { identifierInputProps } from '@/lib/inputProps'
 
 export function NewEnvironmentDialog({
   open,
@@ -75,6 +76,7 @@ export function NewEnvironmentDialog({
             Name
           </label>
           <Input
+            {...identifierInputProps}
             id="env-name"
             value={name}
             onChange={(e) => {
@@ -97,6 +99,7 @@ export function NewEnvironmentDialog({
               First team
             </label>
             <Input
+              {...identifierInputProps}
               id="env-file"
               value={file}
               onChange={(e) => setFile(e.target.value)}

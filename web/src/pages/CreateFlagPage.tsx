@@ -7,6 +7,7 @@ import { Button, Card, Input, Spinner } from '@/components/ui/primitives'
 import { Select } from '@/components/ui/Select'
 import { NewTeamDialog } from '@/components/NewTeamDialog'
 import { useToast } from '@/components/ui/Toast'
+import { identifierInputProps } from '@/lib/inputProps'
 
 const TYPES = [
   { value: 'boolean', label: 'On / off', hint: 'true or false' },
@@ -134,26 +135,27 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
     <div className="mx-auto max-w-4xl space-y-6">
       <Link
         to={`/env/${env}`}
-        className="inline-flex items-center gap-2 text-lg font-semibold text-ink-muted transition-colors hover:text-ink"
+        className="inline-flex items-center gap-2 text-lg font-semibold text-ink-muted transition-colors hover:text-ink max-md:min-h-11 max-md:max-w-full"
       >
-        <ArrowLeft className="h-6 w-6" />
+        <ArrowLeft className="h-6 w-6 max-md:shrink-0" />
         All flags
       </Link>
 
       <div>
-        <h1 className="text-4xl font-bold tracking-tight">Create a flag</h1>
+        <h1 className="text-4xl font-bold tracking-tight max-md:text-3xl">Create a flag</h1>
         <p className="mt-1 text-base text-ink-muted">
           In {environment?.name ?? env}. It starts off serving the default to everyone; add
           targeting afterwards.
         </p>
       </div>
 
-      <Card className="space-y-6 p-6">
+      <Card className="space-y-6 p-6 max-md:p-4">
         <div>
           <label htmlFor="flag-key" className="mb-1.5 block text-sm font-medium text-ink-soft">
             Flag key
           </label>
           <Input
+            {...identifierInputProps}
             id="flag-key"
             value={key}
             onChange={(e) => {
@@ -182,7 +184,7 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
             <button
               type="button"
               onClick={() => setTeamDialogOpen(true)}
-              className="text-sm font-medium text-brand hover:underline"
+              className="text-sm font-medium text-brand hover:underline max-md:-my-3 max-md:min-h-11"
             >
               New team
             </button>
@@ -207,7 +209,7 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
           ) : (
             <p className="mt-1.5 text-[13px] text-ink-muted">
               Written to <span className="font-mono">metadata.team</span> and stored in{' '}
-              <span className="font-mono">{chosenFile || `${env}/<team>.goff.yaml`}</span>, which
+              <span className="font-mono max-md:wrap-anywhere">{chosenFile || `${env}/<team>.goff.yaml`}</span>, which
               decides who may edit it
               {me?.capabilities?.review !== false && ' and who reviews changes via CODEOWNERS'}.
             </p>
@@ -237,7 +239,7 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
         </div>
       </Card>
 
-      <Card className="space-y-4 p-6">
+      <Card className="space-y-4 p-6 max-md:p-4">
         <div>
           <h2 className="text-xl font-semibold tracking-tight">Variations</h2>
           <p className="mt-1 text-[13px] text-ink-muted">The possible values this flag returns.</p>
@@ -245,7 +247,7 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
 
         <div className="space-y-2">
           {variations.map((row, i) => (
-            <div key={i} className="flex items-start gap-2">
+            <div key={i} className="flex items-start gap-2 max-md:flex-wrap">
               <input
                 value={row.name}
                 onChange={(e) =>
@@ -255,11 +257,12 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
                 }
                 placeholder="name"
                 aria-label={`Variation ${i + 1} name`}
-                className="h-10 w-40 shrink-0 rounded-md border bg-surface px-2.5 font-mono text-sm focus:border-brand focus:outline-none"
+                {...identifierInputProps}
+                className="h-10 w-40 shrink-0 rounded-md border bg-surface px-2.5 font-mono text-sm focus:border-brand focus:outline-none max-md:h-11 max-md:w-auto max-md:min-w-0 max-md:flex-1"
               />
 
               {type === 'boolean' ? (
-                <div className="flex-1">
+                <div className="flex-1 max-md:order-last max-md:basis-full">
                   <Select
                     value={row.value}
                     onChange={(v) =>
@@ -284,11 +287,13 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
                   }
                   rows={2}
                   aria-label={`Variation ${i + 1} value`}
-                  className="flex-1 rounded-md border bg-surface px-2.5 py-2 font-mono text-sm focus:border-brand focus:outline-none"
+                  {...identifierInputProps}
+                  className="flex-1 rounded-md border bg-surface px-2.5 py-2 font-mono text-sm focus:border-brand focus:outline-none max-md:order-last max-md:basis-full"
                 />
               ) : (
                 <input
                   type={type === 'number' ? 'number' : 'text'}
+                  inputMode={type === 'number' ? 'decimal' : undefined}
                   value={row.value}
                   onChange={(e) =>
                     setVariations((prev) =>
@@ -297,7 +302,8 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
                   }
                   placeholder="value"
                   aria-label={`Variation ${i + 1} value`}
-                  className="h-10 flex-1 rounded-md border bg-surface px-2.5 font-mono text-sm focus:border-brand focus:outline-none"
+                  {...identifierInputProps}
+                  className="h-10 flex-1 rounded-md border bg-surface px-2.5 font-mono text-sm focus:border-brand focus:outline-none max-md:order-last max-md:h-11 max-md:basis-full"
                 />
               )}
 
@@ -306,7 +312,7 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
                 onClick={() => setVariations((prev) => prev.filter((_, j) => j !== i))}
                 aria-label={`Remove variation ${row.name || i + 1}`}
                 disabled={variations.length === 1}
-                className="h-10 w-10 shrink-0 rounded-md border text-ink-muted transition-colors hover:border-danger hover:text-danger disabled:opacity-40"
+                className="h-10 w-10 shrink-0 rounded-md border text-ink-muted max-md:h-11 max-md:w-11 transition-colors hover:border-danger hover:text-danger disabled:opacity-40"
               >
                 <X className="mx-auto h-4 w-4" />
               </button>
@@ -337,11 +343,11 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
               .map((v) => ({ value: v.name, label: v.name }))}
             placeholder="— pick one —"
             ariaLabel="Default variation"
-            className="w-64"
+            className="w-64 max-md:w-full"
           />
         </div>
 
-        <label className="flex items-center gap-2.5 text-base">
+        <label className="flex items-center gap-2.5 text-base max-md:min-h-11">
           <input
             type="checkbox"
             checked={enabled}
@@ -361,7 +367,7 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
         </p>
       )}
 
-      <div className="flex gap-3">
+      <div className="flex gap-3 max-md:flex-col-reverse max-md:pb-2">
         <Button onClick={() => void submit()} disabled={create.isPending}>
           {create.isPending && <Spinner className="border-white/40 border-t-white" />}
           Create flag

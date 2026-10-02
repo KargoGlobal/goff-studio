@@ -41,7 +41,7 @@ export function ExperimentationEditor({
           {window ? describeExperimentation(window) : 'No schedule, so the flag is never auto-disabled.'}
         </p>
         {!disabled && (
-          <div className="flex gap-2">
+          <div className="flex gap-2 max-md:flex-wrap">
             <Button size="sm" variant="outline" onClick={open}>
               {window ? 'Edit window' : 'Add window'}
             </Button>
@@ -59,8 +59,9 @@ export function ExperimentationEditor({
   function bound(label: 'start' | 'end') {
     return (
       <div className="flex items-center gap-2">
-        <span className="w-10 text-[12px] capitalize text-ink-muted">{label}</span>
+        <span className="w-10 text-[12px] max-md:shrink-0 capitalize text-ink-muted">{label}</span>
         <DateTimeInput
+          className="max-md:w-auto max-md:min-w-0 max-md:flex-1"
           label={`Experimentation ${label}`}
           value={draft[label] ?? ''}
           onChange={(iso) => setDraft((prev) => ({ ...prev, [label]: iso }))}

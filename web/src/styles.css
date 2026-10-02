@@ -185,3 +185,16 @@
     width: 100%;
   }
 }
+
+@media (max-width: 47.99rem) {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  input:not([type="checkbox"], [type="radio"], [type="range"]),
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}

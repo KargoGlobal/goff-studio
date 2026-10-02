@@ -32,6 +32,7 @@ function RolloutComparison({ rollout }: { rollout: RolloutDiff }) {
     </div>
   )
 }
+import { identifierInputProps } from '@/lib/inputProps'
 
 export function ReviewDialog({
   open,
@@ -120,8 +121,9 @@ export function ReviewDialog({
                 onChange={(e) => setTyped(e.target.value)}
                 placeholder={envName}
                 aria-label={`Type ${envName} to confirm`}
+                {...identifierInputProps}
                 className={cn(
-                  'mt-2 h-8 w-full rounded-md border bg-surface px-2.5 font-mono text-[13px] focus:outline-none',
+                  'mt-2 h-8 w-full rounded-md border bg-surface px-2.5 font-mono text-[13px] focus:outline-none max-md:h-11',
                   danger
                     ? 'focus:border-[color:var(--color-danger-neon)]'
                     : 'focus:border-brand',
@@ -135,7 +137,7 @@ export function ReviewDialog({
               <button
                 type="button"
                 onClick={() => setShowDiff((s) => !s)}
-                className="flex items-center gap-1 text-[12.5px] text-ink-muted hover:text-ink"
+                className="flex items-center gap-1 text-[12.5px] text-ink-muted hover:text-ink max-md:min-h-11"
               >
                 <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', showDiff && 'rotate-90')} />
                 {showDiff ? 'Hide' : 'Show'} file changes

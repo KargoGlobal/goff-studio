@@ -6,6 +6,7 @@ import { tokensFromGroup } from '@/lib/tokens'
 import { ConditionView } from '@/components/ConditionView'
 import { ChipInput } from '@/components/ChipInput'
 import { Code } from '@/components/ui/primitives'
+import { identifierInputProps } from '@/lib/inputProps'
 
 const operators = VISIBLE_OPERATORS.map((o) => ({ name: o.name, label: o.label, value: o.name }))
 
@@ -44,21 +45,21 @@ export function RuleBuilder({
             body: 'space-y-2',
             rule: 'flex items-center gap-2 flex-wrap',
             combinators:
-              'h-8 rounded-md border bg-surface px-2 text-[12.5px] text-ink focus:border-brand focus:outline-none',
+              'h-8 max-md:h-11 rounded-md border bg-surface px-2 text-[12.5px] text-ink focus:border-brand focus:outline-none',
             fields:
-              'h-8 rounded-md border bg-surface px-2 text-[12.5px] text-ink focus:border-brand focus:outline-none',
+              'h-8 max-md:h-11 rounded-md border bg-surface px-2 text-[12.5px] text-ink focus:border-brand focus:outline-none',
             operators:
-              'h-8 rounded-md border bg-surface px-2 text-[12.5px] text-ink focus:border-brand focus:outline-none',
+              'h-8 max-md:h-11 rounded-md border bg-surface px-2 text-[12.5px] text-ink focus:border-brand focus:outline-none',
             value:
-              'h-8 min-w-40 rounded-md border bg-surface px-2 font-mono text-[12.5px] text-ink focus:border-brand focus:outline-none',
+              'h-8 max-md:h-11 min-w-40 rounded-md border bg-surface px-2 font-mono text-[12.5px] text-ink focus:border-brand focus:outline-none',
             addRule:
-              'h-8 rounded-md border bg-surface px-2.5 text-[12.5px] font-medium text-ink hover:bg-canvas',
+              'h-8 max-md:h-11 rounded-md border bg-surface px-2.5 text-[12.5px] font-medium text-ink hover:bg-canvas',
             addGroup:
-              'h-8 rounded-md border bg-surface px-2.5 text-[12.5px] font-medium text-ink-soft hover:bg-canvas',
+              'h-8 max-md:h-11 rounded-md border bg-surface px-2.5 text-[12.5px] font-medium text-ink-soft hover:bg-canvas',
             removeRule:
-              'h-8 w-8 rounded-md border bg-surface text-[12.5px] text-ink-muted hover:border-danger hover:text-danger',
+              'h-8 w-8 max-md:h-11 max-md:w-11 rounded-md border bg-surface text-[12.5px] text-ink-muted hover:border-danger hover:text-danger',
             removeGroup:
-              'h-8 w-8 rounded-md border bg-surface text-[12.5px] text-ink-muted hover:border-danger hover:text-danger',
+              'h-8 w-8 max-md:h-11 max-md:w-11 rounded-md border bg-surface text-[12.5px] text-ink-muted hover:border-danger hover:text-danger',
           }}
           translations={{
             addRule: { label: '+ Condition' },
@@ -102,7 +103,7 @@ export function RuleBuilder({
 function NotToggle({ checked, handleOnChange, disabled }: any) {
   return (
     <label
-      className={`inline-flex h-8 cursor-pointer select-none items-center gap-1.5 rounded-md border px-2 text-[12.5px] ${
+      className={`inline-flex h-8 max-md:h-11 cursor-pointer select-none items-center gap-1.5 rounded-md border px-2 text-[12.5px] ${
         checked ? 'border-brand bg-brand/10 text-ink' : 'bg-surface text-ink-soft'
       } ${disabled ? 'pointer-events-none opacity-50' : 'hover:bg-canvas'}`}
       title="Match everyone this group does not describe"
@@ -150,7 +151,8 @@ function ValueEditor({ value, handleOnChange, operator, disabled }: any) {
       onChange={(e) => handleOnChange(e.target.value)}
       placeholder="value"
       aria-label="Value"
-      className="h-8 min-w-40 flex-1 rounded-md border bg-surface px-2 font-mono text-[12.5px] text-ink focus:border-brand focus:outline-none"
+      {...identifierInputProps}
+      className="h-8 max-md:h-11 min-w-40 max-md:min-w-0 flex-1 rounded-md border bg-surface px-2 font-mono text-[12.5px] text-ink focus:border-brand focus:outline-none"
     />
   )
 }
@@ -168,7 +170,8 @@ function AttributeInput({ value, handleOnChange, options, disabled }: any) {
         onChange={(e) => handleOnChange(e.target.value)}
         placeholder="attribute"
         aria-label="Attribute"
-        className="h-8 w-40 rounded-md border bg-surface px-2 font-mono text-[12.5px] text-ink focus:border-brand focus:outline-none"
+        {...identifierInputProps}
+        className="h-8 max-md:h-11 w-40 max-md:w-auto max-md:min-w-0 max-md:flex-1 rounded-md border bg-surface px-2 font-mono text-[12.5px] text-ink focus:border-brand focus:outline-none"
       />
       <datalist id={listId}>
         {(options ?? [])

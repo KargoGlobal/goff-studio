@@ -1,5 +1,6 @@
 import { useState, type KeyboardEvent, type ClipboardEvent } from 'react'
 import { X } from 'lucide-react'
+import { identifierInputProps } from '@/lib/inputProps'
 
 function split(raw: string): string[] {
   return raw
@@ -53,7 +54,7 @@ export function ChipInput({
 
   return (
     <div
-      className="flex min-h-8 min-w-48 flex-1 flex-wrap items-center gap-1.5 rounded-md border bg-surface px-1.5 py-1 focus-within:border-brand"
+      className="flex min-h-8 min-w-48 flex-1 max-md:min-h-11 max-md:min-w-0 max-md:basis-full flex-wrap items-center gap-1.5 rounded-md border bg-surface px-1.5 py-1 focus-within:border-brand"
       role="group"
       aria-label={label}
     >
@@ -68,7 +69,7 @@ export function ChipInput({
               type="button"
               aria-label={`Remove ${value}`}
               onClick={() => onChange(values.filter((v) => v !== value))}
-              className="text-brand/60 hover:text-brand"
+              className="text-brand/60 hover:text-brand max-md:-m-2 max-md:p-2"
             >
               <X className="h-3 w-3" />
             </button>
@@ -85,6 +86,8 @@ export function ChipInput({
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={onKeyDown}
         onPaste={onPaste}
+        enterKeyHint="enter"
+        {...identifierInputProps}
         onBlur={() => draft.trim() !== '' && add(draft)}
         className="min-w-24 flex-1 bg-transparent px-1 font-mono text-[12.5px] text-ink placeholder:text-ink-muted focus:outline-none"
       />
