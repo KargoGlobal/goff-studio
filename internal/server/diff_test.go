@@ -122,11 +122,21 @@ func TestDiffRolloutDescribesTheSplit(t *testing.T) {
 	var out struct {
 		Description string `json:"description"`
 		Diff        string `json:"diff"`
+		Rollout     *struct {
+			Before map[string]float64 `json:"before"`
+			After  map[string]float64 `json:"after"`
+		} `json:"rollout"`
 	}
 	decode(t, rec, &out)
 
-	if !strings.Contains(out.Description, "gold-cohort") || !strings.Contains(out.Description, "50%") {
+	if !strings.Contains(out.Description, "gold-cohort") {
 		t.Errorf("description = %q", out.Description)
+	}
+	if out.Rollout == nil || out.Rollout.After["on"] != 50 || out.Rollout.After["off"] != 50 {
+		t.Errorf("rollout.after = %+v, want on:50 off:50", out.Rollout)
+	}
+	if out.Rollout == nil || out.Rollout.Before["on"] != 20 || out.Rollout.Before["off"] != 80 {
+		t.Errorf("rollout.before = %+v, want the fixture's original 20/80 split", out.Rollout)
 	}
 	if !strings.Contains(out.Diff, "50") {
 		t.Errorf("diff should show the new percentages:\n%s", out.Diff)

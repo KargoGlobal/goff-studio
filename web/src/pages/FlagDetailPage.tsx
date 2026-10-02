@@ -49,6 +49,7 @@ import { useToast } from '@/components/ui/Toast'
 import { describeOutcome } from '@/lib/describe'
 import { RuleBuilder } from '@/components/RuleBuilder'
 import { VariationsEditor } from '@/components/VariationsEditor'
+import { variationColor } from '@/lib/variationColor'
 import { ProgressiveEditor } from '@/components/ProgressiveEditor'
 import { ExperimentationEditor } from '@/components/ExperimentationEditor'
 import { groupFromCondition, queryFromGroup } from '@/lib/query'
@@ -485,16 +486,19 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
             ) : (
               <>
                 <div className="space-y-1.5">
-                  {(flag.variations ?? []).map((v) => (
+                  {(flag.variations ?? []).map((v, i) => (
                     <div
                       key={v.name}
-                      className="flex items-center justify-between rounded-md border border-[color:var(--color-brand)] bg-surface px-3 py-2"
+                      style={{ backgroundColor: variationColor(i) }}
+                      className="flex items-center justify-between rounded-md px-3 py-2"
                     >
                       <span className="flex items-center gap-2">
-                        <Code className="bg-transparent px-0 text-ink">{v.name}</Code>
-                        {flag.default?.variation === v.name && <Badge tone="brand">default</Badge>}
+                        <Code className="bg-transparent px-0 font-semibold text-white">{v.name}</Code>
+                        {flag.default?.variation === v.name && (
+                          <Badge className="bg-white/25 text-white">default</Badge>
+                        )}
                       </span>
-                      <Code>{JSON.stringify(v.value)}</Code>
+                      <Code className="dark:bg-line dark:text-white">{JSON.stringify(v.value)}</Code>
                     </div>
                   ))}
                 </div>
@@ -733,27 +737,26 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                             disabled={!can('rollout')}
                             onChange={(next) => setDraftPct((prev) => ({ ...prev, [rule.name]: next }))}
                           />
-                          <div className="flex items-center justify-between pt-1">
+                          <div className="flex items-center justify-between pt-4">
                             <span className="text-[12px] text-ink-muted">
                               {stored && !sumsTo100(stored) && !changed
                                 ? `Stored as weights totalling ${Math.round(storedSum * 100) / 100}; shown as each one's real share.`
                                 : 'Always adds up to 100%.'}
                             </span>
-                            {changed && (
-                              <Button
-                                size="sm"
-                                aria-label={`Review the split for ${rule.name}`}
-                                onClick={() =>
-                                  void openReview({
-                                    kind: 'rollout',
-                                    ruleName: rule.name,
-                                    percentage: pct,
-                                  })
-                                }
-                              >
-                                Review change
-                              </Button>
-                            )}
+                            <Button
+                              size="sm"
+                              aria-label={`Apply the split for ${rule.name}`}
+                              disabled={!changed}
+                              onClick={() =>
+                                void openReview({
+                                  kind: 'rollout',
+                                  ruleName: rule.name,
+                                  percentage: pct,
+                                })
+                              }
+                            >
+                              Apply
+                            </Button>
                           </div>
                         </div>
                       ) : (

@@ -78,7 +78,7 @@ export function Select<T extends string>({
           }
         }}
         className={cn(
-          'flex h-11 w-full items-center justify-between rounded-md border bg-surface pl-3 pr-4 font-mono text-base transition-colors focus:border-brand focus:outline-none',
+          'flex h-11 w-full items-center justify-between rounded-md border bg-surface pl-3 pr-4 font-mono text-sm transition-colors focus:border-brand focus:outline-none',
           disabled && 'cursor-not-allowed opacity-50',
         )}
       >

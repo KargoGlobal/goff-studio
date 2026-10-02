@@ -886,6 +886,28 @@ func ruleExists(rules []goff.Rule, name string) bool {
 	return false
 }
 
+// currentPercentage returns the split a rollout change is about to replace,
+// so the review dialog can show before and after side by side. An empty map
+// means there was no split yet (a single variation, or a brand new rule).
+func currentPercentage(f goff.Flag, ruleName string) map[string]float64 {
+	outcome := f.Default
+	if ruleName != "" {
+		for _, r := range f.Rules {
+			if r.Name == ruleName {
+				outcome = r.Outcome
+				break
+			}
+		}
+	}
+	if len(outcome.Percentage) > 0 {
+		return outcome.Percentage
+	}
+	if outcome.Variation != "" {
+		return map[string]float64{outcome.Variation: 100}
+	}
+	return map[string]float64{}
+}
+
 func parseDate(label, raw string) (time.Time, error) {
 	parsed, err := time.Parse(time.RFC3339, raw)
 	if err != nil {
@@ -1065,6 +1087,7 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request, sess auth.Se
 	var (
 		mutate      func(*goff.Flag)
 		description string
+		rollout     *RolloutDiff
 	)
 
 	switch body.Change {
@@ -1147,10 +1170,15 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request, sess auth.Se
 			}
 		}
 		target := "the default"
+		before := map[string]float64{}
+		if view, err := s.svc.Get(r.Context(), sess, env, key); err == nil {
+			before = currentPercentage(view.Flag, body.RuleName)
+		}
 		if body.RuleName != "" {
 			target = body.RuleName
 		}
-		description = fmt.Sprintf("Change %s on %s to %s", target, key, describeOutcome(goff.Outcome{Percentage: body.Percentage}))
+		description = fmt.Sprintf("Change the split on %s on %s.", target, key)
+		rollout = &RolloutDiff{Before: before, After: body.Percentage}
 	case "progressive":
 		if body.Progressive == nil || body.Progressive.Initial == nil || body.Progressive.End == nil {
 			writeError(w, http.StatusBadRequest, "a progressive rollout needs both an initial and an end step")
@@ -1210,6 +1238,7 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request, sess auth.Se
 		Key:         key,
 		Mutate:      mutate,
 		Description: description,
+		Rollout:     rollout,
 	})
 	s.writeDiff(w, result, err)
 }
