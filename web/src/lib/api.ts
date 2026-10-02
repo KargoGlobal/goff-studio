@@ -290,6 +290,7 @@ export const api = {
       variations: NewVariation[]
       default: string
       enabled: boolean
+      description?: string
     },
   ) =>
     request<SaveResult>(`/api/environments/${env}/flags`, {
@@ -351,6 +352,12 @@ export const api = {
     request<SaveResult>(`/api/flags/${encodeURIComponent(key)}/promote`, {
       method: 'POST',
       body: JSON.stringify(payload),
+    }),
+
+  setDescription: (env: string, key: string, description: string, fileSha: string) =>
+    request<SaveResult>(`/api/environments/${env}/flags/${encodeURIComponent(key)}/description`, {
+      method: 'PUT',
+      body: JSON.stringify({ description, fileSha }),
     }),
 
   renameFlag: (env: string, key: string, newKey: string, fileSha: string) =>

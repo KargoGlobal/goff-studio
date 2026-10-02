@@ -8,6 +8,7 @@ import { Select } from '@/components/ui/Select'
 import { NewTeamDialog } from '@/components/NewTeamDialog'
 import { useToast } from '@/components/ui/Toast'
 import { identifierInputProps } from '@/lib/inputProps'
+import { MAX_DESCRIPTION } from '@/lib/description'
 
 const TYPES = [
   { value: 'boolean', label: 'On / off', hint: 'true or false' },
@@ -48,6 +49,7 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
   const [variations, setVariations] = useState<NewVariation[]>(DEFAULTS.boolean)
   const [defaultName, setDefaultName] = useState('off')
   const [enabled, setEnabled] = useState(true)
+  const [description, setDescription] = useState('')
   const [fieldError, setFieldError] = useState<{ field: string; message: string } | null>(null)
 
   const singleFile = me?.layout === 'single-file'
@@ -119,6 +121,7 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
         variations: variations.filter((v) => v.name.trim() !== ''),
         default: defaultName,
         enabled,
+        description: description.trim(),
       })
       toast(result.message)
       navigate(`/env/${env}/flags/${encodeURIComponent(key.trim())}`)
@@ -174,6 +177,20 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
               {fieldError.message}
             </p>
           )}
+        </div>
+
+        <div>
+          <label htmlFor="flag-description" className="mb-1.5 block text-sm font-medium text-ink-soft">
+            Description <span className="font-normal text-ink-muted">(optional)</span>
+          </label>
+          <Input
+            id="flag-description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            maxLength={MAX_DESCRIPTION}
+            placeholder="What this flag controls and why it exists"
+            className="h-11 text-base"
+          />
         </div>
 
         <div>

@@ -7,8 +7,9 @@ import (
 )
 
 const (
-	metaCreatedAt = "createdAt"
-	metaUpdatedAt = "updatedAt"
+	metaCreatedAt   = "createdAt"
+	metaUpdatedAt   = "updatedAt"
+	metaDescription = "description"
 )
 
 // Metadata keys Studio owns, which promotion never copies and compare never reports as drift.

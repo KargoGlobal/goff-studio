@@ -164,6 +164,7 @@ export function useCreateFlag(env: string) {
       variations: NewVariation[]
       default: string
       enabled: boolean
+      description?: string
     }) => api.createFlag(env, payload),
     onSettled: () => invalidateFlag(qc, env),
   })
@@ -229,6 +230,15 @@ export function useSetExperimentation(env: string) {
       end?: string
       clear?: boolean
     }) => api.setExperimentation(env, flag.key, { start, end, clear, fileSha: flag.fileSha }),
+    onSettled: () => invalidateFlag(qc, env),
+  })
+}
+
+export function useSetDescription(env: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ flag, description }: { flag: Flag; description: string }) =>
+      api.setDescription(env, flag.key, description, flag.fileSha),
     onSettled: () => invalidateFlag(qc, env),
   })
 }

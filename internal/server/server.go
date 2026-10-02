@@ -50,6 +50,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/environments/{env}/flags/{key}/key", s.withSession(s.handleRename))
 	mux.HandleFunc("PUT /api/environments/{env}/flags/{key}/variations", s.withSession(s.handleVariations))
 	mux.HandleFunc("POST /api/environments/{env}/flags/{key}/state", s.withSession(s.handleToggle))
+	mux.HandleFunc("PUT /api/environments/{env}/flags/{key}/description", s.withSession(s.handleDescription))
 	mux.HandleFunc("POST /api/environments/{env}/flags/{key}/rollout", s.withSession(s.handleRollout))
 	mux.HandleFunc("POST /api/environments/{env}/flags/{key}/progressive", s.withSession(s.handleProgressive))
 	mux.HandleFunc("POST /api/environments/{env}/flags/{key}/experimentation", s.withSession(s.handleExperimentation))
@@ -397,6 +398,7 @@ type diffBody struct {
 	Progressive *progressiveSteps  `json:"progressive"`
 	Window      *experimentWindow  `json:"experimentation"`
 	Order       []string           `json:"order"`
+	Description string             `json:"description"`
 }
 
 type outcomeBody struct {
@@ -428,13 +430,14 @@ type variationBody struct {
 }
 
 type createBody struct {
-	Key        string          `json:"key"`
-	Team       string          `json:"team"`
-	Type       string          `json:"type"`
-	Variations []variationBody `json:"variations"`
-	Default    string          `json:"default"`
-	Enabled    bool            `json:"enabled"`
-	FileSHA    string          `json:"fileSha"`
+	Key         string          `json:"key"`
+	Team        string          `json:"team"`
+	Type        string          `json:"type"`
+	Variations  []variationBody `json:"variations"`
+	Default     string          `json:"default"`
+	Enabled     bool            `json:"enabled"`
+	Description string          `json:"description"`
+	FileSHA     string          `json:"fileSha"`
 }
 
 type variationsBody struct {
@@ -491,6 +494,7 @@ func (s *Server) createRequest(env string, body createBody) (CreateRequest, erro
 		Variations:  variations,
 		Default:     body.Default,
 		Enabled:     body.Enabled,
+		Description: strings.TrimSpace(body.Description),
 	}, nil
 }
 
@@ -830,6 +834,66 @@ func (w *experimentWindow) toExperimentation() *goff.Experimentation {
 		return nil
 	}
 	return &goff.Experimentation{Start: strings.TrimSpace(w.Start), End: strings.TrimSpace(w.End)}
+}
+
+func applyDescription(text string) func(*goff.Flag) {
+	return func(f *goff.Flag) {
+		meta := make(map[string]any, len(f.Metadata)+1)
+		for k, v := range f.Metadata {
+			meta[k] = v
+		}
+		if text == "" {
+			delete(meta, metaDescription)
+		} else {
+			meta[metaDescription] = text
+		}
+		f.Metadata = meta
+	}
+}
+
+type descriptionBody struct {
+	Description string `json:"description"`
+	FileSHA     string `json:"fileSha"`
+}
+
+func (s *Server) handleDescription(w http.ResponseWriter, r *http.Request, sess auth.Session) {
+	var body descriptionBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "could not read the request")
+		return
+	}
+	if err := validDescription(body.Description); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	text := strings.TrimSpace(body.Description)
+
+	env, key := r.PathValue("env"), r.PathValue("key")
+	view, err := s.svc.Get(r.Context(), sess, env, key)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	summary := "updated the description"
+	if text == "" {
+		summary = "removed the description"
+	}
+	result, err := s.svc.Save(r.Context(), sess, SaveRequest{
+		Environment: env,
+		Key:         key,
+		File:        view.File,
+		FileSHA:     body.FileSHA,
+		LoadedFlag:  s.snapshotFor(env, key, body.FileSHA),
+		Action:      permissions.EditRules,
+		Summary:     summary,
+		Mutate:      applyDescription(text),
+	})
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func applyExperimentation(next *goff.Experimentation) func(*goff.Flag) {
@@ -1261,6 +1325,17 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request, sess auth.Se
 	case "experimentationClear":
 		mutate = applyExperimentation(nil)
 		description = fmt.Sprintf("Remove the experimentation window on %s", key)
+	case "description":
+		if err := validDescription(body.Description); err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		text := strings.TrimSpace(body.Description)
+		mutate = applyDescription(text)
+		description = fmt.Sprintf("Update the description of %s", key)
+		if text == "" {
+			description = fmt.Sprintf("Remove the description of %s", key)
+		}
 	default:
 		writeError(w, http.StatusBadRequest, "unknown change type")
 		return

@@ -5,6 +5,7 @@ import { type Environment, type Flag } from '@/lib/api'
 import { useFlags } from '@/hooks/useFlags'
 import { Badge, Button, Card, Code, Input, Spinner } from '@/components/ui/primitives'
 import { ScheduleBadge } from '@/components/ScheduleBadge'
+import { descriptionOf } from '@/lib/description'
 
 function fileLabel(path: string) {
   const base = path.split('/').pop() ?? path
@@ -59,7 +60,7 @@ export function FlagListPage({ environments: _environments }: { environments: En
       if (!q) return true
       return (
         f.key.toLowerCase().includes(q) ||
-        f.summary.toLowerCase().includes(q) ||
+        descriptionOf(f).toLowerCase().includes(q) ||
         (f.team ?? '').toLowerCase().includes(q)
       )
     })
@@ -125,7 +126,7 @@ export function FlagListPage({ environments: _environments }: { environments: En
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search flags, teams…"
+            placeholder="Search flags, teams, descriptions…"
             className="h-9 pl-9 text-sm max-md:h-11"
             enterKeyHint="search"
             aria-label="Search flags"
@@ -221,8 +222,8 @@ export function FlagListPage({ environments: _environments }: { environments: En
                       )}
                       <ScheduleBadge flag={flag} />
                     </div>
-                    {flag.summary && (
-                      <p className="mt-1 text-[12.5px] text-ink-muted">{flag.summary}</p>
+                    {descriptionOf(flag) && (
+                      <p className="mt-1 text-[12.5px] text-ink-muted">{descriptionOf(flag)}</p>
                     )}
                   </td>
                   <td className="px-4 py-3 align-top max-md:px-2 max-md:py-3.5 max-md:break-words">
