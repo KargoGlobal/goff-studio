@@ -57,6 +57,7 @@ import { tokensFromCondition } from '@/lib/tokens'
 import { ConditionView } from '@/components/ConditionView'
 import { ScheduleBadge } from '@/components/ScheduleBadge'
 import { describeEffectiveState, effectiveState } from '@/lib/schedule'
+import { identifierInputProps } from '@/lib/inputProps'
 import type { RuleGroupType } from 'react-querybuilder'
 import { normalizeSplit, sumsTo100, type Split } from '@/lib/split'
 import { SplitSliders } from '@/components/SplitSliders'
@@ -362,32 +363,33 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
     <div className="space-y-6">
       <Link
         to={`/env/${env}`}
-        className="inline-flex items-center gap-2 text-lg font-semibold text-ink-muted transition-colors hover:text-ink"
+        className="inline-flex items-center gap-2 text-lg font-semibold text-ink-muted transition-colors hover:text-ink max-md:min-h-11 max-md:max-w-full"
       >
-        <ArrowLeft className="h-6 w-6" />
+        <ArrowLeft className="h-6 w-6 max-md:shrink-0" />
         All flags
       </Link>
 
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
+      <div className="flex items-start justify-between gap-4 max-md:flex-col max-md:gap-3">
+        <div className="min-w-0 max-md:w-full">
           {renaming === null ? (
             <div className="flex items-baseline gap-3">
-              <h1 className="font-mono text-3xl font-bold tracking-tight">{flag.key}</h1>
+              <h1 className="max-md:min-w-0 font-mono text-3xl font-bold tracking-tight max-md:text-2xl max-md:wrap-anywhere">{flag.key}</h1>
               {can('create') && can('delete') && (
                 <button
                   type="button"
                   onClick={() => setRenaming(flag.key)}
                   aria-label="Rename this flag"
                   title="Rename"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md text-brand transition-colors hover:text-brand-strong"
+                  className="inline-flex h-8 w-8 items-center max-md:shrink-0 justify-center rounded-md text-brand transition-colors hover:text-brand-strong max-md:h-11 max-md:w-11"
                 >
                   <Pencil className="h-4 w-4" />
                 </button>
               )}
             </div>
           ) : (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 max-md:flex-wrap">
               <Input
+                {...identifierInputProps}
                 autoFocus
                 value={renaming}
                 onChange={(e) => setRenaming(e.target.value)}
@@ -398,7 +400,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                   }
                 }}
                 aria-label="New flag key"
-                className="w-64 font-mono"
+                className="w-64 font-mono max-md:w-full"
               />
               <Button
                 size="sm"
@@ -414,11 +416,11 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
           )}
           <p className="mt-1.5 text-base text-ink-soft">{flag.summary}</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 max-md:w-full max-md:flex-wrap">
           {environments.length > 1 && (
             <Link
               to={`/env/${env}/flags/${encodeURIComponent(key)}/compare`}
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-muted transition-colors hover:text-ink"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-muted transition-colors hover:text-ink max-md:min-h-11"
             >
               <GitCompare className="h-4 w-4" />
               Compare
@@ -441,6 +443,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
             disabled={!can('toggle')}
             label={`Turn ${flag.key} ${flag.enabled ? 'off' : 'on'}`}
             onChange={(next) => void openReview({ kind: 'state', enabled: next })}
+            className="max-md:ml-auto max-md:mr-3"
           />
         </div>
       </div>
@@ -456,8 +459,8 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
       )}
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <div className="space-y-4 lg:col-span-2">
-          <Card className="p-6">
+        <div className="space-y-4 max-md:min-w-0 lg:col-span-2">
+          <Card className="p-6 max-md:p-4">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-xl font-semibold tracking-tight text-ink">
                 Variations
@@ -490,7 +493,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                     <div
                       key={v.name}
                       style={{ backgroundColor: variationColor(i) }}
-                      className="flex items-center justify-between rounded-md px-3 py-2"
+                      className="flex items-center justify-between rounded-md px-3 py-2 max-md:flex-wrap max-md:gap-x-3 max-md:gap-y-1"
                     >
                       <span className="flex items-center gap-2">
                         <Code className="bg-transparent px-0 font-semibold text-white">{v.name}</Code>
@@ -498,7 +501,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                           <Badge className="bg-white/25 text-white">default</Badge>
                         )}
                       </span>
-                      <Code className="dark:bg-line dark:text-white">{JSON.stringify(v.value)}</Code>
+                      <Code className="dark:bg-line dark:text-white max-md:max-w-full max-md:wrap-anywhere">{JSON.stringify(v.value)}</Code>
                     </div>
                   ))}
                 </div>
@@ -528,7 +531,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
             )}
           </Card>
 
-          <Card className="p-6">
+          <Card className="p-6 max-md:p-4">
             <div className="mb-1 flex items-center justify-between">
               <h2 className="text-xl font-semibold tracking-tight text-ink">
                 Targeting
@@ -564,20 +567,20 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
 
                 return (
                   <div key={rule.name || i} className="rounded-lg border p-3">
-                    <div className="mb-2 flex items-center gap-2">
+                    <div className="mb-2 flex items-center gap-2 max-md:flex-wrap">
                       <Badge tone="brand">{i + 1}</Badge>
-                      <span className="text-[13px] font-medium">{rule.name || 'Unnamed rule'}</span>
+                      <span className="text-[13px] font-medium max-md:min-w-0 max-md:wrap-anywhere">{rule.name || 'Unnamed rule'}</span>
                       {rule.advanced && <Badge tone="warn">advanced</Badge>}
                       {rule.disabled && <Badge tone="neutral">off</Badge>}
 
                       {can('edit_rules') && (
-                        <span className="ml-auto flex items-center gap-1">
+                        <span className="ml-auto flex items-center gap-1 max-md:gap-1.5">
                           <button
                             type="button"
                             aria-label={`Move ${rule.name} earlier`}
                             disabled={i === 0}
                             onClick={() => move(i, -1)}
-                            className="h-7 w-7 rounded-md border text-ink-muted hover:text-ink disabled:opacity-30"
+                            className="h-7 w-7 rounded-md border text-ink-muted hover:text-ink disabled:opacity-30 max-md:h-11 max-md:w-11"
                           >
                             <ArrowUp className="mx-auto h-3.5 w-3.5" />
                           </button>
@@ -586,7 +589,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                             aria-label={`Move ${rule.name} later`}
                             disabled={i === rules.length - 1}
                             onClick={() => move(i, 1)}
-                            className="h-7 w-7 rounded-md border text-ink-muted hover:text-ink disabled:opacity-30"
+                            className="h-7 w-7 rounded-md border text-ink-muted hover:text-ink disabled:opacity-30 max-md:h-11 max-md:w-11"
                           >
                             <ArrowDown className="mx-auto h-3.5 w-3.5" />
                           </button>
@@ -600,7 +603,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                                 disabled: !rule.disabled,
                               })
                             }
-                            className="h-7 rounded-md border px-2 text-[11.5px] text-ink-muted hover:text-ink"
+                            className="h-7 rounded-md border px-2 text-[11.5px] text-ink-muted hover:text-ink max-md:h-11 max-md:px-3 max-md:text-[13px]"
                           >
                             {rule.disabled ? 'Enable' : 'Disable'}
                           </button>
@@ -610,7 +613,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                             onClick={() =>
                               void openReview({ kind: 'deleteRule', ruleName: rule.name })
                             }
-                            className="h-7 w-7 rounded-md border text-ink-muted hover:border-danger hover:text-danger"
+                            className="h-7 w-7 rounded-md border text-ink-muted hover:border-danger hover:text-danger max-md:h-11 max-md:w-11"
                           >
                             <Trash2 className="mx-auto h-3.5 w-3.5" />
                           </button>
@@ -648,7 +651,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                       </div>
                     ) : (
                       <div className="flex items-start justify-between gap-2">
-                        <p className="text-[13px] text-ink-soft">
+                        <p className="text-[13px] text-ink-soft max-md:min-w-0 max-md:wrap-anywhere">
                           {rule.advanced ? (
                             <>
                               Custom rule: <Code>{rule.query}</Code>
@@ -700,7 +703,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                       {can('edit_rules') && (
                         <div className="mb-2 flex items-center gap-2">
                           <span className="text-[12px] text-ink-soft">Serves</span>
-                          <div className="w-56">
+                          <div className="w-56 max-md:min-w-0 max-md:flex-1">
                             <Select
                               ariaLabel={`What ${rule.name} serves`}
                               value={isSplit ? 'split' : 'single'}
@@ -737,7 +740,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                             disabled={!can('rollout')}
                             onChange={(next) => setDraftPct((prev) => ({ ...prev, [rule.name]: next }))}
                           />
-                          <div className="flex items-center justify-between pt-4">
+                          <div className="flex items-center justify-between pt-4 max-md:flex-wrap max-md:gap-2">
                             <span className="text-[12px] text-ink-muted">
                               {stored && !sumsTo100(stored) && !changed
                                 ? `Stored as weights totalling ${Math.round(storedSum * 100) / 100}; shown as each one's real share.`
@@ -780,9 +783,10 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                       onChange={(e) => setNewRuleName(e.target.value)}
                       placeholder="rule name"
                       aria-label="New rule name"
-                      className="h-11 w-44 rounded-md border bg-surface px-2.5 text-sm focus:border-brand focus:outline-none"
+                      {...identifierInputProps}
+                      className="h-11 w-44 rounded-md border bg-surface px-2.5 text-sm focus:border-brand focus:outline-none max-md:w-full"
                     />
-                    <div className="w-56">
+                    <div className="w-56 max-md:w-full">
                       <Select
                         value={newRuleSplit ? 'split' : 'single'}
                         onChange={(v) => setNewRuleSplit(v === 'split' ? evenSplit() : null)}
@@ -794,7 +798,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                       />
                     </div>
                     {!newRuleSplit && (
-                      <div className="w-56">
+                      <div className="w-56 max-md:w-full">
                         <Select
                           value={newRuleVariation}
                           onChange={(v) => setNewRuleVariation(v)}
@@ -860,8 +864,8 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
           </Card>
         </div>
 
-        <div className="space-y-4">
-          <Card className="p-6">
+        <div className="space-y-4 max-md:min-w-0">
+          <Card className="p-6 max-md:p-4">
             <h2 className="mb-3 flex items-center gap-2 text-xl font-semibold tracking-tight text-ink">
               <Play className="h-4 w-4" />
               Preview
@@ -870,6 +874,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
               User ID
             </label>
             <Input
+              {...identifierInputProps}
               id="preview-key"
               value={targetingKey}
               onChange={(e) => setTargetingKey(e.target.value)}
@@ -879,6 +884,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
               Context (JSON)
             </label>
             <textarea
+              {...identifierInputProps}
               id="preview-attrs"
               value={attrsText}
               onChange={(e) => setAttrsText(e.target.value)}
@@ -900,7 +906,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                   <p className="text-sm text-danger">{preview.error}</p>
                 ) : (
                   <>
-                    <p className="text-base">
+                    <p className="text-base max-md:wrap-anywhere">
                       Gets <strong className="font-mono">{JSON.stringify(preview.value)}</strong>
                     </p>
                     <p className="mt-1 text-[13px] text-ink-muted">
@@ -914,7 +920,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
           </Card>
 
           {me?.capabilities?.history !== false && (
-          <Card className="p-6">
+          <Card className="p-6 max-md:p-4">
             <h2 className="mb-3 flex items-center gap-2 text-xl font-semibold tracking-tight text-ink">
               <History className="h-4 w-4" />
               History
@@ -923,7 +929,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
               <ul className="space-y-3">
                 {commits.slice(0, 8).map((c) => (
                   <li key={c.sha} className="border-b pb-2.5 last:border-0 last:pb-0">
-                    <p className="text-sm text-ink">{c.message.split('\n')[0]}</p>
+                    <p className="text-sm text-ink max-md:wrap-anywhere">{c.message.split('\n')[0]}</p>
                     <p className="mt-1 text-[13px] text-ink-muted">
                       {c.author} · {new Date(c.when).toLocaleString()}
                     </p>

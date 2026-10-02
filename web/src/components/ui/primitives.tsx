@@ -16,6 +16,7 @@ export function Button({
         'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md font-medium transition-colors',
         'disabled:pointer-events-none disabled:opacity-50',
         size === 'sm' ? 'h-8 px-3 text-[13px]' : 'h-9 px-4 text-sm',
+        'max-md:h-11',
         variant === 'default' && 'bg-brand text-white hover:opacity-90',
         variant === 'outline' && 'border bg-surface text-ink hover:bg-canvas',
         variant === 'ghost' && 'text-ink-soft hover:bg-canvas hover:text-ink',
@@ -35,7 +36,7 @@ export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElem
   return (
     <input
       className={cn(
-        'h-9 w-full rounded-md border bg-surface px-3 text-sm text-ink',
+        'h-9 w-full rounded-md border bg-surface px-3 text-sm text-ink max-md:h-11',
         'placeholder:text-ink-muted focus:border-brand focus:outline-none',
         className,
       )}
@@ -71,12 +72,14 @@ export function Toggle({
   disabled,
   label,
   busy,
+  className,
 }: {
   checked: boolean
   onChange: (next: boolean) => void
   disabled?: boolean
   label: string
   busy?: boolean
+  className?: string
 }) {
   return (
     <button
@@ -88,8 +91,10 @@ export function Toggle({
       onClick={() => onChange(!checked)}
       className={cn(
         'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
+        "max-md:after:absolute max-md:after:-inset-3 max-md:after:content-['']",
         checked ? 'bg-brand' : 'bg-[color:var(--color-toggle-off)]',
         (disabled || busy) && 'cursor-not-allowed opacity-50',
+        className,
       )}
     >
       <span

@@ -34,16 +34,16 @@ export function Select<T extends string>({
 
   useEffect(() => {
     if (!open) return
-    const onDown = (e: MouseEvent) => {
+    const onDown = (e: PointerEvent) => {
       if (!wrapperRef.current?.contains(e.target as Node)) setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false)
     }
-    document.addEventListener('mousedown', onDown)
+    document.addEventListener('pointerdown', onDown)
     document.addEventListener('keydown', onKey)
     return () => {
-      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('pointerdown', onDown)
       document.removeEventListener('keydown', onKey)
     }
   }, [open])
@@ -96,7 +96,7 @@ export function Select<T extends string>({
       {open && options.length > 0 && (
         <ul
           role="listbox"
-          className="absolute left-0 right-0 top-[calc(100%+6px)] z-40 max-h-64 overflow-y-auto rounded-md border bg-surface py-1 shadow-lg"
+          className="absolute left-0 right-0 top-[calc(100%+6px)] z-40 max-h-64 overflow-y-auto rounded-md border bg-surface py-1 shadow-lg max-md:max-h-[50dvh] max-md:overscroll-contain"
         >
           {options.map((o, i) => {
             const isSelected = o.value === value
@@ -112,7 +112,7 @@ export function Select<T extends string>({
                   setOpen(false)
                 }}
                 className={cn(
-                  'flex cursor-pointer items-center justify-between gap-3 px-3 py-2 font-mono text-sm text-ink transition-colors',
+                  'flex cursor-pointer items-center justify-between gap-3 px-3 py-2 font-mono text-sm text-ink transition-colors max-md:min-h-11 max-md:text-base',
                   isFocused && 'bg-[color:var(--color-row-hover)]',
                   isSelected && 'text-brand',
                 )}

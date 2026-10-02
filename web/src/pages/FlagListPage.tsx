@@ -101,7 +101,7 @@ export function FlagListPage({ environments: _environments }: { environments: En
 
   return (
     <div className="space-y-5">
-      <h1 className="text-4xl font-bold tracking-tight">Feature flags</h1>
+      <h1 className="text-4xl font-bold tracking-tight max-md:text-3xl">Feature flags</h1>
 
       {data?.broken && data.broken.length > 0 && (
         <Card className="border-warn bg-warn-soft p-4">
@@ -120,20 +120,21 @@ export function FlagListPage({ environments: _environments }: { environments: En
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative w-72">
+        <div className="relative w-72 max-md:w-full">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search flags, teams…"
-            className="h-9 pl-9 text-sm"
+            className="h-9 pl-9 text-sm max-md:h-11"
+            enterKeyHint="search"
             aria-label="Search flags"
           />
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto max-md:ml-0 max-md:w-full">
           {(data?.canCreate || (data?.teams ?? []).length > 0) && (
-            <Link to={`/env/${env}/flags/new`}>
-              <Button size="sm">
+            <Link to={`/env/${env}/flags/new`} className="max-md:block">
+              <Button size="sm" className="max-md:w-full max-md:text-sm">
                 <Plus className="h-3.5 w-3.5" />
                 Create flag
               </Button>
@@ -145,27 +146,27 @@ export function FlagListPage({ environments: _environments }: { environments: En
       <div className="w-full">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-[color:var(--color-line)] text-xl font-semibold tracking-tight text-ink">
+            <tr className="border-b border-[color:var(--color-line)] text-xl font-semibold tracking-tight text-ink max-md:text-base">
               <SortableHeader
                 label="Flag"
                 col="key"
                 sort={sort}
                 onClick={() => toggleSort('key')}
-                className="px-4 pb-3 pt-4 text-left"
+                className="px-4 pb-3 pt-4 text-left max-md:pl-1 max-md:pr-2"
               />
               <SortableHeader
                 label="Team"
                 col="team"
                 sort={sort}
                 onClick={() => toggleSort('team')}
-                className="px-4 pb-3 pt-4 text-left"
+                className="px-4 pb-3 pt-4 text-left max-md:px-2"
               />
               <SortableHeader
                 label="Created"
                 col="created"
                 sort={sort}
                 onClick={() => toggleSort('created')}
-                className="w-32 px-4 pb-3 pt-4 text-center"
+                className="w-32 px-4 pb-3 pt-4 text-center max-md:hidden"
                 justify="center"
               />
               <SortableHeader
@@ -173,7 +174,7 @@ export function FlagListPage({ environments: _environments }: { environments: En
                 col="updated"
                 sort={sort}
                 onClick={() => toggleSort('updated')}
-                className="w-32 px-4 pb-3 pt-4 text-center"
+                className="w-32 px-4 pb-3 pt-4 text-center max-md:hidden"
                 justify="center"
               />
               <SortableHeader
@@ -181,10 +182,10 @@ export function FlagListPage({ environments: _environments }: { environments: En
                 col="enabled"
                 sort={sort}
                 onClick={() => toggleSort('enabled')}
-                className="w-24 px-4 pb-3 pt-4 text-center"
+                className="w-24 px-4 pb-3 pt-4 text-center max-md:w-auto max-md:px-2"
                 justify="center"
               />
-              <th className="w-10 px-2 pb-3 pt-4" aria-hidden />
+              <th className="w-10 px-2 pb-3 pt-4 max-md:hidden" aria-hidden />
             </tr>
           </thead>
           <tbody className="divide-y divide-[color:var(--color-line)]">
@@ -210,9 +211,9 @@ export function FlagListPage({ environments: _environments }: { environments: En
                   }}
                   className="cursor-pointer transition-colors hover:bg-[color:var(--color-row-hover)] focus:bg-[color:var(--color-row-hover)] focus:outline-none"
                 >
-                  <td className="px-4 py-3 align-top">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-[15px] font-medium text-ink">
+                  <td className="px-4 py-3 align-top max-md:py-3.5 max-md:pl-1 max-md:pr-2">
+                    <div className="flex items-center gap-2 max-md:flex-wrap max-md:gap-1.5">
+                      <span className="font-mono text-[15px] font-medium text-ink max-md:wrap-anywhere">
                         {flag.key}
                       </span>
                       {(flag.preserved?.length ?? 0) > 0 && (
@@ -224,7 +225,7 @@ export function FlagListPage({ environments: _environments }: { environments: En
                       <p className="mt-1 text-[12.5px] text-ink-muted">{flag.summary}</p>
                     )}
                   </td>
-                  <td className="px-4 py-3 align-top">
+                  <td className="px-4 py-3 align-top max-md:px-2 max-md:py-3.5 max-md:break-words">
                     {flag.team ? (
                       <span className="text-sm text-ink" title={flag.file}>
                         {flag.team}
@@ -235,13 +236,13 @@ export function FlagListPage({ environments: _environments }: { environments: En
                       </span>
                     )}
                   </td>
-                  <td className="w-32 px-4 py-3 text-center align-top">
+                  <td className="w-32 px-4 py-3 text-center align-top max-md:hidden">
                     <DateCell date={metaDate(flag, 'createdAt')} />
                   </td>
-                  <td className="w-32 px-4 py-3 text-center align-top">
+                  <td className="w-32 px-4 py-3 text-center align-top max-md:hidden">
                     <DateCell date={metaDate(flag, 'updatedAt')} />
                   </td>
-                  <td className="w-24 px-4 py-3 text-center align-top">
+                  <td className="w-24 px-4 py-3 text-center align-top max-md:w-auto max-md:px-2 max-md:py-3.5">
                     <span
                       className={`font-mono text-base font-semibold ${
                         flag.enabled ? 'text-brand' : 'text-ink-muted'
@@ -250,7 +251,7 @@ export function FlagListPage({ environments: _environments }: { environments: En
                       {flag.enabled ? 'true' : 'false'}
                     </span>
                   </td>
-                  <td className="w-10 px-2 py-3 text-right align-top">
+                  <td className="w-10 px-2 py-3 text-right align-top max-md:hidden">
                     <Link
                       to={`/env/${env}/flags/${encodeURIComponent(flag.key)}`}
                       aria-label={`Open ${flag.key}`}
@@ -273,7 +274,7 @@ export function FlagListPage({ environments: _environments }: { environments: En
         </table>
 
         {flags.length > 0 && (
-          <div className="mt-1 flex items-center justify-between px-4 py-3 text-[13px] text-ink-muted">
+          <div className="mt-1 flex items-center justify-between px-4 py-3 text-[13px] text-ink-muted max-md:px-1">
             <span>
               {flags.length} of {data?.flags.length ?? 0} item{(data?.flags.length ?? 0) === 1 ? '' : 's'}
             </span>
@@ -311,7 +312,7 @@ function SortableHeader({
       <button
         type="button"
         onClick={onClick}
-        className={`inline-flex items-center gap-1.5 rounded-sm font-semibold tracking-tight transition-colors hover:text-brand ${justifyClass} ${active ? 'text-brand' : ''}`}
+        className={`inline-flex items-center gap-1.5 rounded-sm font-semibold tracking-tight transition-colors hover:text-brand max-md:min-h-11 max-md:gap-1 ${justifyClass} ${active ? 'text-brand' : ''}`}
       >
         <span>{label}</span>
         <Icon className={`h-4 w-4 ${active ? 'opacity-100' : 'opacity-40'}`} />

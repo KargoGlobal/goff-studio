@@ -13,7 +13,7 @@ import { Button, Card, Spinner } from '@/components/ui/primitives'
 
 function SignIn() {
   return (
-    <div className="flex min-h-screen items-center justify-center p-6">
+    <div className="flex min-h-screen items-center justify-center p-6 max-md:min-h-dvh max-md:p-4">
       <Card className="w-full max-w-sm p-8 text-center">
         <Logo className="mx-auto h-10 w-10 text-brand" />
         <h1 className="mt-4 text-[19px] font-bold tracking-tight">
@@ -29,7 +29,7 @@ function SignIn() {
 
 function NoAccess({ name }: { name: string }) {
   return (
-    <div className="flex min-h-screen items-center justify-center p-6">
+    <div className="flex min-h-screen items-center justify-center p-6 max-md:min-h-dvh max-md:p-4">
       <Card className="w-full max-w-md p-8 text-center">
         <h1 className="text-lg font-semibold">No environments available</h1>
         <p className="mt-2 text-[13px] text-ink-soft">
@@ -46,7 +46,7 @@ function FirstEnvironment() {
   const navigate = useNavigate()
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-6">
+    <div className="flex min-h-screen items-center justify-center p-6 max-md:min-h-dvh max-md:p-4">
       <Card className="w-full max-w-md p-8 text-center">
         <h1 className="text-lg font-semibold">Create your first environment</h1>
         <p className="mt-2 text-[13px] text-ink-soft">

@@ -26,9 +26,9 @@ export function SplitSliders({
         const pct = value[name] ?? 0
         return (
           <div key={name} className="flex items-center gap-3">
-            <span className="w-24 shrink-0 font-mono text-[12.5px] text-ink-soft">{name}</span>
+            <span className="w-24 shrink-0 font-mono text-[12.5px] text-ink-soft max-md:w-20 max-md:truncate">{name}</span>
             <div className="flex flex-1 items-center gap-3">
-              <div className="relative flex-1">
+              <div className="relative flex-1 max-md:min-w-0">
                 {active === name && (
                   <div
                     style={{ left: `calc(${THUMB_PX / 2}px + (100% - ${THUMB_PX}px) * ${pct / 100})` }}
@@ -53,7 +53,7 @@ export function SplitSliders({
                   onPointerCancel={() => setActive(null)}
                   onFocus={() => setActive(name)}
                   onBlur={() => setActive((a) => (a === name ? null : a))}
-                  className="w-full accent-[var(--color-brand)] [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4"
+                  className="w-full accent-[var(--color-brand)] max-md:h-11 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4"
                 />
               </div>
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-[3px] border-ink bg-canvas font-mono text-[11px] font-extrabold leading-none tracking-tight text-ink dark:border-white">

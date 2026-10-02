@@ -31,7 +31,7 @@ export function ProgressiveEditor({
       <div className="space-y-2">
         <p className="text-[13px] text-ink">{describeProgressive(rollout)}</p>
         {!disabled && (
-          <div className="flex gap-2">
+          <div className="flex gap-2 max-md:flex-wrap">
             <Button
               size="sm"
               variant="outline"
@@ -58,12 +58,12 @@ export function ProgressiveEditor({
 
   function step(label: 'initial' | 'end', value: RolloutStep) {
     return (
-      <div className="space-y-2 rounded-lg border bg-surface p-4">
+      <div className="space-y-2 rounded-lg border bg-surface p-4 max-md:p-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-sidebar-active)]">
           {label === 'initial' ? 'Start' : 'End'}
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="w-40">
+          <div className="w-40 max-md:min-w-0 max-md:flex-1">
             <Select
               value={value.variation}
               onChange={(v) =>
@@ -76,6 +76,7 @@ export function ProgressiveEditor({
           <label className="inline-flex h-11 items-center gap-1 rounded-md border bg-surface pl-3 pr-2 focus-within:border-brand">
             <input
               type="number"
+              inputMode="numeric"
               min={0}
               max={100}
               aria-label={`${label} percentage`}
@@ -91,7 +92,7 @@ export function ProgressiveEditor({
             <span className="text-sm text-ink-muted">%</span>
           </label>
           <DateTimeInput
-            className="w-64"
+            className="w-64 max-md:w-full"
             label={`${label} date`}
             value={value.date}
             onChange={(iso) =>

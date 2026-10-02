@@ -3,6 +3,7 @@ import { Button, Input, Spinner } from '@/components/ui/primitives'
 import { Dialog } from '@/components/ui/Dialog'
 import { useCreateTeam } from '@/hooks/useFlags'
 import { useToast } from '@/components/ui/Toast'
+import { identifierInputProps } from '@/lib/inputProps'
 
 export function NewTeamDialog({
   env,
@@ -94,6 +95,7 @@ export function NewTeamDialog({
             Name
           </label>
           <Input
+            {...identifierInputProps}
             id="team-name"
             autoFocus
             value={name}

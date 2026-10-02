@@ -3,6 +3,7 @@ import { Plus, X } from 'lucide-react'
 import type { Flag, NewVariation } from '@/lib/api'
 import { Button } from '@/components/ui/primitives'
 import { Select } from '@/components/ui/Select'
+import { identifierInputProps } from '@/lib/inputProps'
 
 function toRaw(value: unknown, type: Flag['type']): string {
   if (value === null || value === undefined) return ''
@@ -115,17 +116,18 @@ export function VariationsEditor({
         {rows.map((row, i) => {
           const used = originalNames.has(row.name) ? referencedBy(flag, row.name) : null
           return (
-            <div key={i} className="flex items-start gap-2">
+            <div key={i} className="flex items-start gap-2 max-md:flex-wrap">
               <input
                 value={row.name}
                 onChange={(e) => update(i, { name: e.target.value })}
                 placeholder="name"
                 aria-label={`Variation ${i + 1} name`}
-                className="h-11 w-40 shrink-0 rounded-md border bg-surface px-2.5 font-mono text-sm focus:border-brand focus:outline-none"
+                {...identifierInputProps}
+                className="h-11 w-40 shrink-0 rounded-md border bg-surface px-2.5 font-mono text-sm focus:border-brand focus:outline-none max-md:w-auto max-md:min-w-0 max-md:flex-1"
               />
 
               {flag.type === 'boolean' ? (
-                <div className="flex-1">
+                <div className="flex-1 max-md:order-last max-md:basis-full">
                   <Select
                     value={row.value}
                     onChange={(v) => update(i, { value: v })}
@@ -142,16 +144,19 @@ export function VariationsEditor({
                   onChange={(e) => update(i, { value: e.target.value })}
                   rows={2}
                   aria-label={`Variation ${i + 1} value`}
-                  className="flex-1 rounded-md border bg-surface px-2.5 py-2 font-mono text-sm focus:border-brand focus:outline-none"
+                  {...identifierInputProps}
+                  className="flex-1 rounded-md border bg-surface px-2.5 py-2 font-mono text-sm focus:border-brand focus:outline-none max-md:order-last max-md:basis-full"
                 />
               ) : (
                 <input
                   type={flag.type === 'number' ? 'number' : 'text'}
+                  inputMode={flag.type === 'number' ? 'decimal' : undefined}
+                  {...identifierInputProps}
                   value={row.value}
                   onChange={(e) => update(i, { value: e.target.value })}
                   placeholder="value"
                   aria-label={`Variation ${i + 1} value`}
-                  className="h-11 flex-1 rounded-md border bg-surface px-2.5 font-mono text-sm focus:border-brand focus:outline-none"
+                  className="h-11 flex-1 rounded-md border bg-surface px-2.5 font-mono text-sm focus:border-brand focus:outline-none max-md:order-last max-md:basis-full"
                 />
               )}
 
@@ -190,7 +195,7 @@ export function VariationsEditor({
           ariaLabel="Default variation"
           placeholder="— pick one —"
           options={rows.filter((r) => r.name.trim() !== '').map((r) => ({ value: r.name, label: r.name }))}
-          className="w-64"
+          className="w-64 max-md:w-full"
         />
       </div>
 

@@ -51,16 +51,16 @@ export function DateTimeInput({
 
   useEffect(() => {
     if (!open) return
-    const onDown = (e: MouseEvent) => {
+    const onDown = (e: PointerEvent) => {
       if (!wrapperRef.current?.contains(e.target as Node)) setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false)
     }
-    document.addEventListener('mousedown', onDown)
+    document.addEventListener('pointerdown', onDown)
     document.addEventListener('keydown', onKey)
     return () => {
-      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('pointerdown', onDown)
       document.removeEventListener('keydown', onKey)
     }
   }, [open])
@@ -101,10 +101,13 @@ export function DateTimeInput({
       </button>
 
       {open && (
+        <div className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={() => setOpen(false)} aria-hidden="true" />
+      )}
+      {open && (
         <div
           role="dialog"
           aria-label={`${label} picker`}
-          className="absolute left-0 top-[calc(100%+6px)] z-40 rounded-lg border bg-surface p-3 shadow-lg"
+          className="absolute left-0 top-[calc(100%+6px)] z-40 rounded-lg border bg-surface p-3 shadow-lg max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:top-auto max-md:z-50 max-md:flex max-md:flex-col max-md:items-center max-md:rounded-b-none max-md:border-x-0 max-md:border-b-0 max-md:pb-[max(1rem,env(safe-area-inset-bottom))] max-md:shadow-xl"
         >
           <DayPicker
             mode="single"
@@ -116,15 +119,15 @@ export function DateTimeInput({
             weekStartsOn={1}
             showOutsideDays
             classNames={{
-              months: 'flex',
+              months: 'flex max-md:relative',
               month: 'space-y-2',
-              month_caption: 'flex items-center justify-center py-1',
+              month_caption: 'flex items-center justify-center py-1 max-md:h-11',
               caption_label: 'text-sm font-semibold text-ink',
-              nav: 'flex items-center justify-between px-1 pb-1',
+              nav: 'flex items-center justify-between px-1 pb-1 max-md:absolute max-md:inset-x-0 max-md:top-0 max-md:z-10 max-md:pointer-events-none max-md:px-0 max-md:pb-0 max-md:[&>button]:pointer-events-auto',
               button_previous:
-                'h-7 w-7 rounded-md text-brand transition-colors hover:bg-[color:var(--color-brand-soft)] hover:text-brand-strong',
+                'h-7 w-7 rounded-md text-brand transition-colors hover:bg-[color:var(--color-brand-soft)] hover:text-brand-strong max-md:h-11 max-md:w-11',
               button_next:
-                'h-7 w-7 rounded-md text-brand transition-colors hover:bg-[color:var(--color-brand-soft)] hover:text-brand-strong',
+                'h-7 w-7 rounded-md text-brand transition-colors hover:bg-[color:var(--color-brand-soft)] hover:text-brand-strong max-md:h-11 max-md:w-11',
               chevron: 'fill-current',
               month_grid: 'border-collapse',
               weekdays: 'flex',
@@ -142,14 +145,15 @@ export function DateTimeInput({
             }}
           />
 
-          <div className="mt-2 flex items-center justify-between gap-2 border-t pt-2.5">
+          <div className="mt-2 flex items-center justify-between gap-2 border-t pt-2.5 max-md:w-full max-md:max-w-72">
             <div className="flex items-center gap-1.5 text-ink-muted">
               <Clock className="h-4 w-4 text-brand" aria-hidden />
               <span className="text-[13px]">Time</span>
             </div>
-            <div className="inline-flex h-9 items-center gap-0.5 rounded-md border bg-surface px-2 focus-within:border-brand">
+            <div className="inline-flex h-9 items-center gap-0.5 rounded-md border bg-surface px-2 focus-within:border-brand max-md:h-11">
               <input
                 type="number"
+                inputMode="numeric"
                 min={0}
                 max={23}
                 value={hours}
@@ -162,11 +166,12 @@ export function DateTimeInput({
                   commit(current ?? undefined, v, minutes)
                 }}
                 aria-label="Hours"
-                className="w-9 bg-transparent text-center font-mono text-sm text-ink focus:outline-none"
+                className="w-9 bg-transparent text-center font-mono text-sm text-ink focus:outline-none max-md:w-10"
               />
               <span className="text-ink-muted">:</span>
               <input
                 type="number"
+                inputMode="numeric"
                 min={0}
                 max={59}
                 value={minutes}
@@ -177,7 +182,7 @@ export function DateTimeInput({
                   commit(current ?? undefined, hours, v)
                 }}
                 aria-label="Minutes"
-                className="w-9 bg-transparent text-center font-mono text-sm text-ink focus:outline-none"
+                className="w-9 bg-transparent text-center font-mono text-sm text-ink focus:outline-none max-md:w-10"
               />
             </div>
           </div>
