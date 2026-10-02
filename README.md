@@ -98,15 +98,16 @@ replaces the file's list outright rather than merging into it.
 
 ### Storage
 
-`storage.backend` picks where flag files live. It defaults to `github`, the only
-backend with review.
+`storage.kind` picks where flag files live, using the same names as GO Feature
+Flag's retriever `kind`. It defaults to `github`, the only kind with review.
+Every kind is built into the binary and the image.
 
-| Backend | History | Attribution | Review |
+| Kind | History | Attribution | Review |
 | --- | --- | --- | --- |
 | `github` | yes, commits | yes, commit author and trailers | yes, via CODEOWNERS |
 | `s3` | with bucket versioning | with bucket versioning, in object metadata | no |
-| `gcs` | with object versioning | with object versioning, in object metadata | no |
-| `azblob` | with blob versioning | with blob versioning, in blob metadata | no |
+| `googleStorage` | with object versioning | with object versioning, in object metadata | no |
+| `azureBlobStorage` | with blob versioning | with blob versioning, in blob metadata | no |
 | `configmap` | no | no | no |
 | `file` | no | no | no |
 
@@ -115,9 +116,19 @@ history panel, attribution means each history entry names who made the change
 and with what message, and review means changes can be gated by CODEOWNERS. The
 UI hides or rewords anything a backend cannot do.
 
+Names match without regard to case. Releases before this one used `storage.backend`
+and the names `gcs` and `azblob`; all three still work, with a startup warning
+asking you to rename them.
+
+To build a smaller binary, leave backends out with build tags:
+`go build -tags no_googlestorage,no_azureblobstorage ./cmd/goff-studio`. The tags
+are `no_s3`, `no_googlestorage`, `no_azureblobstorage` and `no_configmap`; the
+Dockerfile takes the same list as the `GO_TAGS` build argument. `github` and
+`file` are always included.
+
 | Config key | Env var | Notes |
 | --- | --- | --- |
-| `storage.backend` | `GOFF_STUDIO_STORAGE` | `github` (default), `file`, `s3`, `gcs`, `azblob`, or `configmap` |
+| `storage.kind` | `GOFF_STUDIO_STORAGE` | `github` (default), `file`, `s3`, `googleStorage`, `azureBlobStorage`, or `configmap` |
 | `protectedEnvironments` | `GOFF_STUDIO_PROTECTED_ENVIRONMENTS` | `production,eu-production` or a YAML list; changes there need a diff review and typed confirmation. A name with no folder yet is fine |
 | `permissions` | `GOFF_STUDIO_PERMISSIONS` | YAML or JSON list, e.g. `[{group: admins, allow: ["*"]}]` |
 
@@ -146,8 +157,7 @@ it is for local development.
 | --- | --- | --- |
 | `storage.path` | `GOFF_STUDIO_STORAGE_PATH` | **required**; the directory holding your environment directories |
 
-**`s3`** — needs the separate `goff-studio-s3` binary and image, so the AWS SDK
-stays out of the core build. Credentials come from the standard AWS chain.
+**`s3`** — credentials come from the standard AWS chain.
 
 S3 can be the primary store with no Git repository or sync job behind it. Every
 object Studio writes carries who made the change and why, as S3 user metadata:
@@ -183,9 +193,8 @@ lifecycle rule to expire noncurrent versions you no longer need.
 | `storage.prefix` | `GOFF_STUDIO_STORAGE_PREFIX` | optional key prefix |
 | `storage.options` | `GOFF_STUDIO_STORAGE_OPTIONS` | YAML map; `{endpoint: "http://minio:9000"}` for S3-compatible storage |
 
-**`gcs`** — Google Cloud Storage. Needs the separate `goff-studio-gcs` binary,
-built from `backends/gcs`. Credentials come from Google Application Default
-Credentials, so Workload Identity works with no extra configuration.
+**`googleStorage`** — Google Cloud Storage. Credentials come from Google
+Application Default Credentials, so Workload Identity works with no extra configuration.
 
 Writes are conditional on the object's generation, so a stale write is rejected
 rather than clobbering. Every object Studio writes carries the same attribution
@@ -201,8 +210,7 @@ startup and hides the history panel if it is off. See
 | `storage.prefix` | `GOFF_STUDIO_STORAGE_PREFIX` | optional object name prefix |
 | `storage.options` | `GOFF_STUDIO_STORAGE_OPTIONS` | YAML map; `{endpoint: "http://localhost:4443"}` for an emulator (sent without credentials) |
 
-**`azblob`** — Azure Blob Storage. Needs the separate `goff-studio-azblob` binary,
-built from `backends/azblob`. Studio authenticates with `DefaultAzureCredential`
+**`azureBlobStorage`** — Azure Blob Storage. Studio authenticates with `DefaultAzureCredential`
 (managed identity, Workload Identity, or the Azure CLI locally), or with a
 connection string in `AZURE_STORAGE_CONNECTION_STRING`, which takes precedence
 and is how you reach the Azurite emulator. The connection string carries the
@@ -220,9 +228,7 @@ and attribution. See [backends/azblob/README.md](backends/azblob/README.md).
 | `storage.prefix` | `GOFF_STUDIO_STORAGE_PREFIX` | optional blob name prefix |
 | `storage.options` | `GOFF_STUDIO_STORAGE_OPTIONS` | YAML map; `{accountURL: "https://<account>.blob.core.windows.net"}`, required unless `AZURE_STORAGE_CONNECTION_STRING` is set |
 
-**`configmap`** — Kubernetes ConfigMaps. Needs the separate
-`goff-studio-configmap` binary, built from `backends/configmap`. Each
-environment is one ConfigMap named `<prefix><environment>`, and each team file
+**`configmap`** — Kubernetes ConfigMaps. Each environment is one ConfigMap named `<prefix><environment>`, and each team file
 is one key in it, which is the shape GO Feature Flag's Kubernetes retriever
 reads. Studio uses its pod's service account; writes are conditional on the
 ConfigMap's `resourceVersion`, so a stale write conflicts rather than

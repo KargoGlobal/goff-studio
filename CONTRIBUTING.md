@@ -103,10 +103,10 @@ internal/server/      HTTP handlers, the service layer, diffs, plain-English sum
 web/                  React 19 + TypeScript + Vite + Tailwind 4 frontend
 e2e/                  Playwright suite (separate npm project + Go module)
 charts/goff-studio/   Helm chart
-backends/s3/          S3 backend, its own Go module and binary
-backends/gcs/         Google Cloud Storage backend, its own Go module and binary
-backends/azblob/      Azure Blob Storage backend, its own Go module and binary
-backends/configmap/   Kubernetes ConfigMap backend, its own Go module and binary
+backends/s3/          S3 backend (kind s3)
+backends/gcs/         Google Cloud Storage backend (kind googleStorage)
+backends/azblob/      Azure Blob Storage backend (kind azureBlobStorage)
+backends/configmap/   Kubernetes ConfigMap backend (kind configmap)
 ```
 
 Rough dependency direction: `config` and `permissions` are leaves; `goff` depends

@@ -17,39 +17,39 @@ oidc:
   # ID token claim holding group names, matched against permissions[].group below.
   groupsClaim: groups
 
-# Where flags are stored. github is the default and the only backend that can
-# offer history, attribution and review. Override with GOFF_STUDIO_STORAGE.
+# Where flags are stored. kind uses GO Feature Flag's retriever names. github is
+# the default and the only kind that offers history, attribution and review.
+# Override with GOFF_STUDIO_STORAGE.
 storage:
-  backend: github
+  kind: github
 
 # For local development with no credentials at all:
 # storage:
-#   backend: file
+#   kind: file
 #   path: ./flags
 #
-# S3, which needs the goff-studio-s3 image; see backends/s3/README.md.
+# S3; see backends/s3/README.md.
 # No attribution and no review, so Studio's permissions are the only control.
 # storage:
-#   backend: s3
+#   kind: s3
 #   bucket: my-flags-bucket
 #   region: us-east-1
 #
-# Google Cloud Storage, which needs the goff-studio-gcs binary; see backends/gcs/README.md.
+# Google Cloud Storage; see backends/gcs/README.md.
 # storage:
-#   backend: gcs
+#   kind: googleStorage
 #   bucket: my-flags-bucket
 #
-# Azure Blob Storage, which needs the goff-studio-azblob binary; see backends/azblob/README.md.
+# Azure Blob Storage; see backends/azblob/README.md.
 # storage:
-#   backend: azblob
+#   kind: azureBlobStorage
 #   bucket: flags          # the container
 #   options:
 #     accountURL: https://myaccount.blob.core.windows.net
 #
-# Kubernetes ConfigMaps, which needs the goff-studio-configmap binary; see
-# backends/configmap/README.md. No history, attribution or review.
+# Kubernetes ConfigMaps; see backends/configmap/README.md. No history, attribution or review.
 # storage:
-#   backend: configmap
+#   kind: configmap
 #   prefix: goff-          # production -> ConfigMap goff-production
 #   options:
 #     namespace: flags     # defaults to Studio's own namespace

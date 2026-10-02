@@ -24,18 +24,11 @@ FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 
 WORKDIR /src
 
-# Empty builds the core binary; otherwise the name of a directory under backends/.
-ARG BACKEND=""
-
 COPY go.mod go.sum ./
-COPY backends ./backends
 RUN --mount=type=cache,target=/go/pkg/mod \
-    if [ -n "$BACKEND" ]; then \
-      test -d "backends/$BACKEND" || { echo "unknown BACKEND: $BACKEND" >&2; exit 1; }; \
-      cd "backends/$BACKEND"; \
-    fi && \
     go mod download
 
+COPY backends ./backends
 COPY cmd ./cmd
 COPY internal ./internal
 
@@ -47,21 +40,18 @@ ARG TARGETARCH
 # No -X version stamping: cmd/goff-studio/main.go declares no version/revision
 # variables, so -X against them would link silently and do nothing.
 ENV CGO_ENABLED=0
+# Every backend is built in; e.g. GO_TAGS=no_googlestorage,no_azureblobstorage leaves those out.
+ARG GO_TAGS=""
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    if [ -n "$BACKEND" ]; then \
-      moddir="backends/$BACKEND"; pkg="cmd/goff-studio-$BACKEND"; \
-    else \
-      moddir="."; pkg="cmd/goff-studio"; \
-    fi && \
-    rm -rf "$moddir/$pkg/dist" && cp -r /web-dist "$moddir/$pkg/dist" && \
-    cd "$moddir" && \
+    rm -rf cmd/goff-studio/dist && cp -r /web-dist cmd/goff-studio/dist && \
     GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
     go build \
       -trimpath \
+      -tags "$GO_TAGS" \
       -ldflags="-s -w" \
       -o /out/goff-studio \
-      "./$pkg"
+      ./cmd/goff-studio
 
 # ---------- stage 3: distroless runtime ----------
 FROM gcr.io/distroless/static-debian12:nonroot

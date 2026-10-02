@@ -522,8 +522,8 @@ func TestStorageBackendDefaultsToGitHub(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Storage.Backend != "github" {
-		t.Errorf("backend = %q, want github by default", cfg.Storage.Backend)
+	if cfg.Storage.Kind != "github" {
+		t.Errorf("kind = %q, want github by default", cfg.Storage.Kind)
 	}
 	if !cfg.UsesGitHub() {
 		t.Error("UsesGitHub should be true by default")
@@ -532,21 +532,86 @@ func TestStorageBackendDefaultsToGitHub(t *testing.T) {
 
 func TestBackendNameIsNormalizedForTheRegistry(t *testing.T) {
 	dir := t.TempDir()
-	body := strings.Replace(base(t), "github:", "storage:\n  backend: \" File \"\n  path: "+dir+"\n\ngithub:", 1)
+	body := strings.Replace(base(t), "github:", "storage:\n  kind: \" File \"\n  path: "+dir+"\n\ngithub:", 1)
 
 	cfg, err := Load(write(t, body))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Storage.Backend != "file" {
-		t.Errorf("backend = %q, want \"file\": storage.Open looks the name up as given", cfg.Storage.Backend)
+	if cfg.Storage.Kind != "file" {
+		t.Errorf("kind = %q, want \"file\": storage.Open looks the name up as given", cfg.Storage.Kind)
+	}
+}
+
+func TestKindMatchesGOFeatureFlagNamesIgnoringCase(t *testing.T) {
+	for _, given := range []string{"googleStorage", "GOOGLESTORAGE", "googlestorage"} {
+		body := strings.Replace(base(t), "github:", "storage:\n  kind: "+given+"\n\ngithub:", 1)
+		_, err := Load(write(t, body))
+		if err == nil || !strings.Contains(err.Error(), "storage.bucket") {
+			t.Errorf("%q should resolve to googleStorage and ask for a bucket, got %v", given, err)
+		}
+	}
+}
+
+func TestLegacyKindNamesStillWorkWithAWarning(t *testing.T) {
+	for legacy, want := range map[string]string{"gcs": "googleStorage", "azblob": "azureBlobStorage", "AzBlob": "azureBlobStorage"} {
+		c := &Config{Storage: Storage{Kind: legacy}}
+		kind, err := c.resolveKind()
+		if err != nil || kind != want {
+			t.Errorf("%q resolved to %q, %v; want %q", legacy, kind, err, want)
+		}
+		if !warned(c, want) {
+			t.Errorf("%q should warn and name %q, got %v", legacy, want, c.Warnings())
+		}
+	}
+}
+
+func TestBackendKeyIsADeprecatedAliasForKind(t *testing.T) {
+	dir := t.TempDir()
+	body := strings.Replace(base(t), "github:", "storage:\n  backend: file\n  path: "+dir+"\n\ngithub:", 1)
+	cfg, err := Load(write(t, body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Storage.Kind != "file" || cfg.UsesGitHub() {
+		t.Errorf("storage.backend should still select the kind, got %+v", cfg.Storage)
+	}
+	if !warned(cfg, "storage.kind") {
+		t.Errorf("storage.backend should warn and point at storage.kind, got %v", cfg.Warnings())
+	}
+}
+
+func TestKindAndBackendMustAgree(t *testing.T) {
+	dir := t.TempDir()
+	body := strings.Replace(base(t), "github:", "storage:\n  kind: file\n  backend: s3\n  path: "+dir+"\n\ngithub:", 1)
+	if _, err := Load(write(t, body)); err == nil || !strings.Contains(err.Error(), "storage.backend") {
+		t.Fatalf("conflicting kind and backend must fail, got %v", err)
+	}
+
+	body = strings.Replace(base(t), "github:", "storage:\n  kind: googleStorage\n  backend: gcs\n\ngithub:", 1)
+	if _, err := Load(write(t, body)); err == nil || !strings.Contains(err.Error(), "storage.bucket") {
+		t.Fatalf("a legacy backend that names the same kind is not a conflict, got %v", err)
+	}
+}
+
+func TestStorageEnvOverridesBothKeys(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("GOFF_STUDIO_STORAGE", "file")
+	t.Setenv("GOFF_STUDIO_STORAGE_PATH", dir)
+	body := strings.Replace(base(t), "github:", "storage:\n  backend: s3\n\ngithub:", 1)
+	cfg, err := Load(write(t, body))
+	if err != nil {
+		t.Fatalf("GOFF_STUDIO_STORAGE should win over a file's storage.backend: %v", err)
+	}
+	if cfg.Storage.Kind != "file" {
+		t.Errorf("kind = %q, want file", cfg.Storage.Kind)
 	}
 }
 
 func TestFileBackendNeedsAPathAndSkipsGitHubValidation(t *testing.T) {
 	dir := t.TempDir()
 
-	body := strings.Replace(base(t), "github:", "storage:\n  backend: file\n  path: "+dir+"\n\ngithub:", 1)
+	body := strings.Replace(base(t), "github:", "storage:\n  kind: file\n  path: "+dir+"\n\ngithub:", 1)
 	body = strings.Replace(body, "  appID: \"123456\"\n", "", 1)
 	body = strings.Replace(body, "  installationID: \"7890123\"\n", "", 1)
 
@@ -570,7 +635,7 @@ func TestFileBackendNeedsAPathAndSkipsGitHubValidation(t *testing.T) {
 }
 
 func TestFileBackendRejectsMissingPath(t *testing.T) {
-	body := strings.Replace(base(t), "github:", "storage:\n  backend: file\n\ngithub:", 1)
+	body := strings.Replace(base(t), "github:", "storage:\n  kind: file\n\ngithub:", 1)
 	_, err := Load(write(t, body))
 	if err == nil {
 		t.Fatal("the file backend needs a path")
@@ -581,7 +646,7 @@ func TestFileBackendRejectsMissingPath(t *testing.T) {
 }
 
 func TestUnknownStorageBackendRejected(t *testing.T) {
-	body := strings.Replace(base(t), "github:", "storage:\n  backend: dynamodb\n\ngithub:", 1)
+	body := strings.Replace(base(t), "github:", "storage:\n  kind: dynamodb\n\ngithub:", 1)
 	_, err := Load(write(t, body))
 	if err == nil {
 		t.Fatal("an unknown backend must be rejected at startup")
@@ -606,7 +671,7 @@ func TestStorageBackendFromEnvironment(t *testing.T) {
 }
 
 func TestS3BackendNeedsABucketAndMustBeCompiledIn(t *testing.T) {
-	body := strings.Replace(base(t), "github:", "storage:\n  backend: s3\n\ngithub:", 1)
+	body := strings.Replace(base(t), "github:", "storage:\n  kind: s3\n\ngithub:", 1)
 	_, err := Load(write(t, body))
 	if err == nil {
 		t.Fatal("the s3 backend needs a bucket")
@@ -615,55 +680,55 @@ func TestS3BackendNeedsABucketAndMustBeCompiledIn(t *testing.T) {
 		t.Errorf("error should name the key, got %v", err)
 	}
 
-	body = strings.Replace(base(t), "github:", "storage:\n  backend: s3\n  bucket: my-flags-bucket\n\ngithub:", 1)
+	body = strings.Replace(base(t), "github:", "storage:\n  kind: s3\n  bucket: my-flags-bucket\n\ngithub:", 1)
 	_, err = Load(write(t, body))
 	if err == nil {
-		t.Fatal("the core binary has no s3 backend, so this must fail rather than starting and failing later")
+		t.Fatal("a binary built without the s3 backend, so this must fail rather than starting and failing later")
 	}
 	if !strings.Contains(err.Error(), "not compiled into this binary") {
 		t.Errorf("error should explain that a different image is needed, got %v", err)
 	}
 }
 
-func TestGCSBackendNeedsABucketAndMustBeCompiledIn(t *testing.T) {
-	body := strings.Replace(base(t), "github:", "storage:\n  backend: gcs\n\ngithub:", 1)
+func TestGoogleStorageBackendNeedsABucketAndMustBeCompiledIn(t *testing.T) {
+	body := strings.Replace(base(t), "github:", "storage:\n  kind: googleStorage\n\ngithub:", 1)
 	_, err := Load(write(t, body))
 	if err == nil || !strings.Contains(err.Error(), "storage.bucket") {
 		t.Fatalf("the gcs backend needs a bucket, got %v", err)
 	}
 
-	body = strings.Replace(base(t), "github:", "storage:\n  backend: gcs\n  bucket: my-flags-bucket\n\ngithub:", 1)
+	body = strings.Replace(base(t), "github:", "storage:\n  kind: googleStorage\n  bucket: my-flags-bucket\n\ngithub:", 1)
 	_, err = Load(write(t, body))
 	if err == nil || !strings.Contains(err.Error(), "not compiled into this binary") {
-		t.Fatalf("the core binary has no gcs backend, so this must fail with a hint, got %v", err)
+		t.Fatalf("a binary built without the gcs backend, so this must fail with a hint, got %v", err)
 	}
 }
 
-func TestAzblobBackendNeedsAContainerAndMustBeCompiledIn(t *testing.T) {
-	body := strings.Replace(base(t), "github:", "storage:\n  backend: azblob\n\ngithub:", 1)
+func TestAzureBlobStorageBackendNeedsAContainerAndMustBeCompiledIn(t *testing.T) {
+	body := strings.Replace(base(t), "github:", "storage:\n  kind: azureBlobStorage\n\ngithub:", 1)
 	_, err := Load(write(t, body))
 	if err == nil || !strings.Contains(err.Error(), "storage.bucket") {
 		t.Fatalf("the azblob backend needs a container, got %v", err)
 	}
 
-	body = strings.Replace(base(t), "github:", "storage:\n  backend: azblob\n  bucket: flags\n\ngithub:", 1)
+	body = strings.Replace(base(t), "github:", "storage:\n  kind: azureBlobStorage\n  bucket: flags\n\ngithub:", 1)
 	_, err = Load(write(t, body))
 	if err == nil || !strings.Contains(err.Error(), "not compiled into this binary") {
-		t.Fatalf("the core binary has no azblob backend, so this must fail with a hint, got %v", err)
+		t.Fatalf("a binary built without the azblob backend, so this must fail with a hint, got %v", err)
 	}
 }
 
 func TestConfigmapBackendMustBeCompiledIn(t *testing.T) {
-	body := strings.Replace(base(t), "github:", "storage:\n  backend: configmap\n\ngithub:", 1)
+	body := strings.Replace(base(t), "github:", "storage:\n  kind: configmap\n\ngithub:", 1)
 	_, err := Load(write(t, body))
 	if err == nil || !strings.Contains(err.Error(), "not compiled into this binary") {
-		t.Fatalf("the core binary has no configmap backend, so this must fail with a hint, got %v", err)
+		t.Fatalf("a binary built without the configmap backend, so this must fail with a hint, got %v", err)
 	}
 }
 
 func TestUsesGitHubOnlyForTheGitHubBackend(t *testing.T) {
 	dir := t.TempDir()
-	body := strings.Replace(base(t), "github:", "storage:\n  backend: file\n  path: "+dir+"\n\ngithub:", 1)
+	body := strings.Replace(base(t), "github:", "storage:\n  kind: file\n  path: "+dir+"\n\ngithub:", 1)
 	cfg, err := Load(write(t, body))
 	if err != nil {
 		t.Fatal(err)
@@ -878,7 +943,7 @@ func TestEnvVarsOverrideAFileAndReplaceListsWholesale(t *testing.T) {
 	}
 
 	path := filepath.Join(dir, "studio.yaml")
-	body := "server:\n  addr: \":9999\"\nstorage:\n  backend: file\n  path: " + dir +
+	body := "server:\n  addr: \":9999\"\nstorage:\n  kind: file\n  path: " + dir +
 		"\nprotectedEnvironments: [fromfile, other]\npermissions:\n  - group: file-group\n    allow: [\"*\"]\n"
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)

@@ -1,18 +1,14 @@
 # Azure Blob Storage backend
 
 Writes flags straight to blobs in an Azure Storage container, the same layout
-GO Feature Flag's `azureBlobStorage` retriever reads. It is a separate Go module
-so the Azure SDK only ends up in builds that use it.
+GO Feature Flag's `azureBlobStorage` retriever reads. Built into the standard `goff-studio` binary and image; leave it out with `-tags no_azureblobstorage`.
+The old kind name `azblob` still works, with a warning.
 
 ## Using it
 
-```sh
-go build -o goff-studio-azblob ./cmd/goff-studio-azblob
-```
-
 ```yaml
 storage:
-  backend: azblob
+  kind: azureBlobStorage
   bucket: flags        # the container
   prefix: studio       # optional, invisible to the UI
   options:
@@ -22,10 +18,10 @@ storage:
 Or with no config file at all:
 
 ```sh
-GOFF_STUDIO_STORAGE=azblob \
+GOFF_STUDIO_STORAGE=azureBlobStorage \
 GOFF_STUDIO_STORAGE_BUCKET=flags \
 GOFF_STUDIO_STORAGE_OPTIONS='{accountURL: "https://myaccount.blob.core.windows.net"}' \
-  ./goff-studio-azblob
+  ./goff-studio
 ```
 
 ## Credentials
@@ -43,7 +39,7 @@ Each API call has a 30 second timeout.
 
 ## What you give up
 
-| | github | azblob |
+| | github | azureBlobStorage |
 |---|---|---|
 | History | commits | blob versions, only if blob versioning is on |
 | Attribution | commit author and trailers | blob metadata, only if blob versioning is on |

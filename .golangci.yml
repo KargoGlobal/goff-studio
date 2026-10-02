@@ -76,7 +76,7 @@ linters:
         linters:
           - lll
       # The backend registry is deliberately wired up by init, like database/sql drivers.
-      - path: internal/storage/(file|github)\.go
+      - path: (internal/storage/(file|github)|backends/[^/]+/[^/]+)\.go
         linters:
           - gochecknoinits
       - path: _test\.go$

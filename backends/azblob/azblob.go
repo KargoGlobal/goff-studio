@@ -17,7 +17,7 @@ import (
 )
 
 func init() {
-	storage.Register("azblob", func(s storage.Settings) (storage.Backend, error) {
+	storage.Register(storage.KindAzureBlobStorage, func(s storage.Settings) (storage.Backend, error) {
 		return New(context.Background(), Config{
 			Container:  s.Bucket,
 			Prefix:     s.Prefix,
@@ -100,7 +100,7 @@ func NewWithAPI(api API, container, prefix string) *Backend {
 	return &Backend{api: api, container: container, prefix: strings.Trim(prefix, "/")}
 }
 
-func (b *Backend) Name() string { return "azblob" }
+func (b *Backend) Name() string { return storage.KindAzureBlobStorage }
 
 // Capabilities reports history and attribution only when blob versioning is
 // on: every version carries its author in metadata, but without versioning

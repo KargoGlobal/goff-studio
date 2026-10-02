@@ -3,11 +3,29 @@ package storage
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 )
 
+// Kind names match GO Feature Flag's retriever kinds where one exists.
+const (
+	KindGitHub           = "github"
+	KindFile             = "file"
+	KindS3               = "s3"
+	KindGoogleStorage    = "googleStorage"
+	KindAzureBlobStorage = "azureBlobStorage"
+	KindConfigMap        = "configmap"
+)
+
+var builtinKinds = []string{KindGitHub, KindFile, KindS3, KindGoogleStorage, KindAzureBlobStorage, KindConfigMap}
+
+var legacyKinds = map[string]string{
+	"gcs":    KindGoogleStorage,
+	"azblob": KindAzureBlobStorage,
+}
+
 type Settings struct {
-	Backend string
+	Kind    string
 	Path    string
 	Bucket  string
 	Region  string
@@ -22,19 +40,45 @@ var (
 	registry   = map[string]Factory{}
 )
 
-func Register(name string, factory Factory) {
+func Register(kind string, factory Factory) {
 	registryMu.Lock()
 	defer registryMu.Unlock()
-	registry[name] = factory
+	registry[kind] = factory
+}
+
+func Canonical(kind string) string {
+	kind = strings.TrimSpace(kind)
+	if renamed, ok := LegacyKind(kind); ok {
+		return renamed
+	}
+	for _, known := range builtinKinds {
+		if strings.EqualFold(kind, known) {
+			return known
+		}
+	}
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	for known := range registry {
+		if strings.EqualFold(kind, known) {
+			return known
+		}
+	}
+	return kind
+}
+
+func LegacyKind(kind string) (string, bool) {
+	renamed, ok := legacyKinds[strings.ToLower(strings.TrimSpace(kind))]
+	return renamed, ok
 }
 
 func Open(s Settings) (Backend, error) {
+	kind := Canonical(s.Kind)
 	registryMu.RLock()
-	factory, ok := registry[s.Backend]
+	factory, ok := registry[kind]
 	registryMu.RUnlock()
 
 	if !ok {
-		return nil, fmt.Errorf("%q is not a known storage backend; built with: %s", s.Backend, joined(Available()))
+		return nil, fmt.Errorf("%q is not a known storage kind; built with: %s", s.Kind, joined(Available()))
 	}
 	return factory(s)
 }
@@ -51,10 +95,10 @@ func Available() []string {
 	return out
 }
 
-func Registered(name string) bool {
+func Registered(kind string) bool {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
-	_, ok := registry[name]
+	_, ok := registry[kind]
 	return ok
 }
 
@@ -62,9 +106,5 @@ func joined(names []string) string {
 	if len(names) == 0 {
 		return "none"
 	}
-	out := names[0]
-	for _, n := range names[1:] {
-		out += ", " + n
-	}
-	return out
+	return strings.Join(names, ", ")
 }

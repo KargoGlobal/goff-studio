@@ -9,30 +9,6 @@ updates:
       go:
         patterns: ["*"]
 
-  - package-ecosystem: gomod
-    directory: /backends/s3
-    schedule:
-      interval: weekly
-    groups:
-      aws:
-        patterns: ["*"]
-
-  - package-ecosystem: gomod
-    directory: /backends/gcs
-    schedule:
-      interval: weekly
-    groups:
-      gcs:
-        patterns: ["*"]
-
-  - package-ecosystem: gomod
-    directory: /backends/azblob
-    schedule:
-      interval: weekly
-    groups:
-      azblob:
-        patterns: ["*"]
-
   - package-ecosystem: npm
     directory: /web
     schedule:
