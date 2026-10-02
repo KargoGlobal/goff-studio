@@ -317,8 +317,22 @@ func TestQuietFlagHistoryReadsPastOtherFlagsChanges(t *testing.T) {
 	if len(got) != 1 || got[0] != "[production] flags/checkout: created" {
 		t.Errorf("history = %q", got)
 	}
-	if strings.Join(repo.pages, ",") != fmt.Sprintf("%d,%d", DefaultHistory, MaxHistoryScan) {
+	if strings.Join(repo.pages, ",") != fmt.Sprintf("%d,100", DefaultHistory) {
 		t.Errorf("pages requested = %v", repo.pages)
+	}
+}
+
+func TestQuietFlagHistoryReadsPastGitHubsPageSize(t *testing.T) {
+	repo := singleFileRepo()
+	for i := 0; i < 150; i++ {
+		repo.commits = append(repo.commits, fmt.Sprintf("[production] flags/banner: change %d", i))
+	}
+	repo.commits = append(repo.commits, "[production] flags/checkout: created")
+	srv, sealer := singleFileServer(t, repo, adminRules())
+
+	got := historyMessages(t, srv, sealer, "checkout")
+	if len(got) != 1 || got[0] != "[production] flags/checkout: created" {
+		t.Errorf("history = %q, pages requested = %v", got, repo.pages)
 	}
 }
 

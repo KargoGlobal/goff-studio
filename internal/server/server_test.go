@@ -141,9 +141,14 @@ func (r *repoState) server(t *testing.T) *httptest.Server {
 				messages = []string{"[production] payments/new-checkout: disabled"}
 			}
 			perPage, _ := strconv.Atoi(req.URL.Query().Get("per_page"))
+			page, _ := strconv.Atoi(req.URL.Query().Get("page"))
+			perPage, page = min(perPage, 100), max(page, 1)
 			out := []map[string]any{}
 			for i, m := range messages {
-				if i == perPage {
+				if i < (page-1)*perPage {
+					continue
+				}
+				if i == page*perPage {
 					break
 				}
 				out = append(out, map[string]any{"sha": fmt.Sprintf("c%d", i+1), "commit": map[string]any{

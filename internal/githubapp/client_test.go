@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -380,4 +381,36 @@ func flagBlock(content []byte, key string) string {
 		}
 	}
 	return strings.Join(out, "\n")
+}
+
+func TestHistoryPagesPastGitHubsPageLimit(t *testing.T) {
+	var pages []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		perPage, page := r.URL.Query().Get("per_page"), r.URL.Query().Get("page")
+		pages = append(pages, perPage+"@"+page)
+		n := 100
+		if page == "3" {
+			n = 7
+		}
+		out := make([]map[string]any, n)
+		for i := range out {
+			out[i] = map[string]any{"sha": fmt.Sprintf("p%s-%d", page, i), "commit": map[string]any{"message": "m"}}
+		}
+		_ = json.NewEncoder(w).Encode(out)
+	}))
+	defer srv.Close()
+
+	c := New(Config{APIBase: srv.URL, Owner: "a", Repo: "b"}, StaticToken("t"), srv.Client())
+	commits, err := c.History(context.Background(), "f.yaml", 250)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(commits) != 207 || strings.Join(pages, ",") != "100@1,100@2,100@3" {
+		t.Errorf("got %d commits from pages %v", len(commits), pages)
+	}
+
+	pages = nil
+	if commits, _ = c.History(context.Background(), "f.yaml", 150); len(commits) != 150 || len(pages) != 2 {
+		t.Errorf("limit 150: got %d commits from pages %v", len(commits), pages)
+	}
 }

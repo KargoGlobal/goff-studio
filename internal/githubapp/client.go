@@ -252,9 +252,27 @@ func (c *Client) History(ctx context.Context, path string, limit int) ([]Commit,
 	if limit <= 0 {
 		limit = 30
 	}
-	endpoint := fmt.Sprintf("%s/repos/%s/%s/commits?path=%s&sha=%s&per_page=%d",
-		c.cfg.APIBase, c.cfg.Owner, c.cfg.Repo, url.QueryEscape(path), url.QueryEscape(c.cfg.Branch), limit)
+	perPage := min(limit, maxCommitsPerPage)
 
+	out := make([]Commit, 0, limit)
+	for page := 1; len(out) < limit; page++ {
+		endpoint := fmt.Sprintf("%s/repos/%s/%s/commits?path=%s&sha=%s&per_page=%d&page=%d",
+			c.cfg.APIBase, c.cfg.Owner, c.cfg.Repo, url.QueryEscape(path), url.QueryEscape(c.cfg.Branch), perPage, page)
+		got, err := c.commitPage(ctx, endpoint)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, got...)
+		if len(got) < perPage {
+			break
+		}
+	}
+	return out[:min(len(out), limit)], nil
+}
+
+const maxCommitsPerPage = 100
+
+func (c *Client) commitPage(ctx context.Context, endpoint string) ([]Commit, error) {
 	var raw []struct {
 		SHA    string `json:"sha"`
 		Commit struct {
