@@ -225,6 +225,15 @@ export function useSetExperimentation(env: string) {
   })
 }
 
+export function useSetBucketingKey(env: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ flag, bucketingKey }: { flag: Flag; bucketingKey: string }) =>
+      api.setBucketingKey(env, flag.key, bucketingKey, flag.fileSha),
+    onSettled: () => invalidateFlag(qc, env),
+  })
+}
+
 export function useSetDescription(env: string) {
   const qc = useQueryClient()
   return useMutation({

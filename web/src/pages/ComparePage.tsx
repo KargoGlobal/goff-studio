@@ -21,11 +21,12 @@ const FIELD_LABELS: Record<string, string> = {
   default: 'Default rule',
   rules: 'Targeting rules',
   experimentation: 'Schedule',
+  bucketingKey: 'Split by',
   metadata: 'Metadata',
   enabled: 'On/off state',
 }
 
-const SAFE_FIELDS = ['variations', 'default', 'rules', 'experimentation', 'metadata']
+const SAFE_FIELDS = ['variations', 'default', 'rules', 'experimentation', 'bucketingKey', 'metadata']
 
 function SideCard({ side, label }: { side: CompareSide; label: string }) {
   return (

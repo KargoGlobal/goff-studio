@@ -18,6 +18,7 @@ const (
 	FieldRules           = "rules"
 	FieldExperimentation = "experimentation"
 	FieldMetadata        = "metadata"
+	FieldBucketingKey    = "bucketingKey"
 )
 
 var CopyableFields = []string{
@@ -25,6 +26,7 @@ var CopyableFields = []string{
 	FieldDefault,
 	FieldRules,
 	FieldExperimentation,
+	FieldBucketingKey,
 	FieldMetadata,
 	FieldEnabled,
 }
@@ -141,6 +143,7 @@ func diffFields(source, target goff.Flag) []string {
 		FieldDefault:         reflect.DeepEqual(source.Default, target.Default),
 		FieldRules:           reflect.DeepEqual(source.Rules, target.Rules),
 		FieldExperimentation: reflect.DeepEqual(source.Experimentation, target.Experimentation),
+		FieldBucketingKey:    source.BucketingKey == target.BucketingKey,
 		FieldMetadata:        sameMetadata(source.Metadata, target.Metadata),
 	} {
 		if !same {

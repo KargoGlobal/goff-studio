@@ -290,7 +290,7 @@ func TestPromoteRejectsBadRequests(t *testing.T) {
 	cases := map[string]string{
 		"same environment": promoteBodyJSON("dev", "dev", FieldRules),
 		"no fields":        promoteBodyJSON("dev", "production"),
-		"unknown field":    promoteBodyJSON("dev", "production", "bucketingKey"),
+		"unknown field":    promoteBodyJSON("dev", "production", "trackEvents"),
 	}
 
 	for name, body := range cases {

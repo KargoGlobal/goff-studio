@@ -51,6 +51,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/environments/{env}/flags/{key}/variations", s.withSession(s.handleVariations))
 	mux.HandleFunc("POST /api/environments/{env}/flags/{key}/state", s.withSession(s.handleToggle))
 	mux.HandleFunc("PUT /api/environments/{env}/flags/{key}/description", s.withSession(s.handleDescription))
+	mux.HandleFunc("PUT /api/environments/{env}/flags/{key}/bucketing-key", s.withSession(s.handleBucketingKey))
 	mux.HandleFunc("POST /api/environments/{env}/flags/{key}/rollout", s.withSession(s.handleRollout))
 	mux.HandleFunc("POST /api/environments/{env}/flags/{key}/progressive", s.withSession(s.handleProgressive))
 	mux.HandleFunc("POST /api/environments/{env}/flags/{key}/experimentation", s.withSession(s.handleExperimentation))
@@ -399,6 +400,7 @@ type diffBody struct {
 	Window      *experimentWindow  `json:"experimentation"`
 	Order       []string           `json:"order"`
 	Description string             `json:"description"`
+	Bucketing   string             `json:"bucketingKey"`
 }
 
 type outcomeBody struct {
@@ -899,6 +901,55 @@ func (s *Server) handleDescription(w http.ResponseWriter, r *http.Request, sess 
 	writeJSON(w, http.StatusOK, result)
 }
 
+func applyBucketingKey(attribute string) func(*goff.Flag) {
+	return func(f *goff.Flag) { f.BucketingKey = attribute }
+}
+
+type bucketingKeyBody struct {
+	BucketingKey string `json:"bucketingKey"`
+	FileSHA      string `json:"fileSha"`
+}
+
+func (s *Server) handleBucketingKey(w http.ResponseWriter, r *http.Request, sess auth.Session) {
+	var body bucketingKeyBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "could not read the request")
+		return
+	}
+	if err := validBucketingKey(body.BucketingKey); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	attribute := strings.TrimSpace(body.BucketingKey)
+
+	env, key := r.PathValue("env"), r.PathValue("key")
+	view, err := s.svc.Get(r.Context(), sess, env, key)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	summary := "split by " + attribute
+	if attribute == "" {
+		summary = "split by evaluation"
+	}
+	result, err := s.svc.Save(r.Context(), sess, SaveRequest{
+		Environment: env,
+		Key:         key,
+		File:        view.File,
+		FileSHA:     body.FileSHA,
+		LoadedFlag:  s.snapshotFor(env, key, body.FileSHA),
+		Action:      permissions.EditRules,
+		Summary:     summary,
+		Mutate:      applyBucketingKey(attribute),
+	})
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 func applyExperimentation(next *goff.Experimentation) func(*goff.Flag) {
 	return func(f *goff.Flag) { f.Experimentation = next }
 }
@@ -1328,6 +1379,17 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request, sess auth.Se
 	case "experimentationClear":
 		mutate = applyExperimentation(nil)
 		description = fmt.Sprintf("Remove the experimentation window on %s", key)
+	case "bucketingKey":
+		if err := validBucketingKey(body.Bucketing); err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		attribute := strings.TrimSpace(body.Bucketing)
+		mutate = applyBucketingKey(attribute)
+		description = fmt.Sprintf("Split %s by %s", key, attribute)
+		if attribute == "" {
+			description = fmt.Sprintf("Split %s by evaluation", key)
+		}
 	case "description":
 		if err := validDescription(body.Description); err != nil {
 			writeServiceError(w, err)

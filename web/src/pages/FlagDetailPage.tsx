@@ -33,6 +33,7 @@ import {
   useDeleteFlag,
   useRenameFlag,
   useSetDescription,
+  useSetBucketingKey,
   useSetProgressive,
   useSetExperimentation,
   useDeleteRule,
@@ -53,6 +54,7 @@ import { VariationsEditor } from '@/components/VariationsEditor'
 import { variationColor } from '@/lib/variationColor'
 import { ProgressiveEditor } from '@/components/ProgressiveEditor'
 import { ExperimentationEditor } from '@/components/ExperimentationEditor'
+import { BucketingEditor } from '@/components/BucketingEditor'
 import { groupFromCondition, queryFromGroup } from '@/lib/query'
 import { tokensFromCondition } from '@/lib/tokens'
 import { ConditionView } from '@/components/ConditionView'
@@ -80,6 +82,7 @@ type Pending =
   | { kind: 'experimentationClear' }
   | { kind: 'rename'; newKey: string }
   | { kind: 'description'; text: string }
+  | { kind: 'bucketingKey'; attribute: string }
   | { kind: 'deleteFlag' }
 
 const emptyGroup: RuleGroupType = {
@@ -107,6 +110,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
   const deleteFlag = useDeleteFlag(env)
   const renameFlag = useRenameFlag(env)
   const setDescription = useSetDescription(env)
+  const setBucketingKey = useSetBucketingKey(env)
   const setProgressive = useSetProgressive(env)
   const setExperimentation = useSetExperimentation(env)
 
@@ -156,6 +160,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
     deleteFlag.isPending ||
     renameFlag.isPending ||
     setDescription.isPending ||
+    setBucketingKey.isPending ||
     setProgressive.isPending ||
     setExperimentation.isPending
 
@@ -233,6 +238,8 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
         return api.diffGeneric(env, key, { change: 'rename', name: next.newKey })
       case 'description':
         return api.diffGeneric(env, key, { change: 'description', description: next.text })
+      case 'bucketingKey':
+        return api.diffGeneric(env, key, { change: 'bucketingKey', bucketingKey: next.attribute })
       case 'deleteFlag':
         return api.diffGeneric(env, key, { change: 'delete' })
     }
@@ -335,6 +342,8 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
         return renameFlag.mutateAsync({ flag: target, newKey: change.newKey })
       case 'description':
         return setDescription.mutateAsync({ flag: target, description: change.text })
+      case 'bucketingKey':
+        return setBucketingKey.mutateAsync({ flag: target, bucketingKey: change.attribute })
       case 'deleteFlag':
         return deleteFlag.mutateAsync(target)
     }
@@ -594,6 +603,13 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                     onRemove={() => void openReview({ kind: 'experimentationClear' })}
                   />
                 </div>
+
+                <BucketingEditor
+                  flag={flag}
+                  attributes={attributes ?? []}
+                  disabled={!can('edit_rules')}
+                  onSave={(attribute) => void openReview({ kind: 'bucketingKey', attribute })}
+                />
               </>
             )}
           </Card>
@@ -639,6 +655,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                       <span className="text-[13px] font-medium max-md:min-w-0 max-md:wrap-anywhere">{rule.name || 'Unnamed rule'}</span>
                       {rule.advanced && <Badge tone="warn">advanced</Badge>}
                       {rule.disabled && <Badge tone="neutral">off</Badge>}
+                      {flag.bucketingKey && isSplit && <Badge tone="brand">split by {flag.bucketingKey}</Badge>}
 
                       {can('edit_rules') && (
                         <span className="ml-auto flex items-center gap-1 max-md:gap-1.5">
@@ -919,8 +936,11 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
               )}
 
               <div className="rounded-lg border border-dashed p-3">
-                <p className="text-[12px] font-medium uppercase tracking-wide text-ink-muted">
+                <p className="flex items-center gap-2 text-[12px] font-medium uppercase tracking-wide text-ink-muted">
                   Default rule
+                  {flag.bucketingKey && flag.default?.percentage && (
+                    <Badge tone="brand" className="normal-case tracking-normal">split by {flag.bucketingKey}</Badge>
+                  )}
                 </p>
                 <p className="mt-1 text-[13px] text-ink">
                   Serves <strong>{describeOutcome(flag.default)}</strong>

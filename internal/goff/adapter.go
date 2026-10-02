@@ -102,6 +102,14 @@ func (a *Adapter) Serialize(existing []byte, key string, f Flag) ([]byte, error)
 		return nil, err
 	}
 
+	if f.BucketingKey != "" {
+		if err := doc.SetField(key, "bucketingKey", f.BucketingKey); err != nil {
+			return nil, err
+		}
+	} else if err := doc.DeleteField(key, "bucketingKey"); err != nil {
+		return nil, err
+	}
+
 	if len(f.Metadata) > 0 {
 		if err := doc.SetField(key, "metadata", f.Metadata); err != nil {
 			return nil, err
@@ -302,6 +310,9 @@ func newFlagBody(f Flag) *yaml.Node {
 	if f.Experimentation != nil {
 		add("experimentation", experimentationBody(*f.Experimentation))
 	}
+	if f.BucketingKey != "" {
+		add("bucketingKey", &yaml.Node{Kind: yaml.ScalarNode, Tag: tagStr, Value: f.BucketingKey})
+	}
 	if len(f.Metadata) > 0 {
 		meta := &yaml.Node{}
 		_ = meta.Encode(f.Metadata)
@@ -411,6 +422,7 @@ func fromInternal(key, path string, internal flag.InternalFlag) Flag {
 	}
 
 	f.Experimentation = experimentationOf(internal.Experimentation)
+	f.BucketingKey = deref(internal.BucketingKey, "")
 
 	if internal.Metadata != nil {
 		f.Metadata = *internal.Metadata
@@ -509,9 +521,6 @@ func preservedFields(internal flag.InternalFlag) []string {
 	}
 	if internal.TrackEvents != nil {
 		out = append(out, "trackEvents")
-	}
-	if internal.BucketingKey != nil {
-		out = append(out, "bucketingKey")
 	}
 	if internal.Rules != nil {
 		for _, r := range *internal.Rules {

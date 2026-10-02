@@ -151,6 +151,9 @@ func promoteMutator(source goff.Flag, fields []string) func(*goff.Flag) {
 		if want[FieldExperimentation] {
 			target.Experimentation = source.Experimentation
 		}
+		if want[FieldBucketingKey] {
+			target.BucketingKey = source.BucketingKey
+		}
 		if want[FieldMetadata] {
 			target.Metadata = mergedMetadata(source.Metadata, target.Metadata)
 		}

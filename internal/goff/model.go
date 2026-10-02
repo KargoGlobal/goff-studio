@@ -60,6 +60,7 @@ type Flag struct {
 	Rules           []Rule           `json:"rules"`
 	Default         Outcome          `json:"default"`
 	Experimentation *Experimentation `json:"experimentation,omitempty"`
+	BucketingKey    string           `json:"bucketingKey,omitempty"`
 	Metadata        map[string]any   `json:"metadata,omitempty"`
 	Team            string           `json:"team"`
 	Preserved       []string         `json:"preserved,omitempty"`

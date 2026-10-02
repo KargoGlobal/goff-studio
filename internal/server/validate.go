@@ -47,6 +47,23 @@ func validDescription(value string) error {
 	return nil
 }
 
+func validBucketingKey(value string) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	if hasControlChars(value) || strings.ContainsAny(trimmed, " \t") {
+		return invalid("%q is not a valid attribute name", trimmed)
+	}
+	if len(trimmed) > MaxNameLength {
+		return invalid("an attribute name cannot be longer than %d characters", MaxNameLength)
+	}
+	if strings.HasPrefix(trimmed, ".") || strings.HasSuffix(trimmed, ".") || strings.Contains(trimmed, "..") {
+		return invalid("%q is not a valid attribute path", trimmed)
+	}
+	return nil
+}
+
 // A name reaching a YAML seed or a path segment must not be able to break out of either.
 func validName(kind, value string) error {
 	if hasControlChars(value) {

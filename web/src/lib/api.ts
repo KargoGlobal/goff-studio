@@ -113,6 +113,7 @@ export interface Flag {
   rules: Rule[] | null
   default: Outcome
   experimentation?: Experimentation
+  bucketingKey?: string
   metadata?: Record<string, unknown>
   team: string
   preserved?: string[]
@@ -352,6 +353,12 @@ export const api = {
     request<SaveResult>(`/api/flags/${encodeURIComponent(key)}/promote`, {
       method: 'POST',
       body: JSON.stringify(payload),
+    }),
+
+  setBucketingKey: (env: string, key: string, bucketingKey: string, fileSha: string) =>
+    request<SaveResult>(`/api/environments/${env}/flags/${encodeURIComponent(key)}/bucketing-key`, {
+      method: 'PUT',
+      body: JSON.stringify({ bucketingKey, fileSha }),
     }),
 
   setDescription: (env: string, key: string, description: string, fileSha: string) =>
