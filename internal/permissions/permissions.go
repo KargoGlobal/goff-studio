@@ -32,7 +32,8 @@ func ParseAction(raw string) (Action, error) {
 
 type Rule struct {
 	Group        string   `yaml:"group"`
-	Allow        []string `yaml:"allow"`
+	Teams        []string `yaml:"teams"`
+	LegacyAllow  []string `yaml:"allow"`
 	Environments []string `yaml:"environments"`
 	Actions      []string `yaml:"actions"`
 }
@@ -46,8 +47,12 @@ func New(rules []Rule) (*Set, error) {
 		if strings.TrimSpace(r.Group) == "" {
 			return nil, fmt.Errorf("permission rule %d has no group", i)
 		}
-		if len(r.Allow) == 0 {
-			return nil, fmt.Errorf("permission rule for group %q has no allow patterns", r.Group)
+		if len(r.LegacyAllow) > 0 {
+			return nil, fmt.Errorf("permission rule for group %q uses allow, which is now called teams; rename it to teams: [%s]",
+				r.Group, strings.Join(r.LegacyAllow, ", "))
+		}
+		if len(r.Teams) == 0 {
+			return nil, fmt.Errorf("permission rule for group %q has no teams; list the teams it covers, or [\"*\"] for all", r.Group)
 		}
 		for _, a := range r.Actions {
 			if _, err := ParseAction(a); err != nil {
@@ -83,7 +88,7 @@ func (s *Set) Allowed(req Request) bool {
 		if !actionMatches(rule, req.Action) {
 			continue
 		}
-		if !fileMatches(rule.Allow, req.File) {
+		if !fileMatches(rule.Teams, req.File) {
 			continue
 		}
 		return true

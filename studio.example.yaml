@@ -77,15 +77,15 @@ protectedEnvironments: [production]
 permissions:
   # Full access everywhere.
   - group: flags-admins
-    allow: ["*"]
+    teams: ["*"]
 
   # A team owning one file across all environments; omitting "actions" grants all of them.
   - group: payments-team
-    allow: ["payments"]
+    teams: ["payments"]
     environments: [dev, staging, production]
 
   # Business users who may flip and ramp, but not change targeting or variations.
   - group: marketing
-    allow: ["growth"]
+    teams: ["growth"]
     environments: [production]
     actions: [toggle, rollout]

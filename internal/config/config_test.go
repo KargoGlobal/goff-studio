@@ -29,9 +29,9 @@ protectedEnvironments: [production, staging]
 
 permissions:
   - group: flags-admins
-    allow: ["*"]
+    teams: ["*"]
   - group: marketing
-    allow: ["growth"]
+    teams: ["growth"]
     environments: [production]
     actions: [toggle, rollout]
 `
@@ -751,7 +751,7 @@ func TestLoadOptionalRunsWithNoConfigFileAtAll(t *testing.T) {
 	t.Setenv("GOFF_STUDIO_STORAGE", "file")
 	t.Setenv("GOFF_STUDIO_STORAGE_PATH", dir)
 	t.Setenv("GOFF_STUDIO_PROTECTED_ENVIRONMENTS", "dev, production")
-	t.Setenv("GOFF_STUDIO_PERMISSIONS", `[{group: flags-admins, allow: ["*"]}]`)
+	t.Setenv("GOFF_STUDIO_PERMISSIONS", `[{group: flags-admins, teams: ["*"]}]`)
 
 	cfg, err := LoadOptional(filepath.Join(dir, "absent.yaml"))
 	if err != nil {
@@ -791,7 +791,7 @@ func envOnly(t *testing.T) string {
 	t.Setenv("GOFF_STUDIO_OIDC_CLIENT_SECRET", "secret")
 	t.Setenv("GOFF_STUDIO_STORAGE", "file")
 	t.Setenv("GOFF_STUDIO_STORAGE_PATH", dir)
-	t.Setenv("GOFF_STUDIO_PERMISSIONS", `[{group: "*", allow: ["*"]}]`)
+	t.Setenv("GOFF_STUDIO_PERMISSIONS", `[{group: "*", teams: ["*"]}]`)
 	return filepath.Join(dir, "absent.yaml")
 }
 
@@ -923,7 +923,7 @@ func TestStorageOptionsCanComeFromTheEnvironment(t *testing.T) {
 	t.Setenv("GOFF_STUDIO_OIDC_CLIENT_SECRET", "secret")
 	t.Setenv("GOFF_STUDIO_STORAGE", "file")
 	t.Setenv("GOFF_STUDIO_STORAGE_PATH", dir)
-	t.Setenv("GOFF_STUDIO_PERMISSIONS", `[{group: "*", allow: ["*"]}]`)
+	t.Setenv("GOFF_STUDIO_PERMISSIONS", `[{group: "*", teams: ["*"]}]`)
 	t.Setenv("GOFF_STUDIO_STORAGE_OPTIONS", `{endpoint: "http://minio:9000"}`)
 
 	cfg, err := LoadOptional(filepath.Join(dir, "absent.yaml"))
@@ -944,7 +944,7 @@ func TestEnvVarsOverrideAFileAndReplaceListsWholesale(t *testing.T) {
 
 	path := filepath.Join(dir, "studio.yaml")
 	body := "server:\n  addr: \":9999\"\nstorage:\n  kind: file\n  path: " + dir +
-		"\nprotectedEnvironments: [fromfile, other]\npermissions:\n  - group: file-group\n    allow: [\"*\"]\n"
+		"\nprotectedEnvironments: [fromfile, other]\npermissions:\n  - group: file-group\n    teams: [\"*\"]\n"
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}

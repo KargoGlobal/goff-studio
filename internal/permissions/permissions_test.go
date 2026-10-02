@@ -1,13 +1,16 @@
 package permissions
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func testSet(t *testing.T) *Set {
 	t.Helper()
 	set, err := New([]Rule{
-		{Group: "flags-admins", Allow: []string{"*"}},
-		{Group: "payments-team", Allow: []string{"payments"}, Environments: []string{"dev", "staging", "production"}},
-		{Group: "marketing", Allow: []string{"growth"}, Environments: []string{"production"}, Actions: []string{"toggle", "rollout"}},
+		{Group: "flags-admins", Teams: []string{"*"}},
+		{Group: "payments-team", Teams: []string{"payments"}, Environments: []string{"dev", "staging", "production"}},
+		{Group: "marketing", Teams: []string{"growth"}, Environments: []string{"production"}, Actions: []string{"toggle", "rollout"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -100,7 +103,7 @@ func TestOmittingActionsGrantsAll(t *testing.T) {
 }
 
 func TestViewIsImpliedByAnyOtherAction(t *testing.T) {
-	set, err := New([]Rule{{Group: "toggler", Allow: []string{"x"}, Actions: []string{"toggle"}}})
+	set, err := New([]Rule{{Group: "toggler", Teams: []string{"x"}, Actions: []string{"toggle"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +113,7 @@ func TestViewIsImpliedByAnyOtherAction(t *testing.T) {
 }
 
 func TestGlobPatterns(t *testing.T) {
-	set, err := New([]Rule{{Group: "team", Allow: []string{"pay*"}}})
+	set, err := New([]Rule{{Group: "team", Teams: []string{"pay*"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +127,7 @@ func TestGlobPatterns(t *testing.T) {
 }
 
 func TestPathPatterns(t *testing.T) {
-	set, err := New([]Rule{{Group: "team", Allow: []string{"production/payments*"}}})
+	set, err := New([]Rule{{Group: "team", Teams: []string{"production/payments*"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,13 +186,13 @@ func TestMultipleGroupsUnion(t *testing.T) {
 }
 
 func TestInvalidConfigIsRejected(t *testing.T) {
-	if _, err := New([]Rule{{Group: "", Allow: []string{"*"}}}); err == nil {
+	if _, err := New([]Rule{{Group: "", Teams: []string{"*"}}}); err == nil {
 		t.Error("a rule without a group should be rejected")
 	}
 	if _, err := New([]Rule{{Group: "g"}}); err == nil {
-		t.Error("a rule without allow patterns should be rejected")
+		t.Error("a rule without teams should be rejected")
 	}
-	if _, err := New([]Rule{{Group: "g", Allow: []string{"*"}, Actions: []string{"launch_missiles"}}}); err == nil {
+	if _, err := New([]Rule{{Group: "g", Teams: []string{"*"}, Actions: []string{"launch_missiles"}}}); err == nil {
 		t.Error("an unknown action should be rejected at config load, not silently ignored")
 	}
 }
@@ -203,11 +206,11 @@ func TestEmptyActionIsDenied(t *testing.T) {
 
 func TestCanCreateEnvironments(t *testing.T) {
 	set, err := New([]Rule{
-		{Group: "admins", Allow: []string{"*"}},
-		{Group: "starred", Allow: []string{"*"}, Environments: []string{"*"}, Actions: []string{"create"}},
-		{Group: "scoped", Allow: []string{"*"}, Environments: []string{"dev"}, Actions: []string{"create"}},
-		{Group: "editors", Allow: []string{"*"}, Actions: []string{"toggle", "rollout"}},
-		{Group: "viewers", Allow: []string{"*"}, Actions: []string{"view"}},
+		{Group: "admins", Teams: []string{"*"}},
+		{Group: "starred", Teams: []string{"*"}, Environments: []string{"*"}, Actions: []string{"create"}},
+		{Group: "scoped", Teams: []string{"*"}, Environments: []string{"dev"}, Actions: []string{"create"}},
+		{Group: "editors", Teams: []string{"*"}, Actions: []string{"toggle", "rollout"}},
+		{Group: "viewers", Teams: []string{"*"}, Actions: []string{"view"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -239,11 +242,23 @@ func TestCanCreateEnvironments(t *testing.T) {
 }
 
 func TestCanCreateEnvironmentsHonoursTheWildcardGroup(t *testing.T) {
-	set, err := New([]Rule{{Group: "*", Allow: []string{"*"}, Actions: []string{"create"}}})
+	set, err := New([]Rule{{Group: "*", Teams: []string{"*"}, Actions: []string{"create"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !set.CanCreateEnvironments([]string{"anyone"}) {
 		t.Error(`group "*" matches every signed-in user`)
+	}
+}
+
+func TestOldAllowKeyFailsWithTheNewName(t *testing.T) {
+	_, err := New([]Rule{{Group: "payments-team", LegacyAllow: []string{"payments", "billing"}}})
+	if err == nil {
+		t.Fatal("the old allow key must not be silently ignored, or a rule would grant nothing")
+	}
+	for _, want := range []string{"allow", "teams: [payments, billing]", "payments-team"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q, got: %v", want, err)
+		}
 	}
 }

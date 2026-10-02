@@ -188,8 +188,8 @@ func TestMeFiltersDiscoveredEnvironmentsByPermission(t *testing.T) {
 
 func TestCanCreateEnvironments(t *testing.T) {
 	rules := []permissions.Rule{
-		{Group: "flags-admins", Allow: []string{"*"}},
-		{Group: "marketing", Allow: []string{"growth"}, Environments: []string{"production"}, Actions: []string{"create"}},
+		{Group: "flags-admins", Teams: []string{"*"}},
+		{Group: "marketing", Teams: []string{"growth"}, Environments: []string{"production"}, Actions: []string{"create"}},
 	}
 	srv, sealer := testServer(t, newRepo(), rules)
 

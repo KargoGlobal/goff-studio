@@ -42,7 +42,7 @@ docker run -p 8080:8080 \
   -e GOFF_STUDIO_GITHUB_INSTALLATION_ID=456 \
   -e GOFF_STUDIO_GITHUB_PRIVATE_KEY_PATH=/etc/goff-studio/app.pem \
   -e GOFF_STUDIO_PROTECTED_ENVIRONMENTS=production \
-  -e GOFF_STUDIO_PERMISSIONS='[{group: flags-admins, allow: ["*"]}]' \
+  -e GOFF_STUDIO_PERMISSIONS='[{group: flags-admins, teams: ["*"]}]' \
   -v "$PWD/app.pem:/etc/goff-studio/app.pem:ro" \
   ghcr.io/OWNER/REPO:latest
 ```
@@ -130,13 +130,16 @@ Dockerfile takes the same list as the `GO_TAGS` build argument. `github` and
 | --- | --- | --- |
 | `storage.kind` | `GOFF_STUDIO_STORAGE` | `github` (default), `file`, `s3`, `googleStorage`, `azureBlobStorage`, or `configmap` |
 | `protectedEnvironments` | `GOFF_STUDIO_PROTECTED_ENVIRONMENTS` | `production,eu-production` or a YAML list; changes there need a diff review and typed confirmation. A name with no folder yet is fine |
-| `permissions` | `GOFF_STUDIO_PERMISSIONS` | YAML or JSON list, e.g. `[{group: admins, allow: ["*"]}]` |
+| `permissions` | `GOFF_STUDIO_PERMISSIONS` | YAML or JSON list, e.g. `[{group: admins, teams: ["*"]}]` |
 
 Upgrading from a release with `environments` or `discoverEnvironments`
 (`GOFF_STUDIO_ENVIRONMENTS`, `GOFF_STUDIO_DISCOVER_ENVIRONMENTS`): Studio refuses
 to start while they are set. Delete them and list the entries that had
 `protected: true` in `protectedEnvironments`. `display` and `order` are gone; the
 UI shows folder names as they are, in alphabetical order.
+
+Likewise, the `allow` key in a permission rule is now `teams`; Studio refuses to
+start with `allow` and the error shows the line to change.
 
 **`github`** — commits as a GitHub App, so every change is reviewable history.
 
@@ -285,7 +288,7 @@ flags-store/
 This suits object storage, where the relay proxy needs one retriever per file:
 adding a team needs no relay change, only adding an environment does.
 
-- Permissions behave as if each team still had its own file. `allow: ["growth"]`
+- Permissions behave as if each team still had its own file. `teams: ["growth"]`
   matches flags whose `metadata.team` is `growth`, and a flag with no team matches
   only `*` rules.
 - Moving a flag to another team (editing `metadata.team`) needs `delete` on the old
@@ -309,9 +312,9 @@ Permissions map OIDC groups to file patterns, environments, and actions.
 ```yaml
 permissions:
   - group: flags-admins
-    allow: ["*"]
+    teams: ["*"]
   - group: marketing
-    allow: ["growth"]
+    teams: ["growth"]
     environments: [production]
     actions: [toggle, rollout]
 ```
@@ -333,9 +336,9 @@ Rules:
 - **Any action implies `view`.** Granting `toggle` also grants read.
 - Omitting `actions` grants all of them; omitting `environments` matches all.
 - `group: "*"` matches every signed-in user.
-- `allow` patterns match the file path (`production/growth.goff.yaml`), the
+- `teams` patterns match the file path (`production/growth.goff.yaml`), the
   basename with the extension stripped (`growth`), or a glob of either — so
-  `allow: ["growth"]` is the normal way to say "the growth team's file, in
+  `teams: ["growth"]` is the normal way to say "the growth team's file, in
   whichever environment this rule covers".
 - `create` is checked against the derived path, so a user who may not write
   `production/billing.goff.yaml` can neither create a flag in team `billing` nor

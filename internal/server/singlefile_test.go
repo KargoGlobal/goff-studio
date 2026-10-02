@@ -53,8 +53,8 @@ func payer() *auth.Session {
 
 func teamRules() []permissions.Rule {
 	return []permissions.Rule{
-		{Group: "flags-admins", Allow: []string{"*"}},
-		{Group: "payments", Allow: []string{"payments"}},
+		{Group: "flags-admins", Teams: []string{"*"}},
+		{Group: "payments", Teams: []string{"payments"}},
 	}
 }
 
@@ -243,7 +243,7 @@ func TestSingleFileEmptyEnvironmentStillOffersCreate(t *testing.T) {
 	}
 
 	viewer := &auth.Session{Subject: "okta|v", Groups: []string{"viewers"}}
-	srv, sealer = singleFileServer(t, repo, append(teamRules(), permissions.Rule{Group: "viewers", Allow: []string{"*"}, Actions: []string{"view"}}))
+	srv, sealer = singleFileServer(t, repo, append(teamRules(), permissions.Rule{Group: "viewers", Teams: []string{"*"}, Actions: []string{"view"}}))
 	if list := listFor(t, srv, sealer, viewer); list.CanCreate {
 		t.Error("a view-only group must not be offered create")
 	}

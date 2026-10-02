@@ -275,8 +275,8 @@ func marketer() *auth.Session {
 
 func adminRules() []permissions.Rule {
 	return []permissions.Rule{
-		{Group: "flags-admins", Allow: []string{"*"}},
-		{Group: "marketing", Allow: []string{"growth"}, Environments: []string{"production"}, Actions: []string{"toggle", "rollout"}},
+		{Group: "flags-admins", Teams: []string{"*"}},
+		{Group: "marketing", Teams: []string{"growth"}, Environments: []string{"production"}, Actions: []string{"toggle", "rollout"}},
 	}
 }
 
@@ -426,7 +426,7 @@ func TestToggleDeniedWithoutPermission(t *testing.T) {
 func TestRolloutRequiresRolloutPermission(t *testing.T) {
 	repo := newRepo()
 	rules := []permissions.Rule{
-		{Group: "viewers", Allow: []string{"*"}, Actions: []string{"view"}},
+		{Group: "viewers", Teams: []string{"*"}, Actions: []string{"view"}},
 	}
 	srv, sealer := testServer(t, repo, rules)
 
@@ -866,11 +866,11 @@ func TestListReportsTeamsAsFilesWithoutExtraFetches(t *testing.T) {
 func TestTeamsOmitFilesYouCannotCreateIn(t *testing.T) {
 	rules := []permissions.Rule{{
 		Group:        "flags-admins",
-		Allow:        []string{"growth"},
+		Teams:        []string{"growth"},
 		Environments: []string{"production"},
 	}, {
 		Group:        "flags-admins",
-		Allow:        []string{"payments"},
+		Teams:        []string{"payments"},
 		Environments: []string{"production"},
 		Actions:      []string{"view"},
 	}}

@@ -217,7 +217,7 @@ func TestCreateRequiresCreatePermission(t *testing.T) {
 func TestCreateDeniedOnAFileTheUserCannotWrite(t *testing.T) {
 	repo := newRepo()
 	rules := []permissions.Rule{
-		{Group: "growth-only", Allow: []string{"growth"}, Actions: []string{"create"}},
+		{Group: "growth-only", Teams: []string{"growth"}, Actions: []string{"create"}},
 	}
 	srv, sealer := testServer(t, repo, rules)
 	sess := &auth.Session{Subject: "okta|g", Email: "g@acme.com", Groups: []string{"growth-only"}}
@@ -269,7 +269,7 @@ func TestCreateRejectsDuplicateKeyInAnotherFile(t *testing.T) {
 func TestCreateRejectsDuplicateHiddenBehindViewPermissions(t *testing.T) {
 	repo := newRepo()
 	rules := []permissions.Rule{
-		{Group: "growth-only", Allow: []string{"growth"}},
+		{Group: "growth-only", Teams: []string{"growth"}},
 	}
 	srv, sealer := testServer(t, repo, rules)
 	sess := &auth.Session{Subject: "okta|g", Email: "g@acme.com", Groups: []string{"growth-only"}}
@@ -1266,7 +1266,7 @@ func TestCreateTeamRejectsDuplicatesAndBadNames(t *testing.T) {
 func TestCreateTeamNeedsCreatePermissionOnTheDerivedFile(t *testing.T) {
 	rules := []permissions.Rule{{
 		Group:        "flags-admins",
-		Allow:        []string{"growth"},
+		Teams:        []string{"growth"},
 		Environments: []string{"production"},
 	}}
 
@@ -1351,7 +1351,7 @@ func TestRenameRejectsBadKeys(t *testing.T) {
 func TestRenameNeedsBothCreateAndDelete(t *testing.T) {
 	rules := []permissions.Rule{{
 		Group:        "flags-admins",
-		Allow:        []string{"growth"},
+		Teams:        []string{"growth"},
 		Environments: []string{"production"},
 		Actions:      []string{"view", "create"},
 	}}
@@ -1486,7 +1486,7 @@ func TestProgressiveRolloutRejectsBadInput(t *testing.T) {
 func TestProgressiveRolloutNeedsRolloutPermission(t *testing.T) {
 	rules := []permissions.Rule{{
 		Group:        "flags-admins",
-		Allow:        []string{"growth"},
+		Teams:        []string{"growth"},
 		Environments: []string{"production"},
 		Actions:      []string{"view", "toggle"},
 	}}
@@ -1641,7 +1641,7 @@ func TestExperimentationRejectsBadInput(t *testing.T) {
 func TestExperimentationNeedsRolloutPermission(t *testing.T) {
 	rules := []permissions.Rule{{
 		Group:        "flags-admins",
-		Allow:        []string{"growth"},
+		Teams:        []string{"growth"},
 		Environments: []string{"production"},
 		Actions:      []string{"view", "toggle"},
 	}}
