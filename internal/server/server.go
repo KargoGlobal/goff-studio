@@ -485,6 +485,9 @@ func (s *Server) createRequest(env string, body createBody) (CreateRequest, erro
 	if err != nil {
 		return CreateRequest{}, err
 	}
+	if err := validDescription(body.Description); err != nil {
+		return CreateRequest{}, err
+	}
 	return CreateRequest{
 		Environment: env,
 		Key:         strings.TrimSpace(body.Key),

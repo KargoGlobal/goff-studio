@@ -3,6 +3,7 @@ package server
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 const (
@@ -40,7 +41,7 @@ func validDescription(value string) error {
 	if hasControlChars(value) {
 		return invalid("a description cannot contain line breaks or control characters")
 	}
-	if len(strings.TrimSpace(value)) > MaxDescription {
+	if utf8.RuneCountInString(strings.TrimSpace(value)) > MaxDescription {
 		return invalid("a description cannot be longer than %d characters", MaxDescription)
 	}
 	return nil

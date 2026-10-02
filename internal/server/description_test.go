@@ -131,3 +131,34 @@ func flagNamed(t *testing.T, flags []goff.Flag, key string) goff.Flag {
 	t.Fatalf("flag %q missing, got %v", key, keysOf(flags))
 	return goff.Flag{}
 }
+
+func TestCreateRejectsALeadingLineBreakInTheDescription(t *testing.T) {
+	repo := newRepo()
+	srv, sealer := testServer(t, repo, adminRules())
+	warmCache(t, srv, sealer, admin(), "production")
+
+	body := `{"key":"dark-mode","team":"growth","type":"boolean","description":"\nDark theme.",
+		"variations":[{"name":"on","value":"true"},{"name":"off","value":"false"}],
+		"default":"off","enabled":true,"fileSha":"sha-growth"}`
+	if rec := request(t, srv, sealer, admin(), http.MethodPost, "/api/environments/production/flags", body); rec.Code != http.StatusBadRequest {
+		t.Errorf("want 400, got %d: %s", rec.Code, rec.Body)
+	}
+	if len(repo.puts) != 0 {
+		t.Error("nothing should have been committed")
+	}
+}
+
+func TestDescriptionLimitCountsCharactersNotBytes(t *testing.T) {
+	repo := newRepo()
+	srv, sealer := testServer(t, repo, adminRules())
+
+	accented := strings.Repeat("é", MaxDescription)
+	rec := request(t, srv, sealer, admin(), http.MethodPut, descriptionPath, `{"description":"`+accented+`"}`)
+	if rec.Code != http.StatusOK {
+		t.Errorf("%d accented characters should fit, got %d: %s", MaxDescription, rec.Code, rec.Body)
+	}
+	rec = request(t, srv, sealer, admin(), http.MethodPut, descriptionPath, `{"description":"`+accented+`é"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("one past the limit should be refused, got %d", rec.Code)
+	}
+}
