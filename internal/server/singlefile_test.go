@@ -1,6 +1,8 @@
 package server
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -9,6 +11,7 @@ import (
 	"github.com/go-feature-flag/studio/internal/config"
 	"github.com/go-feature-flag/studio/internal/goff"
 	"github.com/go-feature-flag/studio/internal/permissions"
+	"github.com/go-feature-flag/studio/internal/storage"
 )
 
 const sharedFile = `# Feature flags for production.
@@ -243,5 +246,107 @@ func TestSingleFileEmptyEnvironmentStillOffersCreate(t *testing.T) {
 	srv, sealer = singleFileServer(t, repo, append(teamRules(), permissions.Rule{Group: "viewers", Allow: []string{"*"}, Actions: []string{"view"}}))
 	if list := listFor(t, srv, sealer, viewer); list.CanCreate {
 		t.Error("a view-only group must not be offered create")
+	}
+}
+
+func historyMessages(t *testing.T, srv *Server, sealer *auth.Sealer, key string) []string {
+	t.Helper()
+	rec := request(t, srv, sealer, admin(), http.MethodGet, "/api/environments/production/flags/"+key+"/history", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	var commits []storage.Commit
+	_ = json.Unmarshal(rec.Body.Bytes(), &commits)
+	out := make([]string, 0, len(commits))
+	for _, c := range commits {
+		out = append(out, c.Message)
+	}
+	return out
+}
+
+func TestSharedFileHistoryShowsOnlyTheFlagsOwnChanges(t *testing.T) {
+	repo := singleFileRepo()
+	repo.commits = []string{
+		"[production] flags/new-checkout: enabled",
+		"[production] flags/checkout: disabled",
+		"[production] flags/banner: rule \"checkout page\" updated",
+		"[production] flags/old-checkout: renamed to checkout",
+		"[production] flags/checkout-v2: created",
+		"tidy checkout and banner by hand",
+		"object version abc",
+	}
+	srv, sealer := singleFileServer(t, repo, adminRules())
+
+	got := historyMessages(t, srv, sealer, "checkout")
+	want := []string{
+		"[production] flags/checkout: disabled",
+		"[production] flags/old-checkout: renamed to checkout",
+		"tidy checkout and banner by hand",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("history =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestSharedFileHistoryIgnoresTheFileAndEnvironmentNames(t *testing.T) {
+	repo := singleFileRepo()
+	repo.commits = []string{
+		"[production] flags/checkout: disabled",
+		"[production] flags/banner: enabled",
+	}
+	srv, sealer := singleFileServer(t, repo, adminRules())
+	repo.files["production/flags.goff.yaml"] += "flags:\n  variations:\n    on: true\n  defaultRule:\n    variation: \"on\"\n  metadata:\n    team: growth\n" +
+		"production:\n  variations:\n    on: true\n  defaultRule:\n    variation: \"on\"\n  metadata:\n    team: growth\n"
+
+	for _, key := range []string{"flags", "production"} {
+		if got := historyMessages(t, srv, sealer, key); len(got) != 0 {
+			t.Errorf("%s history should be empty, got %q", key, got)
+		}
+	}
+}
+
+func TestQuietFlagHistoryReadsPastOtherFlagsChanges(t *testing.T) {
+	repo := singleFileRepo()
+	for i := 0; i < 50; i++ {
+		repo.commits = append(repo.commits, fmt.Sprintf("[production] flags/banner: change %d", i))
+	}
+	repo.commits = append(repo.commits, "[production] flags/checkout: created")
+	srv, sealer := singleFileServer(t, repo, adminRules())
+
+	got := historyMessages(t, srv, sealer, "checkout")
+	if len(got) != 1 || got[0] != "[production] flags/checkout: created" {
+		t.Errorf("history = %q", got)
+	}
+	if strings.Join(repo.pages, ",") != fmt.Sprintf("%d,100", DefaultHistory) {
+		t.Errorf("pages requested = %v", repo.pages)
+	}
+}
+
+func TestQuietFlagHistoryReadsPastGitHubsPageSize(t *testing.T) {
+	repo := singleFileRepo()
+	for i := 0; i < 150; i++ {
+		repo.commits = append(repo.commits, fmt.Sprintf("[production] flags/banner: change %d", i))
+	}
+	repo.commits = append(repo.commits, "[production] flags/checkout: created")
+	srv, sealer := singleFileServer(t, repo, adminRules())
+
+	got := historyMessages(t, srv, sealer, "checkout")
+	if len(got) != 1 || got[0] != "[production] flags/checkout: created" {
+		t.Errorf("history = %q, pages requested = %v", got, repo.pages)
+	}
+}
+
+func TestBusyFlagHistoryStopsAtOneRead(t *testing.T) {
+	repo := singleFileRepo()
+	for i := 0; i < 40; i++ {
+		repo.commits = append(repo.commits, fmt.Sprintf("[production] flags/checkout: change %d", i))
+	}
+	srv, sealer := singleFileServer(t, repo, adminRules())
+
+	if got := historyMessages(t, srv, sealer, "checkout"); len(got) != DefaultHistory {
+		t.Errorf("got %d commits, want %d", len(got), DefaultHistory)
+	}
+	if len(repo.pages) != 1 {
+		t.Errorf("pages requested = %v", repo.pages)
 	}
 }

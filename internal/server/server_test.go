@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -81,6 +83,8 @@ type repoState struct {
 	shas     map[string]string
 	puts     []map[string]any
 	listings int
+	commits  []string
+	pages    []string
 }
 
 func (r *repoState) listing(dir string) []map[string]string {
@@ -131,7 +135,28 @@ func (r *repoState) server(t *testing.T) *httptest.Server {
 		path := strings.TrimPrefix(req.URL.Path, "/repos/acme/flags/contents/")
 
 		if strings.HasPrefix(req.URL.Path, "/repos/acme/flags/commits") {
-			_, _ = w.Write([]byte(`[{"sha":"c1","commit":{"message":"[production] payments/new-checkout: disabled","author":{"name":"Jane","email":"jane@x.com","date":"2026-09-22T10:00:00Z"}}}]`))
+			r.pages = append(r.pages, req.URL.Query().Get("per_page"))
+			messages := r.commits
+			if messages == nil {
+				messages = []string{"[production] payments/new-checkout: disabled"}
+			}
+			perPage, _ := strconv.Atoi(req.URL.Query().Get("per_page"))
+			page, _ := strconv.Atoi(req.URL.Query().Get("page"))
+			perPage, page = min(perPage, 100), max(page, 1)
+			out := []map[string]any{}
+			for i, m := range messages {
+				if i < (page-1)*perPage {
+					continue
+				}
+				if i == page*perPage {
+					break
+				}
+				out = append(out, map[string]any{"sha": fmt.Sprintf("c%d", i+1), "commit": map[string]any{
+					"message": m,
+					"author":  map[string]string{"name": "Jane", "email": "jane@x.com", "date": "2026-09-22T10:00:00Z"},
+				}})
+			}
+			_ = json.NewEncoder(w).Encode(out)
 			return
 		}
 
