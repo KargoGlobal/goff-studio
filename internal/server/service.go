@@ -1201,18 +1201,51 @@ func (s *Service) History(ctx context.Context, sess auth.Session, environment, k
 		return nil, err
 	}
 
-	commits, err := s.repo.History(ctx, view.File, boundedLimit(limit))
-	if err != nil {
-		return nil, err
-	}
-
-	var out []storage.Commit
-	for _, c := range commits {
-		if strings.Contains(c.Message, key) {
-			out = append(out, c)
+	want := boundedLimit(limit)
+	for scan := want; ; scan = MaxHistoryScan {
+		commits, err := s.repo.History(ctx, view.File, scan)
+		if err != nil {
+			return nil, err
+		}
+		var out []storage.Commit
+		for _, c := range commits {
+			if commitTouches(c.Message, key) {
+				out = append(out, c)
+			}
+		}
+		if len(out) >= want || len(commits) < scan || scan >= MaxHistoryScan {
+			return out[:min(len(out), want)], nil
 		}
 	}
-	return out, nil
+}
+
+// Studio subjects read "[env] team/key: summary"; anything else matches only on a whole-token key.
+func commitTouches(message, key string) bool {
+	subject, _, _ := strings.Cut(message, "\n")
+	if rest, ok := strings.CutPrefix(subject, "["); ok {
+		if _, rest, ok = strings.Cut(rest, "] "); ok {
+			if _, rest, ok = strings.Cut(rest, "/"); ok {
+				if got, summary, ok := strings.Cut(rest, ": "); ok {
+					return got == key || summary == "renamed to "+key
+				}
+			}
+		}
+	}
+	for i := 0; ; {
+		j := strings.Index(subject[i:], key)
+		if j < 0 {
+			return false
+		}
+		start, end := i+j, i+j+len(key)
+		if (start == 0 || !isKeyByte(subject[start-1])) && (end == len(subject) || !isKeyByte(subject[end])) {
+			return true
+		}
+		i = start + 1
+	}
+}
+
+func isKeyByte(b byte) bool {
+	return b == '-' || b == '_' || b == '.' || b >= '0' && b <= '9' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
 }
 
 func (s *Service) Capabilities() storage.Capabilities {

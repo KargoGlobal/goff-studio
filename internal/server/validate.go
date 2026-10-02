@@ -11,6 +11,7 @@ const (
 	MaxBodyBytes   = 1 << 20
 	MaxHistory     = 100
 	DefaultHistory = 20
+	MaxHistoryScan = 200
 )
 
 // Keeps a client-supplied count from reaching a backend that would overflow it.
