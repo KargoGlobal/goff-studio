@@ -1122,11 +1122,20 @@ type DiffRequest struct {
 	Key         string
 	Mutate      func(*goff.Flag)
 	Description string
+	Rollout     *RolloutDiff
+}
+
+// RolloutDiff carries the before/after split so the review dialog can show
+// them side by side instead of making the reader diff two sentences.
+type RolloutDiff struct {
+	Before map[string]float64 `json:"before"`
+	After  map[string]float64 `json:"after"`
 }
 
 type DiffResult struct {
-	Description string `json:"description"`
-	Diff        string `json:"diff"`
+	Description string       `json:"description"`
+	Diff        string       `json:"diff"`
+	Rollout     *RolloutDiff `json:"rollout,omitempty"`
 }
 
 func (s *Service) Diff(ctx context.Context, sess auth.Session, req DiffRequest) (*DiffResult, error) {
@@ -1156,6 +1165,7 @@ func (s *Service) Diff(ctx context.Context, sess auth.Session, req DiffRequest) 
 	return &DiffResult{
 		Description: description,
 		Diff:        UnifiedDiff(string(file.Content), string(next), 3),
+		Rollout:     req.Rollout,
 	}, nil
 }
 

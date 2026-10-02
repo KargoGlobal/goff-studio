@@ -1,5 +1,6 @@
 @import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap");
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
   --font-sans: Poppins, ui-sans-serif, system-ui, -apple-system, sans-serif;
@@ -82,10 +83,14 @@
 @layer base {
   :root {
     color-scheme: light;
+    --variation-s: 50%;
+    --variation-l: 60%;
   }
 
   html.dark {
     color-scheme: dark;
+    --variation-s: 55%;
+    --variation-l: 52%;
     --color-surface: #242526;
     --color-raised: #2b2c2e;
     --color-line: #34383a;

@@ -1,9 +1,37 @@
 import { useState } from 'react'
-import { ChevronRight, ShieldAlert } from 'lucide-react'
+import { ArrowRight, ChevronRight, ShieldAlert } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button, Spinner } from '@/components/ui/primitives'
 import { Dialog } from '@/components/ui/Dialog'
-import type { DiffResult } from '@/lib/api'
+import type { DiffResult, RolloutDiff } from '@/lib/api'
+
+function trimPct(n: number) {
+  return Number(n.toFixed(2)).toString()
+}
+
+function RolloutComparison({ rollout }: { rollout: RolloutDiff }) {
+  const before = rollout.before ?? {}
+  const after = rollout.after ?? {}
+  const names = Array.from(new Set([...Object.keys(before), ...Object.keys(after)]))
+
+  return (
+    <div className="rounded-lg border bg-surface p-3">
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-x-3 gap-y-2 text-center">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Before</p>
+        <span className="w-4" />
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">After</p>
+
+        {names.map((name) => (
+          <div key={name} className="contents">
+            <p className="font-mono text-[13px] text-ink-soft">{`${name}: ${trimPct(before[name] ?? 0)}%`}</p>
+            <ArrowRight className="h-4 w-4 text-ink-muted" />
+            <p className="font-mono text-[13px] font-semibold text-ink">{`${name}: ${trimPct(after[name] ?? 0)}%`}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 export function ReviewDialog({
   open,
@@ -64,6 +92,8 @@ export function ReviewDialog({
       ) : (
         <div className="space-y-4">
           <p className="text-[15px] text-ink">{diff?.description}</p>
+
+          {diff?.rollout && <RolloutComparison rollout={diff.rollout} />}
 
           {protectedEnv && (
             <div

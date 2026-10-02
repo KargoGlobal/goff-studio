@@ -165,9 +165,15 @@ export interface NewVariation {
   value: string
 }
 
+export interface RolloutDiff {
+  before: Record<string, number>
+  after: Record<string, number>
+}
+
 export interface DiffResult {
   description: string
   diff: string
+  rollout?: RolloutDiff
 }
 
 export class ApiError extends Error {
