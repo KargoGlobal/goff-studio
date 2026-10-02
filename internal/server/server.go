@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -124,29 +125,61 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	if err := s.sealer.CheckState(r, r.URL.Query().Get("state")); err != nil {
-		writeError(w, http.StatusBadRequest, "sign-in could not be verified, please try again")
+		s.signInFailed(w, r, http.StatusBadRequest, "could not verify the sign-in state", err)
 		return
 	}
 	verifier, err := s.sealer.Verifier(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "sign-in could not be verified, please try again")
+		s.signInFailed(w, r, http.StatusBadRequest, "could not read the PKCE verifier", err)
 		return
 	}
 	s.sealer.ClearState(w)
 	s.sealer.ClearVerifier(w)
 
+	if idpErr := r.URL.Query().Get("error"); idpErr != "" {
+		s.signInFailed(w, r, http.StatusBadRequest, "the identity provider refused the sign-in",
+			fmt.Errorf("%s: %s", idpErr, r.URL.Query().Get("error_description")))
+		return
+	}
+
 	sess, err := s.oidc.Exchange(r.Context(), r.URL.Query().Get("code"), verifier)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		s.signInFailed(w, r, http.StatusBadGateway, "could not exchange the authorization code", err)
 		return
 	}
 	if err := s.sealer.Write(w, sess); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		s.signInFailed(w, r, http.StatusInternalServerError, "could not write the session", err)
 		return
 	}
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
+
+// A reloaded or replayed callback is harmless when the visitor is already signed in.
+func (s *Server) signInFailed(w http.ResponseWriter, r *http.Request, status int, reason string, err error) {
+	if _, sessErr := s.sealer.Read(r); sessErr == nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	log.Printf("sign-in failed: %s: %v", reason, err)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_, _ = io.WriteString(w, signInFailedPage)
+}
+
+const signInFailedPage = `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Sign-in expired</title>
+<style>body{font-family:system-ui,sans-serif;max-width:28rem;margin:15vh auto;padding:0 1.5rem;color:#1f2937}a{display:inline-block;margin-top:1rem;padding:.6rem 1.1rem;border-radius:.5rem;background:#2563eb;color:#fff;text-decoration:none}</style>
+</head>
+<body>
+<h1>Your sign-in link expired</h1>
+<p>That happens if the page was reloaded or the sign-in took too long. Nothing was changed.</p>
+<a href="/auth/login">Sign in again</a>
+</body>
+</html>
+`
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	s.sealer.Clear(w)
