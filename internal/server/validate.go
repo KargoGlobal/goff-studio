@@ -3,10 +3,12 @@ package server
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 const (
 	MaxNameLength  = 128
+	MaxDescription = 500
 	MaxQueryLength = 4096
 	MaxBodyBytes   = 1 << 20
 	MaxHistory     = 100
@@ -33,6 +35,16 @@ func hasControlChars(s string) bool {
 		}
 	}
 	return false
+}
+
+func validDescription(value string) error {
+	if hasControlChars(value) {
+		return invalid("a description cannot contain line breaks or control characters")
+	}
+	if utf8.RuneCountInString(strings.TrimSpace(value)) > MaxDescription {
+		return invalid("a description cannot be longer than %d characters", MaxDescription)
+	}
+	return nil
 }
 
 // A name reaching a YAML seed or a path segment must not be able to break out of either.

@@ -32,6 +32,7 @@ import {
   useSetRollout,
   useDeleteFlag,
   useRenameFlag,
+  useSetDescription,
   useSetProgressive,
   useSetExperimentation,
   useDeleteRule,
@@ -58,6 +59,7 @@ import { ConditionView } from '@/components/ConditionView'
 import { ScheduleBadge } from '@/components/ScheduleBadge'
 import { describeEffectiveState, effectiveState } from '@/lib/schedule'
 import { identifierInputProps } from '@/lib/inputProps'
+import { descriptionOf, MAX_DESCRIPTION } from '@/lib/description'
 import type { RuleGroupType } from 'react-querybuilder'
 import { normalizeSplit, sumsTo100, type Split } from '@/lib/split'
 import { SplitSliders } from '@/components/SplitSliders'
@@ -77,6 +79,7 @@ type Pending =
   | { kind: 'experimentation'; window: Experimentation }
   | { kind: 'experimentationClear' }
   | { kind: 'rename'; newKey: string }
+  | { kind: 'description'; text: string }
   | { kind: 'deleteFlag' }
 
 const emptyGroup: RuleGroupType = {
@@ -103,6 +106,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
   const setRollout = useSetRollout(env)
   const deleteFlag = useDeleteFlag(env)
   const renameFlag = useRenameFlag(env)
+  const setDescription = useSetDescription(env)
   const setProgressive = useSetProgressive(env)
   const setExperimentation = useSetExperimentation(env)
 
@@ -115,6 +119,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
   const [editingVariations, setEditingVariations] = useState(false)
   const [addingRule, setAddingRule] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
+  const [describing, setDescribing] = useState<string | null>(null)
   const [newRuleName, setNewRuleName] = useState('')
   const [newRuleVariation, setNewRuleVariation] = useState('')
   const [newRuleSplit, setNewRuleSplit] = useState<Split | null>(null)
@@ -138,6 +143,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
   }
 
   const can = (action: string) => flag.actions.includes(action as never)
+  const description = descriptionOf(flag)
   const state = effectiveState(flag)
   const saving =
     setState.isPending ||
@@ -149,6 +155,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
     setRollout.isPending ||
     deleteFlag.isPending ||
     renameFlag.isPending ||
+    setDescription.isPending ||
     setProgressive.isPending ||
     setExperimentation.isPending
 
@@ -224,6 +231,8 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
         return api.diffGeneric(env, key, { change: 'experimentationClear' })
       case 'rename':
         return api.diffGeneric(env, key, { change: 'rename', name: next.newKey })
+      case 'description':
+        return api.diffGeneric(env, key, { change: 'description', description: next.text })
       case 'deleteFlag':
         return api.diffGeneric(env, key, { change: 'delete' })
     }
@@ -239,6 +248,7 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
       setEditingVariations(false)
       setAddingRule(false)
       setRenaming(null)
+      setDescribing(null)
       if (pending.kind === 'deleteFlag') navigate(`/env/${env}`)
       if (pending.kind === 'rename') {
         navigate(`/env/${env}/flags/${encodeURIComponent(pending.newKey)}`, { replace: true })
@@ -323,6 +333,8 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
         return setExperimentation.mutateAsync({ flag: target, clear: true })
       case 'rename':
         return renameFlag.mutateAsync({ flag: target, newKey: change.newKey })
+      case 'description':
+        return setDescription.mutateAsync({ flag: target, description: change.text })
       case 'deleteFlag':
         return deleteFlag.mutateAsync(target)
     }
@@ -414,7 +426,62 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
               </Button>
             </div>
           )}
-          <p className="mt-1.5 text-base text-ink-soft">{flag.summary}</p>
+          {describing === null ? (
+            description || can('edit_rules') ? (
+              <div className="mt-1.5 flex items-start gap-1.5">
+                {description ? (
+                  <p className="text-base text-ink-soft max-md:min-w-0 max-md:wrap-anywhere">{description}</p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setDescribing('')}
+                    className="text-base text-ink-muted transition-colors hover:text-brand max-md:min-h-11"
+                  >
+                    Add a description
+                  </button>
+                )}
+                {description && can('edit_rules') && (
+                  <button
+                    type="button"
+                    onClick={() => setDescribing(description)}
+                    aria-label="Edit the description"
+                    title="Edit description"
+                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-brand transition-colors hover:text-brand-strong max-md:h-11 max-md:w-11"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            ) : null
+          ) : (
+            <div className="mt-2 flex items-center gap-2 max-md:flex-wrap">
+              <Input
+                autoFocus
+                value={describing}
+                maxLength={MAX_DESCRIPTION}
+                onChange={(e) => setDescribing(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setDescribing(null)
+                  if (e.key === 'Enter' && describing.trim() !== description) {
+                    void openReview({ kind: 'description', text: describing.trim() })
+                  }
+                }}
+                aria-label="Flag description"
+                placeholder="What this flag controls and why it exists"
+                className="w-[28rem] max-md:w-full"
+              />
+              <Button
+                size="sm"
+                disabled={describing.trim() === description}
+                onClick={() => void openReview({ kind: 'description', text: describing.trim() })}
+              >
+                Review
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setDescribing(null)}>
+                Cancel
+              </Button>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3 max-md:w-full max-md:flex-wrap">
           {environments.length > 1 && (

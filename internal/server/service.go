@@ -384,7 +384,7 @@ func (s *Service) mutateTeamChecked(sess auth.Session, req SaveRequest, target *
 }
 
 func sameFlagState(a, b goff.Flag) bool {
-	if a.Enabled != b.Enabled {
+	if a.Enabled != b.Enabled || a.Metadata[metaDescription] != b.Metadata[metaDescription] {
 		return false
 	}
 	if !sameOutcome(a.Default, b.Default) {
@@ -459,6 +459,7 @@ type CreateRequest struct {
 	Variations  []goff.Variation
 	Default     string
 	Enabled     bool
+	Description string
 }
 
 func (r CreateRequest) scope() string {
@@ -643,6 +644,9 @@ func (s *Service) buildCreate(current []byte, req CreateRequest, file string) ([
 		Default:    goff.Outcome{Variation: req.Default},
 		Metadata:   map[string]any{"team": strings.TrimSpace(req.Team)},
 	}
+	if req.Description != "" {
+		created.Metadata[metaDescription] = req.Description
+	}
 	stamp(&created, s.now(), true)
 
 	next, err := s.adapter.Serialize(current, req.Key, created)
@@ -670,6 +674,9 @@ func (s *Service) prepareCreate(ctx context.Context, sess auth.Session, req Crea
 		return err
 	}
 	if err := checkVariations(req.Variations, req.Default); err != nil {
+		return err
+	}
+	if err := validDescription(req.Description); err != nil {
 		return err
 	}
 

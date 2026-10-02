@@ -110,11 +110,10 @@ export function AppShell({
         >
           <X className="h-5 w-5" />
         </button>
-        <a
-          href="https://gofeatureflag.org/"
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="GO Feature Flag (opens in a new tab)"
+        <Link
+          to={currentEnv ? `/env/${currentEnv}` : '/'}
+          onClick={closeNav}
+          aria-label="Studio home: all flags"
           className="flex flex-col items-center gap-2 rounded-md px-4 py-5 transition-opacity hover:opacity-90"
         >
           <Logo className="h-20 w-20 shrink-0" />
@@ -124,7 +123,7 @@ export function AppShell({
               GO Feature Flag
             </p>
           </div>
-        </a>
+        </Link>
 
         <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2">
           <p className="flex items-center gap-1.5 px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--color-sidebar-ink-muted)]">

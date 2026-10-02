@@ -35,3 +35,15 @@ test('a saved change shows up in the history card', async ({ page }) => {
   await expect(card).toContainText('[production] payments/new-checkout: disabled')
   await expect(card).toContainText(USER_NAME)
 })
+
+test('the history card refreshes after a save without reloading the page', async ({ page }) => {
+  await signIn(page)
+  await gotoFlagDetail(page, 'new-checkout')
+  await expect(historyCard(page)).toContainText('No changes recorded yet.')
+
+  await page.getByRole('switch', { name: 'Turn new-checkout off' }).click()
+  await confirmReview(page)
+  await expectSuccessToast(page)
+
+  await expect(historyCard(page)).toContainText('[production] payments/new-checkout: disabled')
+})
