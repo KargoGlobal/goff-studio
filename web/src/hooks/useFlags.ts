@@ -57,10 +57,7 @@ export function useSetState(env: string) {
       void qc.invalidateQueries({ queryKey: ['flags', env] })
     },
 
-    onSettled: () => {
-      void qc.invalidateQueries({ queryKey: ['flags', env] })
-      void qc.invalidateQueries({ queryKey: ['flag', env] })
-    },
+    onSettled: () => invalidateFlag(qc, env),
   })
 }
 
@@ -78,10 +75,7 @@ export function useSetRollout(env: string) {
       percentage: Record<string, number>
     }) => api.setRollout(env, flag.key, ruleName, percentage, flag.fileSha),
 
-    onSettled: () => {
-      void qc.invalidateQueries({ queryKey: ['flags', env] })
-      void qc.invalidateQueries({ queryKey: ['flag', env] })
-    },
+    onSettled: () => invalidateFlag(qc, env),
   })
 }
 
@@ -108,11 +102,7 @@ export function useSaveRule(env: string) {
       query: string
     }) => api.saveRule(env, flag.key, ruleName, query, flag.fileSha),
 
-    onSettled: () => {
-      void qc.invalidateQueries({ queryKey: ['flags', env] })
-      void qc.invalidateQueries({ queryKey: ['flag', env] })
-      void qc.invalidateQueries({ queryKey: ['attributes', env] })
-    },
+    onSettled: () => invalidateFlag(qc, env),
   })
 }
 
@@ -132,6 +122,7 @@ function invalidateFlag(qc: ReturnType<typeof useQueryClient>, env: string) {
   void qc.invalidateQueries({ queryKey: ['flags', env] })
   void qc.invalidateQueries({ queryKey: ['flag', env] })
   void qc.invalidateQueries({ queryKey: ['attributes', env] })
+  void qc.invalidateQueries({ queryKey: ['history', env] })
 }
 
 export function useCompare(key: string, from: string, to: string) {
