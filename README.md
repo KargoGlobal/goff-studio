@@ -332,7 +332,8 @@ Rules:
   denies everything.
 - **Any action implies `view`.** Granting `toggle` also grants read.
 - Omitting `actions` grants all of them; omitting `environments` matches all.
-- `group: "*"` matches every signed-in user.
+- `group: "*"` matches every signed-in user and every API token, so a
+  `"*"` rule with write actions also arms every token.
 - `allow` patterns match the file path (`production/growth.goff.yaml`), the
   basename with the extension stripped (`growth`), or a glob of either — so
   `allow: ["growth"]` is the normal way to say "the growth team's file, in
@@ -484,9 +485,191 @@ so deployment is one static binary plus a config file.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for package layout and conventions.
 
+## Automation and incident response
+
+Studio can be driven by a workflow engine, a chat bot or an on-call runbook as
+well as by people. A typical incident workflow:
+
+1. Your workflow tool reads the incident ticket and pulls out the flag key.
+2. It asks Studio where that flag lives and whether it is on:
+   `GET /api/flags/{key}/status`, or `GET /api/flags?q=checkout` if all it has
+   is a word from the ticket.
+3. It turns the flag off with `POST /api/environments/{env}/flags/{key}/state`,
+   passing the reason and the ticket ID.
+4. Studio commits the change like any other, validated by GO Feature Flag, and
+   posts a confirmation to your chat channel and any other webhook.
+
+```sh
+curl -sS -X POST https://studio.example.com/api/environments/production/flags/new-checkout/state \
+  -H "Authorization: Bearer $STUDIO_TOKEN" -H "Content-Type: application/json" \
+  -d '{"enabled": false, "reason": "checkout 5xx above 2%", "reference": "INC-1234"}'
+```
+
+```json
+{"commit": "4f1c2e…", "retried": false, "message": "Saved. Live in apps within about 30 seconds."}
+```
+
+- **Safe to retry.** Turning off a flag that is already off writes nothing and
+  answers `{"unchanged": true, "message": "Already disabled; nothing changed."}`,
+  so a workflow can retry without making noise.
+- **Reason and reference are recorded.** Both are optional single lines (500 and
+  200 characters at most). They are appended to the commit message as
+  `Reason:` and `Reference:` lines, so they show in the flag's history and in
+  `git log`, and they are sent with the notification.
+- `fileSha` is optional for automation. Without it Studio applies the change to
+  the file as it is now, which is what a kill switch wants.
+- Everything is permission-checked exactly as for a person, so a token for this
+  should usually get `toggle` only, in the environments it may act on.
+- The typed confirmation for protected environments is part of the UI. An API
+  call with `toggle` permission in `production` changes production directly.
+
+### API tokens
+
+An API token is a machine identity that acts as one or more permission groups.
+Studio stores only the SHA-256 of each token, so the config can be committed or
+kept in a ConfigMap without exposing the token itself.
+
+```sh
+token=$(openssl rand -hex 32)                  # give this to the workflow tool
+printf %s "$token" | sha256sum | cut -d' ' -f1 # put this in studio.yaml
+```
+
+```yaml
+apiTokens:
+  - name: incident-automation          # shown in history and notifications
+    sha256: 3b4c…                      # 64 hex characters; a "sha256:" prefix is accepted
+    groups: [incident-responders]
+  - name: assistant-readonly
+    sha256: 9a0f…
+    groups: [flag-readers]
+    email: flags-assistant@example.com # optional; defaults to <name>@api-token.invalid
+
+permissions:
+  - group: incident-responders
+    allow: ["*"]
+    environments: [production]
+    actions: [toggle]
+  - group: flag-readers
+    allow: ["*"]
+    actions: [view]
+```
+
+Send the token as `Authorization: Bearer <token>`. It works on every `/api`
+route. A request with a Bearer token is judged on that token alone: a wrong
+token is a `401` even if the same request also carries a valid session cookie.
+Other `Authorization` schemes, such as a proxy's `Basic`, are ignored, and so is
+any Bearer header while no `apiTokens` are configured, so a proxy that forwards
+its own token does not lock people out. A token's
+groups must be named explicitly; `"*"` is refused. Changes made with a token are
+attributed to `<name> (API token)` with the subject `token:<name>`.
+
+- **Token groups share a namespace with your identity provider's groups.** A
+  token listed in an admin group is an admin, and a person whose IdP groups
+  include a token's group gets that token's access. Give tokens group names
+  your IdP will not use, such as an `automation:` prefix.
+- **Tokens do not expire.** Revoke one by removing it from the config and
+  restarting Studio; rotate by adding the new hash first, then removing the old.
+
+### Change notifications
+
+Every successful change, from the UI, the API or a promotion, can be posted to
+one or more webhooks. Delivery happens after the change is saved and never
+delays or fails it; a receiver that answers `429` or `5xx` is retried up to three
+times, anything else is logged and dropped.
+
+```yaml
+notifications:
+  - url: https://hooks.example.com/flag-changes
+    secret: from-env                 # optional; signs the body
+  - url: https://chat.example.com/incoming/abc123
+    format: slack                    # Slack-compatible incoming webhook
+    environments: [production]       # omit for every environment
+```
+
+`format: json` (the default) posts:
+
+```json
+{
+  "event": "flag.changed",
+  "environment": "production",
+  "team": "payments",
+  "flag": "new-checkout",
+  "file": "production/payments.goff.yaml",
+  "summary": "disabled",
+  "enabled": false,
+  "message": "[production] payments/new-checkout: disabled",
+  "reason": "checkout 5xx above 2%",
+  "reference": "INC-1234",
+  "version": "4f1c2e…",
+  "actor": {"name": "incident-automation (API token)", "email": "incident-automation@api-token.invalid", "id": "token:incident-automation"},
+  "url": "https://studio.example.com/env/production/flags/new-checkout",
+  "at": "2026-10-03T08:07:00Z"
+}
+```
+
+with the headers `X-Studio-Event: flag.changed`, `X-Studio-Delivery` (one ID
+per event and hook, repeated on retries so a receiver can drop duplicates) and,
+when `secret` is set, `X-Studio-Signature: sha256=<hex HMAC-SHA256 of the body>`.
+The signed body includes `at`, so a receiver can also refuse old replays.
+`enabled` is the flag's state after the change, absent for a delete. `team` is
+the file's team, or the flag's `metadata.team` in the single-file layout.
+Deliveries run in parallel, so two changes made within moments of each other can
+arrive out of order; order them by `at`. `format: slack`
+posts `{"text": "..."}` with the environment, flag, change, who made it, and the
+reason and reference. Webhook URLs usually embed a credential, so pass them with
+`GOFF_STUDIO_NOTIFICATIONS` from a secret; Studio only ever logs their host.
+
+## MCP server (read-only)
+
+With `mcp.enabled: true`, Studio serves the [Model Context
+Protocol](https://modelcontextprotocol.io) at `<baseURL>/mcp`, so an AI assistant
+can look flags up while it helps with an incident. It uses the stateless
+Streamable HTTP transport: one JSON reply per `POST`, no session and no stream.
+
+It is **read-only**. None of its tools can change a flag, and every tool is
+marked `readOnlyHint`. It only accepts API tokens, never a browser cookie, and it
+rejects requests whose `Origin` is not `server.baseURL`. Each token may make 60
+MCP calls a minute (a batch counts each message); beyond that Studio answers `429`
+with `Retry-After`, so a looping assistant cannot use up the storage API quota
+that turning a flag off depends on. What a token can see
+is decided by its groups, as everywhere else, so give an assistant a token whose
+groups only have `view`.
+
+| Tool | Returns |
+| --- | --- |
+| `list_environments` | environments the token can see, and which are protected |
+| `search_flags` | flags whose key, team or description contains a query, with on/off per environment |
+| `get_flag_status` | for one key, every environment: present, on or off, team, whether the token could toggle it |
+| `get_flag` | one flag's full configuration and a plain-English summary |
+| `get_flag_history` | recent changes with author, message, reason and reference |
+| `evaluate_flag` | what the real engine returns for a targeting key and attributes |
+
+Connecting a client, for example:
+
+```json
+{
+  "mcpServers": {
+    "flags": {
+      "type": "http",
+      "url": "https://studio.example.com/mcp",
+      "headers": {"Authorization": "Bearer ${STUDIO_MCP_TOKEN}"}
+    }
+  }
+}
+```
+
+### Automation config keys
+
+| Config key | Env var | Notes |
+| --- | --- | --- |
+| `apiTokens` | `GOFF_STUDIO_API_TOKENS` | YAML or JSON list of `{name, sha256, groups, email}`; the variable replaces the file's list |
+| `notifications` | `GOFF_STUDIO_NOTIFICATIONS` | YAML or JSON list of `{url, format, environments, secret}`; the variable replaces the file's list |
+| `mcp.enabled` | `GOFF_STUDIO_MCP_ENABLED` | default `false`; serves the read-only MCP endpoint at `/mcp` |
+
 ## HTTP API
 
-All `/api` routes require a session cookie and return `401` without one.
+All `/api` routes require a session cookie or an API token, and return `401`
+without one.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -500,11 +683,13 @@ All `/api` routes require a session cookie and return `401` without one.
 | `GET` | `/api/environments/{env}/flags/{key}` | one flag |
 | `DELETE` | `/api/environments/{env}/flags/{key}` | delete a flag |
 | `PUT` | `/api/environments/{env}/flags/{key}/variations` | replace variations and the default |
-| `POST` | `/api/environments/{env}/flags/{key}/state` | toggle on/off |
+| `POST` | `/api/environments/{env}/flags/{key}/state` | toggle on/off; optional `reason` and `reference`; a no-op answers `unchanged` |
 | `POST` | `/api/environments/{env}/flags/{key}/key` | rename a flag |
 | `POST` | `/api/environments/{env}/flags/{key}/rollout` | set percentages |
 | `POST` | `/api/environments/{env}/flags/{key}/progressive` | set or clear a progressive rollout |
 | `POST` | `/api/environments/{env}/flags/{key}/experimentation` | set or clear the experimentation window |
+| `GET` | `/api/flags?q=&environment=&limit=` | search flags by key, team or description across visible environments |
+| `GET` | `/api/flags/{key}/status` | one flag's presence and on/off state in every visible environment |
 | `GET` | `/api/flags/{key}/compare?from=&to=` | compare one flag across two environments |
 | `POST` | `/api/flags/{key}/promote/diff` | preview a promotion |
 | `POST` | `/api/flags/{key}/promote` | copy selected settings between environments |
@@ -518,6 +703,7 @@ All `/api` routes require a session cookie and return `401` without one.
 | `GET` | `/api/environments/{env}/attributes` | attribute names seen in existing rules |
 | `POST` | `/api/environments` | create an environment directory |
 | `POST` | `/api/environments/{env}/teams` | create a team file |
+| `POST` | `/mcp` | read-only MCP endpoint, API tokens only, when `mcp.enabled` |
 
 Error codes: `403` no permission, `404` unknown flag, `409` stale view or
 concurrent edit on the same flag.

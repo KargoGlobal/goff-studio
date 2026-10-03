@@ -16,3 +16,5 @@ var errStorageConflict = storage.ErrConflict
 var ErrStaleView = errors.New("your view of this flag is out of date")
 
 var ErrInvalid = errors.New("invalid request")
+
+var ErrNoSuchEnvironment = errors.New("no such environment")

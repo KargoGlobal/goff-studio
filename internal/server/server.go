@@ -16,6 +16,7 @@ import (
 	"github.com/go-feature-flag/studio/internal/config"
 	"github.com/go-feature-flag/studio/internal/goff"
 	"github.com/go-feature-flag/studio/internal/permissions"
+	"github.com/go-feature-flag/studio/internal/storage"
 )
 
 type Server struct {
@@ -23,11 +24,14 @@ type Server struct {
 	svc    *Service
 	oidc   *auth.OIDC
 	sealer *auth.Sealer
+	tokens *auth.Tokens
 	assets fs.FS
+
+	mcpBudget *callBudget
 }
 
-func New(cfg *config.Config, svc *Service, oidcClient *auth.OIDC, sealer *auth.Sealer, assets fs.FS) *Server {
-	return &Server{cfg: cfg, svc: svc, oidc: oidcClient, sealer: sealer, assets: assets}
+func New(cfg *config.Config, svc *Service, oidcClient *auth.OIDC, sealer *auth.Sealer, tokens *auth.Tokens, assets fs.FS) *Server {
+	return &Server{cfg: cfg, svc: svc, oidc: oidcClient, sealer: sealer, tokens: tokens, assets: assets, mcpBudget: newCallBudget()}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -68,6 +72,22 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/flags/{key}/promote/diff", s.withSession(s.handlePromoteDiff))
 	mux.HandleFunc("POST /api/environments", s.withSession(s.handleCreateEnvironment))
 	mux.HandleFunc("POST /api/environments/{env}/teams", s.withSession(s.handleCreateTeam))
+	mux.HandleFunc("GET /api/flags", s.withSession(s.handleSearch))
+	mux.HandleFunc("GET /api/flags/{key}/status", s.withSession(s.handleStatus))
+
+	// MCP clients probe OAuth discovery after a 401; the app page there would read as a broken JSON document.
+	mux.HandleFunc("/.well-known/", func(w http.ResponseWriter, _ *http.Request) {
+		writeError(w, http.StatusNotFound, "not found")
+	})
+	if s.cfg.MCP.Enabled {
+		mux.HandleFunc("POST /mcp", s.handleMCP)
+		mux.HandleFunc("GET /mcp", s.handleMCPNoStream)
+		mux.HandleFunc("DELETE /mcp", s.handleMCPNoStream)
+	} else {
+		mux.HandleFunc("/mcp", func(w http.ResponseWriter, _ *http.Request) {
+			writeError(w, http.StatusNotFound, "the MCP endpoint is turned off; set mcp.enabled to use it")
+		})
+	}
 
 	if s.assets != nil {
 		mux.Handle("/", s.spa())
@@ -97,7 +117,7 @@ type handlerWithSession func(http.ResponseWriter, *http.Request, auth.Session)
 
 func (s *Server) withSession(next handlerWithSession) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		sess, err := s.sealer.Read(r)
+		sess, err := s.authenticate(r)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "please sign in")
 			return
@@ -107,6 +127,15 @@ func (s *Server) withSession(next handlerWithSession) http.HandlerFunc {
 		}
 		next(w, r, sess)
 	}
+}
+
+// A request with a Bearer token is judged on that token alone, never on a cookie it also carries.
+func (s *Server) authenticate(r *http.Request) (auth.Session, error) {
+	// With no tokens configured, a Bearer header can only be a proxy's own, so the cookie still decides.
+	if auth.HasBearer(r) && s.tokens.Enabled() {
+		return s.tokens.Authenticate(r)
+	}
+	return s.sealer.Read(r)
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -225,8 +254,10 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request, sess auth.Ses
 }
 
 type toggleBody struct {
-	Enabled bool   `json:"enabled"`
-	FileSHA string `json:"fileSha"`
+	Enabled   bool   `json:"enabled"`
+	FileSHA   string `json:"fileSha"`
+	Reason    string `json:"reason"`
+	Reference string `json:"reference"`
 }
 
 func (s *Server) handleToggle(w http.ResponseWriter, r *http.Request, sess auth.Session) {
@@ -259,6 +290,18 @@ func (s *Server) handleToggle(w http.ResponseWriter, r *http.Request, sess auth.
 		verb = "disabled"
 	}
 
+	note := ChangeNote{Reason: body.Reason, Reference: body.Reference}.trimmed()
+	if err := note.validate(); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	// Automation retries; turning off a flag that is already off must not write or notify again.
+	if view.Enabled == body.Enabled && allows(view.Actions, permissions.Toggle) {
+		writeJSON(w, http.StatusOK, SaveResult{Unchanged: true, Message: "Already " + verb + "; nothing changed."})
+		return
+	}
+
 	result, err := s.svc.Save(r.Context(), sess, SaveRequest{
 		Environment: env,
 		Key:         key,
@@ -266,6 +309,7 @@ func (s *Server) handleToggle(w http.ResponseWriter, r *http.Request, sess auth.
 		FileSHA:     body.FileSHA,
 		Action:      permissions.Toggle,
 		Summary:     verb,
+		Note:        note,
 		LoadedFlag:  loaded,
 		Mutate:      func(f *goff.Flag) { f.Enabled = body.Enabled },
 	})
@@ -1496,6 +1540,11 @@ func (s *Server) candidateFiles(env, key string) []string {
 }
 
 func writeServiceError(w http.ResponseWriter, err error) {
+	status, message := serviceErrorMessage(err)
+	writeError(w, status, message)
+}
+
+func serviceErrorMessage(err error) (int, string) {
 	var (
 		bad  invalidError
 		dupe duplicateKeyError
@@ -1503,22 +1552,26 @@ func writeServiceError(w http.ResponseWriter, err error) {
 
 	switch {
 	case errors.As(err, &bad):
-		writeError(w, http.StatusBadRequest, bad.Error())
+		return http.StatusBadRequest, bad.Error()
 	case errors.As(err, &dupe):
-		writeError(w, http.StatusConflict, dupe.Error())
+		return http.StatusConflict, dupe.Error()
 	case errors.Is(err, ErrForbidden):
-		writeError(w, http.StatusForbidden, "you do not have permission to change this flag")
+		return http.StatusForbidden, "you do not have permission to change this flag"
 	case errors.Is(err, ErrNotFound):
-		writeError(w, http.StatusNotFound, "that flag no longer exists")
+		return http.StatusNotFound, "that flag no longer exists"
+	case errors.Is(err, ErrNoSuchEnvironment):
+		return http.StatusNotFound, "there is no environment by that name that you can see"
+	case errors.Is(err, storage.ErrNotFound):
+		return http.StatusNotFound, "that environment or flag does not exist"
 	case errors.Is(err, ErrInvalid):
-		writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), "invalid request: "))
+		return http.StatusBadRequest, strings.TrimPrefix(err.Error(), "invalid request: ")
 	case errors.Is(err, ErrStaleView):
-		writeError(w, http.StatusConflict, "your view of this flag is out of date, please reload")
+		return http.StatusConflict, "your view of this flag is out of date, please reload"
 	case errors.Is(err, errStorageConflict):
-		writeError(w, http.StatusConflict, "someone else just changed this flag, please reload and try again")
+		return http.StatusConflict, "someone else just changed this flag, please reload and try again"
 	default:
 		log.Printf("request failed: %v", err)
-		writeError(w, http.StatusInternalServerError, err.Error())
+		return http.StatusInternalServerError, err.Error()
 	}
 }
 
