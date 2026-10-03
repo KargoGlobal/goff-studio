@@ -46,9 +46,11 @@ func (t *Tokens) Enabled() bool {
 	return t != nil && len(t.tokens) > 0
 }
 
-// HasBearer reports whether the request carries an Authorization header at all, so a bad token never falls back to a cookie.
+// HasBearer reports whether the request presents a Bearer token, so a bad token never falls back to a cookie.
+// Other schemes are left alone: a proxy in front of Studio may add its own Authorization header.
 func HasBearer(r *http.Request) bool {
-	return r.Header.Get("Authorization") != ""
+	scheme, _, _ := strings.Cut(strings.TrimSpace(r.Header.Get("Authorization")), " ")
+	return strings.EqualFold(scheme, "Bearer")
 }
 
 // Authenticate compares against every configured hash so the time taken says nothing about which one nearly matched.

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/go-feature-flag/studio/internal/config"
+	"github.com/go-feature-flag/studio/internal/goff"
 	"github.com/go-feature-flag/studio/internal/storage"
 )
 
@@ -25,6 +27,7 @@ const (
 	notifyAttempts   = 3
 	signatureHeader  = "X-Studio-Signature"
 	eventHeader      = "X-Studio-Event"
+	deliveryHeader   = "X-Studio-Delivery"
 	maxNoteReason    = 500
 	maxNoteReference = 200
 	referenceTrailer = "Reference: "
@@ -101,6 +104,7 @@ type ChangeEvent struct {
 	Flag        string    `json:"flag"`
 	File        string    `json:"file"`
 	Summary     string    `json:"summary"`
+	Enabled     *bool     `json:"enabled,omitempty"`
 	Message     string    `json:"message"`
 	Reason      string    `json:"reason,omitempty"`
 	Reference   string    `json:"reference,omitempty"`
@@ -112,7 +116,8 @@ type ChangeEvent struct {
 
 type notifier struct {
 	hooks   []config.Notification
-	baseURL string
+	cfg     *config.Config
+	adapter *goff.Adapter
 	client  *http.Client
 	now     func() time.Time
 	wg      sync.WaitGroup
@@ -124,7 +129,8 @@ func newNotifier(cfg *config.Config) *notifier {
 	}
 	return &notifier{
 		hooks:   cfg.Notifications,
-		baseURL: strings.TrimRight(cfg.Server.BaseURL, "/"),
+		cfg:     cfg,
+		adapter: goff.New(),
 		client:  &http.Client{Timeout: notifyTimeout},
 		now:     time.Now,
 	}
@@ -137,30 +143,49 @@ type notifyingBackend struct {
 }
 
 func (b notifyingBackend) Write(ctx context.Context, op storage.ChangeOp, who storage.Identity) (*storage.Result, error) {
+	// The last successful Apply is what was written; it holds the flag's team and new state.
+	var before, after []byte
+	apply := op.Apply
+	op.Apply = func(current []byte) ([]byte, error) {
+		next, err := apply(current)
+		if err == nil {
+			before, after = current, next
+		}
+		return next, err
+	}
+
 	result, err := b.Backend.Write(ctx, op, who)
 	if err == nil && result != nil && result.Version != "" {
-		b.notify.send(b.notify.event(op, who, result.Version, noteFrom(ctx)))
+		b.notify.send(b.notify.event(op, who, result.Version, noteFrom(ctx), before, after))
 	}
 	return result, err
 }
 
-func (n *notifier) event(op storage.ChangeOp, who storage.Identity, version string, note ChangeNote) ChangeEvent {
+func (n *notifier) find(file, key string, content []byte) (goff.Flag, bool) {
+	flags, _, err := n.adapter.Parse(file, content)
+	if err != nil {
+		return goff.Flag{}, false
+	}
+	for _, f := range flags {
+		if f.Key == key {
+			return f, true
+		}
+	}
+	return goff.Flag{}, false
+}
+
+func (n *notifier) event(op storage.ChangeOp, who storage.Identity, version string, note ChangeNote, before, after []byte) ChangeEvent {
 	environment, _, _ := strings.Cut(op.Path, "/")
 	subject, _, _ := strings.Cut(op.Message, "\n")
-	team, summary := teamNameOf(op.Path), subject
-	if _, rest, ok := strings.Cut(subject, "] "); ok {
-		if area, rest, ok := strings.Cut(rest, "/"); ok {
-			team = area
-			if _, s, ok := strings.Cut(rest, ": "); ok {
-				summary = s
-			}
-		}
+	summary := subject
+	if _, rest, ok := strings.Cut(subject, ": "); ok {
+		summary = rest
 	}
 
 	ev := ChangeEvent{
 		Event:       EventFlagChanged,
 		Environment: environment,
-		Team:        team,
+		Team:        teamNameOf(op.Path),
 		Flag:        op.Key,
 		File:        op.Path,
 		Summary:     summary,
@@ -171,8 +196,23 @@ func (n *notifier) event(op storage.ChangeOp, who storage.Identity, version stri
 		Actor:       Actor{Name: who.Name, Email: who.Email, ID: who.Subject},
 		At:          n.now().UTC(),
 	}
-	if n.baseURL != "" && op.Key != "" {
-		ev.URL = n.baseURL + "/env/" + url.PathEscape(environment) + "/flags/" + url.PathEscape(op.Key)
+
+	flag, found := n.find(op.Path, op.Key, after)
+	if found {
+		enabled := flag.Enabled
+		ev.Enabled = &enabled
+	} else {
+		flag, found = n.find(op.Path, op.Key, before)
+	}
+	if n.cfg.SingleFile() {
+		ev.Team = ""
+		if found {
+			ev.Team = goff.TeamOf(flag.Metadata)
+		}
+	}
+
+	if base := strings.TrimRight(n.cfg.Server.BaseURL, "/"); base != "" && op.Key != "" {
+		ev.URL = base + "/env/" + url.PathEscape(environment) + "/flags/" + url.PathEscape(op.Key)
 	}
 	return ev
 }
@@ -191,7 +231,7 @@ func (n *notifier) send(ev ChangeEvent) {
 		n.wg.Add(1)
 		go func(hook config.Notification) {
 			defer n.wg.Done()
-			if err := n.deliver(hook, body); err != nil {
+			if err := n.deliver(hook, body, deliveryID()); err != nil {
 				log.Printf("notification for %q/%q to %s failed: %v", ev.Environment, ev.Flag, redactURL(hook.URL), err) //nolint:gosec // %q escapes the only request-derived values
 			}
 		}(hook)
@@ -204,10 +244,17 @@ func (n *notifier) wait() {
 	}
 }
 
-func (n *notifier) deliver(hook config.Notification, body []byte) error {
+// A retry after a timeout may repeat a delivery that did arrive, so every attempt carries the same ID.
+func deliveryID() string {
+	raw := make([]byte, 16)
+	_, _ = rand.Read(raw)
+	return hex.EncodeToString(raw)
+}
+
+func (n *notifier) deliver(hook config.Notification, body []byte, id string) error {
 	var last error
 	for attempt := 1; attempt <= notifyAttempts; attempt++ {
-		retry, err := n.post(hook, body)
+		retry, err := n.post(hook, body, id)
 		if err == nil {
 			return nil
 		}
@@ -220,7 +267,7 @@ func (n *notifier) deliver(hook config.Notification, body []byte) error {
 	return last
 }
 
-func (n *notifier) post(hook config.Notification, body []byte) (bool, error) {
+func (n *notifier) post(hook config.Notification, body []byte, id string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
 	defer cancel()
 
@@ -231,6 +278,7 @@ func (n *notifier) post(hook config.Notification, body []byte) (bool, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "goff-studio")
 	req.Header.Set(eventHeader, EventFlagChanged)
+	req.Header.Set(deliveryHeader, id)
 	if hook.Secret != "" {
 		mac := hmac.New(sha256.New, []byte(hook.Secret))
 		mac.Write(body)
@@ -270,7 +318,10 @@ func slackText(ev ChangeEvent) string {
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "*[%s]* %s/%s: %s, by %s", slackEscape(ev.Environment), slackEscape(ev.Team), flag, slackEscape(ev.Summary), slackEscape(who))
+	if ev.Team != "" {
+		flag = slackEscape(ev.Team) + "/" + flag
+	}
+	fmt.Fprintf(&b, "*[%s]* %s: %s, by %s", slackEscape(ev.Environment), flag, slackEscape(ev.Summary), slackEscape(who))
 	if ev.Reason != "" {
 		b.WriteString("\n>Reason: " + slackEscape(ev.Reason))
 	}

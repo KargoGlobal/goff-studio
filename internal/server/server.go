@@ -118,7 +118,7 @@ func (s *Server) withSession(next handlerWithSession) http.HandlerFunc {
 	}
 }
 
-// A request with an Authorization header is judged on that header alone, never on a cookie it also carries.
+// A request with a Bearer token is judged on that token alone, never on a cookie it also carries.
 func (s *Server) authenticate(r *http.Request) (auth.Session, error) {
 	if auth.HasBearer(r) {
 		return s.tokens.Authenticate(r)

@@ -66,6 +66,7 @@ type hookRecorder struct {
 	headers  []http.Header
 	status   int
 	attempts int
+	ids      []string
 }
 
 func (h *hookRecorder) server(t *testing.T) *httptest.Server {
@@ -75,6 +76,7 @@ func (h *hookRecorder) server(t *testing.T) *httptest.Server {
 		h.mu.Lock()
 		defer h.mu.Unlock()
 		h.attempts++
+		h.ids = append(h.ids, r.Header.Get(deliveryHeader))
 		if h.status != 0 {
 			w.WriteHeader(h.status)
 			return
@@ -321,6 +323,12 @@ func TestRetriesAServerError(t *testing.T) {
 	if flaky.attempts != notifyAttempts {
 		t.Errorf("want %d attempts, got %d", notifyAttempts, flaky.attempts)
 	}
+	for _, id := range flaky.ids {
+		if id == "" || id != flaky.ids[0] {
+			t.Errorf("every retry must repeat one delivery ID so receivers can drop duplicates, got %v", flaky.ids)
+			break
+		}
+	}
 }
 
 func TestUIEditsAreNotifiedToo(t *testing.T) {
@@ -432,5 +440,58 @@ func TestSearchIsLimitedToWhatTheCallerCanSee(t *testing.T) {
 	decode(t, rec, &out)
 	if len(out.Hits) != 0 {
 		t.Errorf("marketer can only see growth: %+v", out.Hits)
+	}
+}
+
+func TestSingleFileNotificationsNameTheFlagsTeam(t *testing.T) {
+	hook := &hookRecorder{}
+	hookSrv := hook.server(t)
+
+	repo := singleFileRepo()
+	srv, _, svc := testServerWith(t, repo, automationRules(), func(cfg *config.Config) {
+		withTokens(cfg)
+		cfg.Layout = config.LayoutSingleFile
+		cfg.Notifications = []config.Notification{{URL: hookSrv.URL, Format: config.NotifyJSON}}
+	})
+
+	rec := tokenRequest(t, srv, responderToken, http.MethodPost, "/api/environments/production/flags/checkout/state", `{"enabled":false}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	svc.notify.wait()
+	if len(hook.bodies) != 1 {
+		t.Fatalf("got %d deliveries", len(hook.bodies))
+	}
+	var ev ChangeEvent
+	_ = json.Unmarshal(hook.bodies[0], &ev)
+	if ev.Team != "payments" {
+		t.Errorf("team = %q, want the flag's metadata.team, not the file name", ev.Team)
+	}
+	if ev.Enabled == nil || *ev.Enabled {
+		t.Errorf("event should carry the new state, got %v", ev.Enabled)
+	}
+}
+
+func TestSlackTextWithoutATeam(t *testing.T) {
+	text := slackText(ChangeEvent{Environment: "production", Flag: "checkout", Summary: "disabled", Actor: Actor{Email: "a@example.com"}})
+	if strings.Contains(text, "/") || !strings.Contains(text, "`checkout`: disabled, by a@example.com") {
+		t.Errorf("unassigned flag text: %s", text)
+	}
+}
+
+func TestNonBearerAuthorizationFallsBackToTheCookie(t *testing.T) {
+	srv, sealer, _ := testServerWith(t, newRepo(), automationRules(), withTokens)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+	req.Header.Set("Authorization", "Basic dXNlcjpwYXNz")
+	cookie := httptest.NewRecorder()
+	if err := sealer.Write(cookie, *admin()); err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(cookie.Result().Cookies()[0])
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("a proxy's Basic header must not lock out a signed-in user, got %d", rec.Code)
 	}
 }

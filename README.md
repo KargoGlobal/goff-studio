@@ -553,11 +553,18 @@ permissions:
 ```
 
 Send the token as `Authorization: Bearer <token>`. It works on every `/api`
-route. A request with an `Authorization` header is judged on that header alone:
-a wrong token is a `401` even if the same request also carries a valid session
-cookie. A token's groups must be named explicitly; `"*"` is refused. Changes made
-with a token are attributed to `<name> (API token)` with the subject
-`token:<name>`.
+route. A request with a Bearer token is judged on that token alone: a wrong
+token is a `401` even if the same request also carries a valid session cookie.
+Other `Authorization` schemes, such as a proxy's `Basic`, are ignored. A token's
+groups must be named explicitly; `"*"` is refused. Changes made with a token are
+attributed to `<name> (API token)` with the subject `token:<name>`.
+
+- **Token groups share a namespace with your identity provider's groups.** A
+  token listed in an admin group is an admin, and a person whose IdP groups
+  include a token's group gets that token's access. Give tokens group names
+  your IdP will not use, such as an `automation:` prefix.
+- **Tokens do not expire.** Revoke one by removing it from the config and
+  restarting Studio; rotate by adding the new hash first, then removing the old.
 
 ### Change notifications
 
@@ -585,6 +592,7 @@ notifications:
   "flag": "new-checkout",
   "file": "production/payments.goff.yaml",
   "summary": "disabled",
+  "enabled": false,
   "message": "[production] payments/new-checkout: disabled",
   "reason": "checkout 5xx above 2%",
   "reference": "INC-1234",
@@ -595,8 +603,14 @@ notifications:
 }
 ```
 
-with the headers `X-Studio-Event: flag.changed` and, when `secret` is set,
-`X-Studio-Signature: sha256=<hex HMAC-SHA256 of the body>`. `format: slack`
+with the headers `X-Studio-Event: flag.changed`, `X-Studio-Delivery` (one ID
+per event and hook, repeated on retries so a receiver can drop duplicates) and,
+when `secret` is set, `X-Studio-Signature: sha256=<hex HMAC-SHA256 of the body>`.
+The signed body includes `at`, so a receiver can also refuse old replays.
+`enabled` is the flag's state after the change, absent for a delete. `team` is
+the file's team, or the flag's `metadata.team` in the single-file layout.
+Deliveries run in parallel, so two changes made within moments of each other can
+arrive out of order; order them by `at`. `format: slack`
 posts `{"text": "..."}` with the environment, flag, change, who made it, and the
 reason and reference. Webhook URLs usually embed a credential, so pass them with
 `GOFF_STUDIO_NOTIFICATIONS` from a secret; Studio only ever logs their host.

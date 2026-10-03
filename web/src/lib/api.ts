@@ -144,6 +144,7 @@ export interface SaveResult {
   commit: string
   retried: boolean
   message: string
+  unchanged?: boolean
 }
 
 export interface EvalResult {

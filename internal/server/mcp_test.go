@@ -253,3 +253,19 @@ func TestMCPIsOffUnlessEnabled(t *testing.T) {
 		t.Errorf("MCP answered while disabled: %d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestMCPBatchIsCapped(t *testing.T) {
+	srv, _, _ := testServerWith(t, newRepo(), automationRules(), withMCP)
+	items := make([]string, maxMCPBatch+1)
+	for i := range items {
+		items[i] = `{"jsonrpc":"2.0","id":1,"method":"ping"}`
+	}
+	rec := mcpPost(t, srv, readerToken, "["+strings.Join(items, ",")+"]")
+	var resp struct {
+		Error *rpcError `json:"error"`
+	}
+	decode(t, rec, &resp)
+	if resp.Error == nil || resp.Error.Code != rpcInvalidRequest {
+		t.Errorf("an oversized batch should be refused, got %s", rec.Body)
+	}
+}

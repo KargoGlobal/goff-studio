@@ -25,6 +25,9 @@ const (
 	rpcMethodNotFound = -32601
 	rpcInvalidParams  = -32602
 
+	// Each call may read every flag file, so one POST cannot fan out without limit.
+	maxMCPBatch = 20
+
 	mcpInstructions = "Read-only access to GO Feature Flag Studio. Use search_flags or get_flag_status to find a flag " +
 		"and the environments it is in, get_flag for its full configuration, get_flag_history for who changed it and why, " +
 		"and evaluate_flag to see what a given user would receive. Nothing here changes a flag."
@@ -246,6 +249,10 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		var batch []json.RawMessage
 		if err := json.Unmarshal(trimmed, &batch); err != nil || len(batch) == 0 {
 			writeJSON(w, http.StatusOK, rpcFailure(nil, rpcParseError, "could not parse the JSON-RPC batch"))
+			return
+		}
+		if len(batch) > maxMCPBatch {
+			writeJSON(w, http.StatusOK, rpcFailure(nil, rpcInvalidRequest, fmt.Sprintf("a batch may hold at most %d messages", maxMCPBatch)))
 			return
 		}
 		var replies []rpcResponse

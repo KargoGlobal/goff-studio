@@ -298,15 +298,13 @@ func (c *Config) validate() error {
 	return c.validatePermissions()
 }
 
-var tokenName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
-
 func (c *Config) validateAPITokens() error {
 	seenNames, seenHashes := map[string]bool{}, map[string]bool{}
 	for i := range c.APITokens {
 		t := &c.APITokens[i]
 		key := fmt.Sprintf("apiTokens[%d]", i)
 		t.Name = strings.TrimSpace(t.Name)
-		if !tokenName.MatchString(t.Name) || len(t.Name) > 64 {
+		if !environmentName.MatchString(t.Name) || len(t.Name) > 64 {
 			return fieldErr(key+".name", envAPITokens,
 				fmt.Sprintf("%q must be 1 to 64 letters, digits, dots, dashes or underscores; it names the token in history and notifications", t.Name))
 		}
