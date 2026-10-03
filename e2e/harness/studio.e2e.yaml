@@ -18,6 +18,11 @@ github:
 expectedPollSeconds: 30
 protectedEnvironments: [production]
 
+teams:
+  - name: growth
+  - name: payments
+  - name: billing
+
 permissions:
   - group: flags-admins
-    allow: ["*"]
+    teams: ["*"]

@@ -157,7 +157,7 @@ jobs:
           protectedEnvironments: [production]
           permissions:
             - group: ci-admins
-              allow: ["*"]
+              teams: ["*"]
           EOF
           docker run -d --name goff-ci -p 8080:8080 \
             -e GOFF_STUDIO_SESSION_SECRET=0123456789abcdef0123456789abcdef \
@@ -181,7 +181,7 @@ jobs:
             -e GOFF_STUDIO_STORAGE=file \
             -e GOFF_STUDIO_STORAGE_PATH=/flags \
             -e GOFF_STUDIO_PROTECTED_ENVIRONMENTS=dev,production \
-            -e 'GOFF_STUDIO_PERMISSIONS=[{group: ci-admins, allow: ["*"]}]' \
+            -e 'GOFF_STUDIO_PERMISSIONS=[{group: ci-admins, teams: ["*"]}]' \
             -v "$PWD/ci-flags:/flags" \
             goff-studio:ci
           ./.github/wait-healthy.sh goff-ci-env 8081

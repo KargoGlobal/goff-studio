@@ -27,11 +27,15 @@ github:
 
 protectedEnvironments: [production, staging]
 
+teams:
+  - name: growth
+    editors: [marketing]
+
 permissions:
   - group: flags-admins
-    allow: ["*"]
-  - group: marketing
-    allow: ["growth"]
+    teams: ["*"]
+  - group: growth-ops
+    teams: [growth]
     environments: [production]
     actions: [toggle, rollout]
 `
@@ -482,13 +486,13 @@ func TestProtectedEnvironmentNameMustBeUsableAsPathSegment(t *testing.T) {
 }
 
 func TestPermissionsErrorIsPrefixed(t *testing.T) {
-	msg := loadErr(t, replace(t, "actions: [toggle, rollout]", "actions: [toggle, launch_missiles]"))
+	msg := loadErr(t, base(t)+"\n  - group: g\n    teams: [\"*\"]\n    actions: [launch_missiles]\n")
 	assertMentions(t, msg, "permissions", "launch_missiles")
 }
 
 func TestEmptyPermissionsWarns(t *testing.T) {
 	full := base(t)
-	body := full[:strings.Index(full, "permissions:")]
+	body := full[:strings.Index(full, "teams:")]
 	cfg, err := Load(write(t, body))
 	if err != nil {
 		t.Fatal(err)
@@ -751,7 +755,7 @@ func TestLoadOptionalRunsWithNoConfigFileAtAll(t *testing.T) {
 	t.Setenv("GOFF_STUDIO_STORAGE", "file")
 	t.Setenv("GOFF_STUDIO_STORAGE_PATH", dir)
 	t.Setenv("GOFF_STUDIO_PROTECTED_ENVIRONMENTS", "dev, production")
-	t.Setenv("GOFF_STUDIO_PERMISSIONS", `[{group: flags-admins, allow: ["*"]}]`)
+	t.Setenv("GOFF_STUDIO_PERMISSIONS", `[{group: flags-admins, teams: ["*"]}]`)
 
 	cfg, err := LoadOptional(filepath.Join(dir, "absent.yaml"))
 	if err != nil {
@@ -791,7 +795,7 @@ func envOnly(t *testing.T) string {
 	t.Setenv("GOFF_STUDIO_OIDC_CLIENT_SECRET", "secret")
 	t.Setenv("GOFF_STUDIO_STORAGE", "file")
 	t.Setenv("GOFF_STUDIO_STORAGE_PATH", dir)
-	t.Setenv("GOFF_STUDIO_PERMISSIONS", `[{group: "*", allow: ["*"]}]`)
+	t.Setenv("GOFF_STUDIO_PERMISSIONS", `[{group: "*", teams: ["*"]}]`)
 	return filepath.Join(dir, "absent.yaml")
 }
 
@@ -923,7 +927,7 @@ func TestStorageOptionsCanComeFromTheEnvironment(t *testing.T) {
 	t.Setenv("GOFF_STUDIO_OIDC_CLIENT_SECRET", "secret")
 	t.Setenv("GOFF_STUDIO_STORAGE", "file")
 	t.Setenv("GOFF_STUDIO_STORAGE_PATH", dir)
-	t.Setenv("GOFF_STUDIO_PERMISSIONS", `[{group: "*", allow: ["*"]}]`)
+	t.Setenv("GOFF_STUDIO_PERMISSIONS", `[{group: "*", teams: ["*"]}]`)
 	t.Setenv("GOFF_STUDIO_STORAGE_OPTIONS", `{endpoint: "http://minio:9000"}`)
 
 	cfg, err := LoadOptional(filepath.Join(dir, "absent.yaml"))
@@ -944,7 +948,7 @@ func TestEnvVarsOverrideAFileAndReplaceListsWholesale(t *testing.T) {
 
 	path := filepath.Join(dir, "studio.yaml")
 	body := "server:\n  addr: \":9999\"\nstorage:\n  kind: file\n  path: " + dir +
-		"\nprotectedEnvironments: [fromfile, other]\npermissions:\n  - group: file-group\n    allow: [\"*\"]\n"
+		"\nprotectedEnvironments: [fromfile, other]\npermissions:\n  - group: file-group\n    teams: [\"*\"]\n"
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -44,7 +44,7 @@ func Run(dist embed.FS) {
 		log.Fatalf("storage: %v", err)
 	}
 
-	perms, err := permissions.New(cfg.Permissions)
+	perms, err := permissions.New(cfg.Rules())
 	if err != nil {
 		log.Fatalf("permissions: %v", err)
 	}

@@ -100,27 +100,7 @@ func validEnvironment(env string) error {
 	return validPathSegment("environment name", env)
 }
 
-// The seed file names a team, so the extension is Studio's to choose, not the caller's.
 const defaultSeedFile = "flags.goff.yaml"
-
-func seedFileName(raw string) (string, error) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return defaultSeedFile, nil
-	}
-
-	base := trimmed
-	for _, suffix := range []string{".goff.yaml", ".goff.yml", ".yaml", ".yml"} {
-		if stripped := strings.TrimSuffix(base, suffix); stripped != base {
-			base = stripped
-			break
-		}
-	}
-	if err := validPathSegment("team name", base); err != nil {
-		return "", err
-	}
-	return base + ".goff.yaml", nil
-}
 
 func validRuleName(name string) error {
 	return validName("rule name", name)

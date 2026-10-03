@@ -53,8 +53,8 @@ func payer() *auth.Session {
 
 func teamRules() []permissions.Rule {
 	return []permissions.Rule{
-		{Group: "flags-admins", Allow: []string{"*"}},
-		{Group: "payments", Allow: []string{"payments"}},
+		{Group: "flags-admins", Teams: []string{"*"}},
+		{Group: "payments", Teams: []string{"payments"}},
 	}
 }
 
@@ -77,12 +77,12 @@ func TestSingleFileListsOnlyTheTeamsFlagsYouMayView(t *testing.T) {
 		t.Fatalf("payments should only see its own flag, got %v", keys)
 	}
 	if len(list.Teams) != 1 || list.Teams[0].Name != "payments" || list.Teams[0].File != "production/flags.goff.yaml" {
-		t.Errorf("teams = %+v, want payments in the shared file", list.Teams)
+		t.Errorf("teams = %+v, want only payments, and no \"No team\" for a named-team rule", list.Teams)
 	}
 
 	all := listFor(t, srv, sealer, admin())
-	if len(flagKeys(all)) != 2 || len(all.Teams) != 2 {
-		t.Errorf("admin should see both flags and both teams, got %v and %+v", flagKeys(all), all.Teams)
+	if len(flagKeys(all)) != 2 || len(all.Teams) != len(testTeams())+1 {
+		t.Errorf("admin should see both flags, every declared team and no team, got %v and %+v", flagKeys(all), all.Teams)
 	}
 }
 
@@ -186,24 +186,6 @@ func TestSingleFileMovingAFlagToAnotherTeamNeedsRightsOnBoth(t *testing.T) {
 	}
 }
 
-func TestSingleFileNewTeamCreatesNoFile(t *testing.T) {
-	repo := singleFileRepo()
-	srv, sealer := singleFileServer(t, repo, adminRules())
-
-	rec := request(t, srv, sealer, admin(), http.MethodPost, "/api/environments/production/teams", `{"name":"billing"}`)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("status %d: %s", rec.Code, rec.Body)
-	}
-	if len(repo.files) != 1 {
-		t.Errorf("a team is only a label in the single-file layout, but files are now %d", len(repo.files))
-	}
-
-	rec = request(t, srv, sealer, payer(), http.MethodPost, "/api/environments/production/teams", `{"name":"billing"}`)
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("creating a team you could not write must still be forbidden, got %d", rec.Code)
-	}
-}
-
 func TestSingleFileNewEnvironmentIgnoresTheRequestedFileName(t *testing.T) {
 	repo := singleFileRepo()
 	srv, sealer := singleFileServer(t, repo, adminRules())
@@ -238,12 +220,12 @@ func TestSingleFileEmptyEnvironmentStillOffersCreate(t *testing.T) {
 	repo.files["production/flags.goff.yaml"] = ""
 	srv, sealer := singleFileServer(t, repo, teamRules())
 
-	if list := listFor(t, srv, sealer, payer()); !list.CanCreate || len(list.Teams) != 0 {
-		t.Errorf("an empty environment has no teams but must still allow create, got canCreate=%v teams=%+v", list.CanCreate, list.Teams)
+	if list := listFor(t, srv, sealer, payer()); !list.CanCreate || len(list.Teams) != 1 || list.Teams[0].Name != "payments" {
+		t.Errorf("an empty environment still offers the declared teams, got canCreate=%v teams=%+v", list.CanCreate, list.Teams)
 	}
 
 	viewer := &auth.Session{Subject: "okta|v", Groups: []string{"viewers"}}
-	srv, sealer = singleFileServer(t, repo, append(teamRules(), permissions.Rule{Group: "viewers", Allow: []string{"*"}, Actions: []string{"view"}}))
+	srv, sealer = singleFileServer(t, repo, append(teamRules(), permissions.Rule{Group: "viewers", Teams: []string{"*"}, Actions: []string{"view"}}))
 	if list := listFor(t, srv, sealer, viewer); list.CanCreate {
 		t.Error("a view-only group must not be offered create")
 	}

@@ -265,7 +265,7 @@ func TestPromoteAllowsRulesWhenVariationsComeTogether(t *testing.T) {
 func TestPromoteNeedsWritePermissionOnTheTarget(t *testing.T) {
 	rules := []permissions.Rule{{
 		Group:   "flags-admins",
-		Allow:   []string{"*"},
+		Teams:   []string{"*"},
 		Actions: []string{"view"},
 	}}
 

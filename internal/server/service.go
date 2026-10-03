@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -32,6 +33,10 @@ type Service struct {
 	envLoadedAt time.Time
 	envTTL      time.Duration
 	now         func() time.Time
+
+	teamMu       sync.Mutex
+	teamIndex    teamCounts
+	teamLoadedAt time.Time
 }
 
 const environmentCacheTTL = 30 * time.Second
@@ -101,9 +106,11 @@ type FlagView struct {
 	Actions []permissions.Action `json:"actions"`
 	Summary string               `json:"summary"`
 	FileSHA string               `json:"fileSha"`
+	// The flag names a team studio.yaml does not declare, so only "*" rules reach it.
+	UnknownTeam bool `json:"unknownTeam,omitempty"`
 }
 
-// A team is one file. Name is the file's basename, never read back from metadata.
+// An empty Name is the "No team" option.
 type TeamOption struct {
 	Name string `json:"name"`
 	File string `json:"file"`
@@ -126,23 +133,38 @@ func teamFile(environment, team string) string {
 	return environment + "/" + team + ".goff.yaml"
 }
 
-// In the single-file layout a team has no file, so permissions match the path it would have had.
-func (s *Service) scope(environment, file, team string) string {
+// In the team-files layout the file decides the team; in the single-file layout metadata.team does.
+func (s *Service) owner(file, metadataTeam string) string {
 	if s.cfg.SingleFile() {
-		return teamFile(environment, team)
+		return metadataTeam
 	}
-	return file
+	if name := teamNameOf(file); name != config.NoTeamFile {
+		return name
+	}
+	return ""
+}
+
+// An undeclared team grants nothing, so only "*" rules reach its flags.
+func (s *Service) access(team string) string {
+	if s.cfg.DeclaresTeam(team) {
+		return team
+	}
+	return ""
 }
 
 func (s *Service) scopeOf(v *FlagView) string {
-	return s.scope(v.Environment, v.File, v.Team)
+	return s.access(v.Team)
 }
 
 func (s *Service) teamOf(v *FlagView) string {
-	if s.cfg.SingleFile() {
-		return v.Team
+	return v.Team
+}
+
+func (s *Service) teamFileFor(environment, team string) string {
+	if s.cfg.SingleFile() || team == "" {
+		return s.environmentFile(environment)
 	}
-	return teamNameOf(v.File)
+	return teamFile(environment, team)
 }
 
 func (s *Service) environmentFile(environment string) string {
@@ -150,11 +172,10 @@ func (s *Service) environmentFile(environment string) string {
 }
 
 type ListResult struct {
-	Flags  []FlagView    `json:"flags"`
-	Broken []goff.Broken `json:"broken"`
-	Teams  []TeamOption  `json:"teams"`
-	// CanCreate stays true with no teams listed, since a new team can be made from the create page.
-	CanCreate bool `json:"canCreate"`
+	Flags     []FlagView    `json:"flags"`
+	Broken    []goff.Broken `json:"broken"`
+	Teams     []TeamOption  `json:"teams"`
+	CanCreate bool          `json:"canCreate"`
 }
 
 func (s *Service) List(ctx context.Context, sess auth.Session, environment string) (*ListResult, error) {
@@ -172,16 +193,8 @@ func (s *Service) List(ctx context.Context, sess auth.Session, environment strin
 
 	out := &ListResult{CanCreate: s.perms.AllowedAnywhere(sess.Groups, environment, permissions.Create)}
 	seen := map[string]string{}
-	teams := map[string]bool{}
-	single := s.cfg.SingleFile()
 
 	for _, file := range files {
-		if !single && !s.perms.Allowed(permissions.Request{
-			Groups: sess.Groups, Environment: environment, File: file, Action: permissions.View,
-		}) {
-			continue
-		}
-
 		f, err := s.repo.ReadFile(ctx, file)
 		if err != nil {
 			return nil, err
@@ -192,19 +205,17 @@ func (s *Service) List(ctx context.Context, sess auth.Session, environment strin
 			return nil, err
 		}
 		s.remember(file, f.Version, flags)
-		if !single || s.perms.Allowed(permissions.Request{
-			Groups: sess.Groups, Environment: environment, File: s.scope(environment, file, ""), Action: permissions.View,
+		if s.perms.Allowed(permissions.Request{
+			Groups: sess.Groups, Environment: environment, Team: s.access(s.owner(file, "")), Action: permissions.View,
 		}) {
 			out.Broken = append(out.Broken, broken...)
 		}
 
 		for _, flag := range flags {
-			scope := s.scope(environment, file, flag.Team)
-			if flag.Team != "" {
-				teams[flag.Team] = true
-			}
-			if single && !s.perms.Allowed(permissions.Request{
-				Groups: sess.Groups, Environment: environment, File: scope, Action: permissions.View,
+			flag.Team = s.owner(file, flag.Team)
+			team := s.access(flag.Team)
+			if !s.perms.Allowed(permissions.Request{
+				Groups: sess.Groups, Environment: environment, Team: team, Action: permissions.View,
 			}) {
 				continue
 			}
@@ -220,33 +231,22 @@ func (s *Service) List(ctx context.Context, sess auth.Session, environment strin
 
 			flag.Environment = environment
 			out.Flags = append(out.Flags, FlagView{
-				Flag:    flag,
-				Actions: s.perms.ActionsFor(sess.Groups, environment, scope),
-				Summary: Summarize(flag),
-				FileSHA: f.Version,
+				Flag:        flag,
+				Actions:     s.perms.ActionsFor(sess.Groups, environment, team),
+				Summary:     Summarize(flag),
+				FileSHA:     f.Version,
+				UnknownTeam: flag.Team != "" && team == "",
 			})
 		}
 	}
 
-	if single {
-		for team := range teams {
-			if s.perms.Allowed(permissions.Request{
-				Groups: sess.Groups, Environment: environment, File: teamFile(environment, team), Action: permissions.Create,
-			}) {
-				out.Teams = append(out.Teams, TeamOption{Name: team, File: s.environmentFile(environment)})
-			}
-		}
-	} else {
-		for _, file := range files {
-			if !s.perms.Allowed(permissions.Request{
-				Groups: sess.Groups, Environment: environment, File: file, Action: permissions.Create,
-			}) {
-				continue
-			}
-			out.Teams = append(out.Teams, TeamOption{Name: teamNameOf(file), File: file})
+	for _, team := range append(s.cfg.TeamNames(), "") {
+		if s.perms.Allowed(permissions.Request{
+			Groups: sess.Groups, Environment: environment, Team: team, Action: permissions.Create,
+		}) {
+			out.Teams = append(out.Teams, TeamOption{Name: team, File: s.teamFileFor(environment, team)})
 		}
 	}
-	sort.Slice(out.Teams, func(i, j int) bool { return out.Teams[i].Name < out.Teams[j].Name })
 
 	if out.Teams == nil {
 		out.Teams = []TeamOption{}
@@ -302,7 +302,7 @@ func (s *Service) Save(ctx context.Context, sess auth.Session, req SaveRequest) 
 		return nil, ErrForbidden
 	}
 	if !single && !s.perms.Allowed(permissions.Request{
-		Groups: sess.Groups, Environment: req.Environment, File: req.File, Action: req.Action,
+		Groups: sess.Groups, Environment: req.Environment, Team: s.access(s.owner(req.File, "")), Action: req.Action,
 	}) {
 		return nil, ErrForbidden
 	}
@@ -348,7 +348,7 @@ func (s *Service) Save(ctx context.Context, sess auth.Session, req SaveRequest) 
 		return next, nil
 	}
 
-	result, err := s.repo.Write(ctx, storage.ChangeOp{
+	result, err := s.write(ctx, storage.ChangeOp{
 		Path:        req.File,
 		Key:         req.Key,
 		BaseVersion: req.FileSHA,
@@ -367,7 +367,7 @@ func (s *Service) Save(ctx context.Context, sess auth.Session, req SaveRequest) 
 func (s *Service) mutateTeamChecked(sess auth.Session, req SaveRequest, target *goff.Flag) error {
 	allowed := func(team string, action permissions.Action) bool {
 		return s.perms.Allowed(permissions.Request{
-			Groups: sess.Groups, Environment: req.Environment, File: teamFile(req.Environment, team), Action: action,
+			Groups: sess.Groups, Environment: req.Environment, Team: s.access(team), Action: action,
 		})
 	}
 
@@ -377,7 +377,13 @@ func (s *Service) mutateTeamChecked(sess auth.Session, req SaveRequest, target *
 	}
 	req.Mutate(target)
 	after := goff.TeamOf(target.Metadata)
-	if after != before && (!allowed(before, permissions.Delete) || !allowed(after, permissions.Create)) {
+	if after == before {
+		return nil
+	}
+	if err := s.validTeam(after); err != nil {
+		return err
+	}
+	if !allowed(before, permissions.Delete) || !allowed(after, permissions.Create) {
 		return ErrForbidden
 	}
 	return nil
@@ -462,15 +468,8 @@ type CreateRequest struct {
 	Description string
 }
 
-func (r CreateRequest) scope() string {
-	return teamFile(r.Environment, strings.TrimSpace(r.Team))
-}
-
 func (s *Service) createFile(r CreateRequest) string {
-	if s.cfg.SingleFile() {
-		return s.environmentFile(r.Environment)
-	}
-	return r.scope()
+	return s.teamFileFor(r.Environment, strings.TrimSpace(r.Team))
 }
 
 type VariationsRequest struct {
@@ -500,11 +499,15 @@ func validKey(key string) error {
 	return nil
 }
 
-func validTeam(team string) error {
-	if strings.TrimSpace(team) == "" {
-		return invalid("pick a team; it decides which file the flag lives in")
+func (s *Service) validTeam(team string) error {
+	team = strings.TrimSpace(team)
+	if team == "" || s.cfg.DeclaresTeam(team) {
+		return nil
 	}
-	return validPathSegment("team name", team)
+	if len(s.cfg.Teams) == 0 {
+		return invalid("%q is not a team; studio.yaml declares no teams, so create the flag with no team", team)
+	}
+	return invalid("%q is not a team; pick one of %s, or no team", team, strings.Join(s.cfg.TeamNames(), ", "))
 }
 
 func checkVariationShape(variations []goff.Variation) error {
@@ -642,9 +645,14 @@ func (s *Service) buildCreate(current []byte, req CreateRequest, file string) ([
 		Enabled:    req.Enabled,
 		Variations: req.Variations,
 		Default:    goff.Outcome{Variation: req.Default},
-		Metadata:   map[string]any{"team": strings.TrimSpace(req.Team)},
+	}
+	if team := strings.TrimSpace(req.Team); team != "" {
+		created.Metadata = map[string]any{"team": team}
 	}
 	if req.Description != "" {
+		if created.Metadata == nil {
+			created.Metadata = map[string]any{}
+		}
 		created.Metadata[metaDescription] = req.Description
 	}
 	stamp(&created, s.now(), true)
@@ -660,13 +668,13 @@ func (s *Service) buildCreate(current []byte, req CreateRequest, file string) ([
 }
 
 func (s *Service) prepareCreate(ctx context.Context, sess auth.Session, req CreateRequest) error {
-	if err := validTeam(req.Team); err != nil {
+	if err := s.validTeam(req.Team); err != nil {
 		return err
 	}
 	file := s.createFile(req)
 
 	if !s.perms.Allowed(permissions.Request{
-		Groups: sess.Groups, Environment: req.Environment, File: req.scope(), Action: permissions.Create,
+		Groups: sess.Groups, Environment: req.Environment, Team: strings.TrimSpace(req.Team), Action: permissions.Create,
 	}) {
 		return ErrForbidden
 	}
@@ -685,18 +693,8 @@ func (s *Service) prepareCreate(ctx context.Context, sess auth.Session, req Crea
 		return err
 	}
 
-	found := false
-	for _, f := range files {
-		if f == file {
-			found = true
-			break
-		}
-	}
-	if !found && s.cfg.SingleFile() {
+	if !slices.Contains(files, file) && s.cfg.SingleFile() {
 		return invalid("%s has no %s yet; recreate the environment or add the file", req.Environment, file)
-	}
-	if !found {
-		return invalid("%q is not a team in %s; create it first", strings.TrimSpace(req.Team), req.Environment)
 	}
 
 	if where, taken, err := s.locateKey(ctx, files, req.Key); err != nil {
@@ -716,11 +714,19 @@ func (s *Service) Create(ctx context.Context, sess auth.Session, req CreateReque
 		return nil, ErrStaleView
 	}
 
-	result, err := s.repo.Write(ctx, storage.ChangeOp{
+	message := s.commitMessage(SaveRequest{Environment: req.Environment, Key: req.Key, File: file, Summary: "created"})
+	if created, err := s.createTeamFile(ctx, sess, req, file, message); created || err != nil {
+		if err != nil {
+			return nil, err
+		}
+		return s.saved(&storage.Result{}), nil
+	}
+
+	result, err := s.write(ctx, storage.ChangeOp{
 		Path:        file,
 		Key:         req.Key,
 		BaseVersion: req.FileSHA,
-		Message:     s.commitMessage(SaveRequest{Environment: req.Environment, Key: req.Key, File: file, Summary: "created"}),
+		Message:     message,
 		Apply:       func(current []byte) ([]byte, error) { return s.buildCreate(current, req, file) },
 		// A create only conflicts when the key itself appeared; any other edit to the file just rebases and appends.
 		Changed: func(current []byte) (bool, error) { return false, nil },
@@ -731,13 +737,42 @@ func (s *Service) Create(ctx context.Context, sess auth.Session, req CreateReque
 	return s.saved(result), nil
 }
 
+func teamSeed(environment, team string) []byte {
+	if team == "" {
+		return []byte(fmt.Sprintf("# Feature flags with no team in %s.\n# Managed by GO Feature Flag Studio.\n", environment))
+	}
+	return []byte(fmt.Sprintf("# Feature flags owned by %s in %s.\n# Managed by GO Feature Flag Studio.\n", team, environment))
+}
+
+// A team's file is created by its first flag; losing a race to create it falls back to a normal write.
+func (s *Service) createTeamFile(ctx context.Context, sess auth.Session, req CreateRequest, file, message string) (bool, error) {
+	if s.cfg.SingleFile() {
+		return false, nil
+	}
+	if _, err := s.repo.ReadFile(ctx, file); !errors.Is(err, storage.ErrNotFound) {
+		return false, err
+	}
+	content, err := s.buildCreate(teamSeed(req.Environment, strings.TrimSpace(req.Team)), req, file)
+	if err != nil {
+		return false, err
+	}
+	defer s.invalidateEnvironments()
+	if err := s.repo.CreateFile(ctx, file, content, message, identityOf(sess)); err != nil {
+		if _, readErr := s.repo.ReadFile(ctx, file); readErr == nil {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 func (s *Service) Delete(ctx context.Context, sess auth.Session, environment, key, fileSHA string, loaded *goff.Flag) (*SaveResult, error) {
 	view, err := s.Get(ctx, sess, environment, key)
 	if err != nil {
 		return nil, err
 	}
 	if !s.perms.Allowed(permissions.Request{
-		Groups: sess.Groups, Environment: environment, File: s.scopeOf(view), Action: permissions.Delete,
+		Groups: sess.Groups, Environment: environment, Team: s.scopeOf(view), Action: permissions.Delete,
 	}) {
 		return nil, ErrForbidden
 	}
@@ -745,7 +780,7 @@ func (s *Service) Delete(ctx context.Context, sess auth.Session, environment, ke
 		return nil, ErrStaleView
 	}
 
-	result, err := s.repo.Write(ctx, storage.ChangeOp{
+	result, err := s.write(ctx, storage.ChangeOp{
 		Path:        view.File,
 		Key:         key,
 		BaseVersion: fileSHA,
@@ -784,12 +819,12 @@ func (s *Service) Rename(ctx context.Context, sess auth.Session, environment, ke
 
 	// Renaming moves nothing between files, so create rights on the current file are enough.
 	if !s.perms.Allowed(permissions.Request{
-		Groups: sess.Groups, Environment: environment, File: s.scopeOf(view), Action: permissions.Create,
+		Groups: sess.Groups, Environment: environment, Team: s.scopeOf(view), Action: permissions.Create,
 	}) {
 		return nil, ErrForbidden
 	}
 	if !s.perms.Allowed(permissions.Request{
-		Groups: sess.Groups, Environment: environment, File: s.scopeOf(view), Action: permissions.Delete,
+		Groups: sess.Groups, Environment: environment, Team: s.scopeOf(view), Action: permissions.Delete,
 	}) {
 		return nil, ErrForbidden
 	}
@@ -807,7 +842,7 @@ func (s *Service) Rename(ctx context.Context, sess auth.Session, environment, ke
 		return nil, duplicateKeyError{msg: fmt.Sprintf("flag %q already exists in %s; keys must be unique within an environment", newKey, where)}
 	}
 
-	result, err := s.repo.Write(ctx, storage.ChangeOp{
+	result, err := s.write(ctx, storage.ChangeOp{
 		Path:        view.File,
 		Key:         key,
 		BaseVersion: fileSHA,
@@ -896,7 +931,7 @@ func (s *Service) SaveVariations(ctx context.Context, sess auth.Session, req Var
 	}
 
 	if !s.perms.Allowed(permissions.Request{
-		Groups: sess.Groups, Environment: req.Environment, File: s.scopeOf(view), Action: permissions.EditVariations,
+		Groups: sess.Groups, Environment: req.Environment, Team: s.scopeOf(view), Action: permissions.EditVariations,
 	}) {
 		return nil, ErrForbidden
 	}
@@ -904,7 +939,7 @@ func (s *Service) SaveVariations(ctx context.Context, sess auth.Session, req Var
 		return nil, ErrStaleView
 	}
 
-	result, err := s.repo.Write(ctx, storage.ChangeOp{
+	result, err := s.write(ctx, storage.ChangeOp{
 		Path:        req.File,
 		Key:         req.Key,
 		BaseVersion: req.FileSHA,
@@ -968,6 +1003,9 @@ func (s *Service) DiffCreate(ctx context.Context, sess auth.Session, req CreateR
 	}
 
 	file, err := s.repo.ReadFile(ctx, s.createFile(req))
+	if errors.Is(err, storage.ErrNotFound) && !s.cfg.SingleFile() {
+		file, err = &storage.File{Content: teamSeed(req.Environment, strings.TrimSpace(req.Team))}, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -990,7 +1028,7 @@ func (s *Service) DiffDelete(ctx context.Context, sess auth.Session, environment
 		return nil, err
 	}
 	if !s.perms.Allowed(permissions.Request{
-		Groups: sess.Groups, Environment: environment, File: s.scopeOf(view), Action: permissions.Delete,
+		Groups: sess.Groups, Environment: environment, Team: s.scopeOf(view), Action: permissions.Delete,
 	}) {
 		return nil, ErrForbidden
 	}
@@ -1022,7 +1060,7 @@ func (s *Service) DiffRename(ctx context.Context, sess auth.Session, environment
 	}
 	for _, action := range []permissions.Action{permissions.Create, permissions.Delete} {
 		if !s.perms.Allowed(permissions.Request{
-			Groups: sess.Groups, Environment: environment, File: s.scopeOf(view), Action: action,
+			Groups: sess.Groups, Environment: environment, Team: s.scopeOf(view), Action: action,
 		}) {
 			return nil, ErrForbidden
 		}
@@ -1063,7 +1101,7 @@ func (s *Service) DiffVariations(ctx context.Context, sess auth.Session, req Var
 		req.Type = view.Type
 	}
 	if !s.perms.Allowed(permissions.Request{
-		Groups: sess.Groups, Environment: req.Environment, File: s.scopeOf(view), Action: permissions.EditVariations,
+		Groups: sess.Groups, Environment: req.Environment, Team: s.scopeOf(view), Action: permissions.EditVariations,
 	}) {
 		return nil, ErrForbidden
 	}
@@ -1299,8 +1337,14 @@ func (s *Service) environmentNames(ctx context.Context) ([]string, error) {
 
 func (s *Service) invalidateEnvironments() {
 	s.envMu.Lock()
-	defer s.envMu.Unlock()
 	s.envNames = nil
+	s.envMu.Unlock()
+	s.invalidateTeams()
+}
+
+func (s *Service) write(ctx context.Context, op storage.ChangeOp, who storage.Identity) (*storage.Result, error) {
+	defer s.invalidateTeams()
+	return s.repo.Write(ctx, op, who)
 }
 
 func (s *Service) discoverEnvironments(ctx context.Context) ([]string, error) {
@@ -1332,7 +1376,7 @@ func (s *Service) discoverEnvironments(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
-func (s *Service) CreateEnvironment(ctx context.Context, sess auth.Session, name, seedFile string) error {
+func (s *Service) CreateEnvironment(ctx context.Context, sess auth.Session, name string) error {
 	name = strings.Trim(strings.TrimSpace(name), "/")
 	if err := validEnvironment(name); err != nil {
 		return err
@@ -1352,54 +1396,11 @@ func (s *Service) CreateEnvironment(ctx context.Context, sess auth.Session, name
 		}
 	}
 
-	if s.cfg.SingleFile() {
-		seedFile = ""
-	}
-	seedFile, err = seedFileName(seedFile)
-	if err != nil {
-		return err
-	}
-
-	path := name + "/" + seedFile
+	path := s.environmentFile(name)
 	seed := fmt.Sprintf("# Feature flags for %s.\n# Managed by GO Feature Flag Studio.\n", name)
 
 	defer s.invalidateEnvironments()
 	return s.repo.CreateFile(ctx, path, []byte(seed), fmt.Sprintf("[%s] created environment", name), identityOf(sess))
-}
-
-func (s *Service) CreateTeam(ctx context.Context, sess auth.Session, environment, name string) error {
-	if err := validEnvironment(environment); err != nil {
-		return err
-	}
-	name = strings.Trim(strings.TrimSpace(name), "/")
-	if err := validTeam(name); err != nil {
-		return err
-	}
-
-	path := teamFile(environment, name)
-	if !s.perms.Allowed(permissions.Request{
-		Groups: sess.Groups, Environment: environment, File: path, Action: permissions.Create,
-	}) {
-		return ErrForbidden
-	}
-	// A team in the single-file layout is just a label, so it exists once a flag carries it.
-	if s.cfg.SingleFile() {
-		return nil
-	}
-
-	files, err := s.environmentFiles(ctx, environment)
-	if err != nil {
-		return err
-	}
-	for _, existing := range files {
-		if teamNameOf(existing) == name {
-			return invalid("team %q already exists in %s", name, environment)
-		}
-	}
-
-	seed := fmt.Sprintf("# Feature flags owned by %s in %s.\n# Managed by GO Feature Flag Studio.\n", name, environment)
-	defer s.invalidateEnvironments()
-	return s.repo.CreateFile(ctx, path, []byte(seed), fmt.Sprintf("[%s] created team %s", environment, name), identityOf(sess))
 }
 
 func (s *Service) CachedFilesFor(environment, key string) []string {

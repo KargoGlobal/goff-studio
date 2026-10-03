@@ -121,6 +121,9 @@ config:
 
   protectedEnvironments: [production]
 
+  # Declared teams; see the README. Leave empty to run without teams.
+  teams: []
+
   permissions: []
 
 # Verbatim config file contents; replaces anything rendered from `config`.

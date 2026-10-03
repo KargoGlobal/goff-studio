@@ -42,7 +42,7 @@ docker run -p 8080:8080 \
   -e GOFF_STUDIO_GITHUB_INSTALLATION_ID=456 \
   -e GOFF_STUDIO_GITHUB_PRIVATE_KEY_PATH=/etc/goff-studio/app.pem \
   -e GOFF_STUDIO_PROTECTED_ENVIRONMENTS=production \
-  -e GOFF_STUDIO_PERMISSIONS='[{group: flags-admins, allow: ["*"]}]' \
+  -e GOFF_STUDIO_PERMISSIONS='[{group: flags-admins, teams: ["*"]}]' \
   -v "$PWD/app.pem:/etc/goff-studio/app.pem:ro" \
   ghcr.io/OWNER/REPO:latest
 ```
@@ -130,7 +130,8 @@ Dockerfile takes the same list as the `GO_TAGS` build argument. `github` and
 | --- | --- | --- |
 | `storage.kind` | `GOFF_STUDIO_STORAGE` | `github` (default), `file`, `s3`, `googleStorage`, `azureBlobStorage`, or `configmap` |
 | `protectedEnvironments` | `GOFF_STUDIO_PROTECTED_ENVIRONMENTS` | `production,eu-production` or a YAML list; changes there need a diff review and typed confirmation. A name with no folder yet is fine |
-| `permissions` | `GOFF_STUDIO_PERMISSIONS` | YAML or JSON list, e.g. `[{group: admins, allow: ["*"]}]` |
+| `teams` | `GOFF_STUDIO_TEAMS` | YAML or JSON list, e.g. `[{name: growth, editors: [marketing]}]`; see [Teams](#teams). Optional |
+| `permissions` | `GOFF_STUDIO_PERMISSIONS` | YAML or JSON list, e.g. `[{group: admins, teams: ["*"]}]` |
 
 Upgrading from a release with `environments` or `discoverEnvironments`
 (`GOFF_STUDIO_ENVIRONMENTS`, `GOFF_STUDIO_DISCOVER_ENVIRONMENTS`): Studio refuses
@@ -259,17 +260,17 @@ one, and dot-directories are ignored. The list is cached for 30 seconds, and
 creating an environment in Studio refreshes it straight away; a folder added
 outside Studio shows up within the cache window. Inside each environment there
 is one file per team named after the team: `production/growth.goff.yaml` is the
-team `growth`. That pairs
+team `growth`, and `production/flags.goff.yaml` holds flags with no team. That pairs
 naturally with CODEOWNERS, and a save only ever rewrites the one file it touched.
 Flag keys must be unique across all files in an environment — Studio reports
 duplicates instead of letting one silently win.
 
-When you create a flag you pick a team, not a file; Studio derives the path and
-writes the team to `metadata.team` so it is explicit in the YAML rather than
-implied by the filename. "New team" creates `<env>/<team>.goff.yaml` with a seed
-comment — Studio never invents a file as a side effect of saving a flag. A flag
-whose `metadata.team` is missing shows as unassigned, which is what you see for
-files written by hand before Studio.
+When you create a flag you pick one of the [declared teams](#teams) or "No team",
+not a file; Studio derives the path and also writes the team to `metadata.team`.
+The first flag for a team creates `<env>/<team>.goff.yaml` with a seed comment;
+that is the only time Studio creates a file other than an environment's
+`flags.goff.yaml`. In this layout the file decides the team, so a hand-edited
+`metadata.team` that disagrees with the file is ignored.
 
 ### Single-file layout
 
@@ -285,12 +286,11 @@ flags-store/
 This suits object storage, where the relay proxy needs one retriever per file:
 adding a team needs no relay change, only adding an environment does.
 
-- Permissions behave as if each team still had its own file. `allow: ["growth"]`
+- Permissions behave as if each team still had its own file. `teams: ["growth"]`
   matches flags whose `metadata.team` is `growth`, and a flag with no team matches
   only `*` rules.
 - Moving a flag to another team (editing `metadata.team`) needs `delete` on the old
   team and `create` on the new one, checked against the file as it is written.
-- "New team" creates no file; the team exists once a flag carries it.
 - Every save in an environment touches the same file, so two saves at the same
   moment are more likely to rebase or, when they touch the same flag, return 409.
 - CODEOWNERS cannot tell teams apart, so prefer `team-files` with the GitHub backend.
@@ -302,18 +302,48 @@ every save, both as RFC 3339 UTC. Flags created outside Studio have no `createdA
 the flag list shows "—" for any missing date. Promotion never copies these keys
 between environments, and Compare does not count them as drift.
 
+## Teams
+
+Teams are declared in `studio.yaml` and nowhere else; the UI cannot add one. Each
+team names the OIDC groups that edit its flags. Environments are global, so editors
+get full access to their team's flags in every environment:
+
+```yaml
+teams:
+  - name: payments
+    editors: [payments-team]
+  - name: growth
+    editors: [growth-engineers]
+```
+
+- The team dropdown offers the declared teams you may create in, plus "No team"
+  if you have a `"*"` rule. A save or create naming any other team is refused.
+- `teams` is optional. Without it there is no team dropdown, every flag has no
+  team, and access comes from `"*"` rules in `permissions`.
+- A flag whose team is not declared (a removed team, or a hand-edited file) still
+  loads, marked "unknown team", and only `"*"` rules reach it. Re-declare the team
+  or move the flag to restore access.
+- Names follow the environment-name rules (letters, digits, `.`, `-`, `_`), must
+  be unique, and cannot be `flags`, which is the no-team file. Studio refuses to
+  start otherwise, and warns about any `permissions` rule naming an undeclared team.
+
 ## Permission model
 
-Permissions map OIDC groups to file patterns, environments, and actions.
+Each team's `editors` become rules internally. `permissions` holds the rest:
+admins, read-only access, anything spanning teams, and narrower grants such as
+toggle-only access in one environment.
 
 ```yaml
 permissions:
   - group: flags-admins
-    allow: ["*"]
+    teams: ["*"]
   - group: marketing
-    allow: ["growth"]
+    teams: [growth]
     environments: [production]
     actions: [toggle, rollout]
+  - group: "*"
+    teams: ["*"]
+    actions: [view]
 ```
 
 | Action | Grants |
@@ -333,13 +363,10 @@ Rules:
 - **Any action implies `view`.** Granting `toggle` also grants read.
 - Omitting `actions` grants all of them; omitting `environments` matches all.
 - `group: "*"` matches every signed-in user.
-- `allow` patterns match the file path (`production/growth.goff.yaml`), the
-  basename with the extension stripped (`growth`), or a glob of either — so
-  `allow: ["growth"]` is the normal way to say "the growth team's file, in
-  whichever environment this rule covers".
-- `create` is checked against the derived path, so a user who may not write
-  `production/billing.goff.yaml` can neither create a flag in team `billing` nor
-  create the team itself. The team dropdown only offers what you may create in.
+- `teams` lists team names or `"*"`. Globs and paths are rejected. `"*"` is the
+  only way to reach flags with no team or an unknown team.
+- `create` is checked against the chosen team, and moving a flag between teams
+  needs `delete` on the old one and `create` on the new one.
 - Creating an environment is checked as `create` in that environment name. The
   UI only offers "New environment" to groups with a `create` rule that has no
   `environments` restriction (or `"*"`), since the name is not known up front.
@@ -349,14 +376,13 @@ Rules:
 Every value that becomes part of a file path or is written into YAML is validated
 server-side, in `internal/server/validate.go`:
 
-- **Path segments** (environment and team names) reject path separators, `..`,
-  leading dots and whitespace, so nothing the client sends can escape the
-  environment directory it belongs to. Studio owns the file extension: whatever
-  you type is normalised to a single `<team>.goff.yaml`.
-- **Anything embedded in a YAML seed** rejects line breaks and control characters,
+- **Path segments**: environment names reject path separators, `..`, leading dots
+  and whitespace, so nothing the client sends can escape the environment directory
+  it belongs to. Team names must be declared in config, so a client cannot choose
+  a file name at all.
+- **Anything embedded in YAML** rejects line breaks and control characters,
   including U+2028 and U+2029, which a YAML parser treats as line breaks even
-  though Go does not consider them control runes. Without this a team name could
-  inject a top-level flag key and bypass key validation entirely.
+  though Go does not consider them control runes.
 - **Percentages** are bounded to 0–100 individually and must not all be zero;
   GOFF's own validator accepts negative and >100 shares.
 - **Names and queries** have length limits, and a client-supplied history limit is
@@ -496,7 +522,7 @@ All `/api` routes require a session cookie and return `401` without one.
 | `POST` | `/auth/logout` | clear the session cookie |
 | `GET` | `/api/me` | user, groups, visible environments, whether you may create one, poll seconds, backend capabilities |
 | `GET` | `/api/environments/{env}/flags` | flag list, selectable teams, unparseable/duplicate flags |
-| `POST` | `/api/environments/{env}/flags` | create a flag in a team |
+| `POST` | `/api/environments/{env}/flags` | create a flag in a declared team, or with no team |
 | `GET` | `/api/environments/{env}/flags/{key}` | one flag |
 | `DELETE` | `/api/environments/{env}/flags/{key}` | delete a flag |
 | `PUT` | `/api/environments/{env}/flags/{key}/variations` | replace variations and the default |
@@ -517,7 +543,7 @@ All `/api` routes require a session cookie and return `401` without one.
 | `GET` | `/api/environments/{env}/flags/{key}/history` | commits touching this flag |
 | `GET` | `/api/environments/{env}/attributes` | attribute names seen in existing rules |
 | `POST` | `/api/environments` | create an environment directory |
-| `POST` | `/api/environments/{env}/teams` | create a team file |
+| `GET` | `/api/teams` | declared teams you can see, their editor groups, and flag counts per environment |
 
 Error codes: `403` no permission, `404` unknown flag, `409` stale view or
 concurrent edit on the same flag.
@@ -528,7 +554,7 @@ Working today: the HTTP API, GOFF adapter, OIDC auth, permissions, and the write
 path across all six storage backends. The React UI covers the flag list with
 search, team filter and inline toggles; flag detail with variations, percentage
 sliders and a visual rule builder including negated and nested condition groups;
-creating, renaming and deleting flags and teams; editing progressive rollouts and
+creating, renaming and deleting flags; editing progressive rollouts and
 the schedule (`experimentation`); comparing one flag across two environments and
 promoting selected settings between them; review-before-save with a real file
 diff; live preview; and per-flag history.

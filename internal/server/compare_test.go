@@ -151,7 +151,7 @@ func TestCompare404sWhenTheKeyExistsNowhere(t *testing.T) {
 func TestCompareRefusesAnEnvironmentTheUserCannotView(t *testing.T) {
 	rules := []permissions.Rule{{
 		Group:        "flags-admins",
-		Allow:        []string{"*"},
+		Teams:        []string{"*"},
 		Environments: []string{"dev"},
 		Actions:      []string{"view"},
 	}}
@@ -171,7 +171,7 @@ func TestCompareRefusesAnEnvironmentTheUserCannotView(t *testing.T) {
 func TestCompareDoesNotCallEditVariationsAlonePromotable(t *testing.T) {
 	rules := []permissions.Rule{{
 		Group:   "flags-admins",
-		Allow:   []string{"*"},
+		Teams:   []string{"*"},
 		Actions: []string{"view", "edit_variations"},
 	}}
 
@@ -220,7 +220,7 @@ func TestCompareCallsAMissingTargetWritableWhenTheUserMayCreate(t *testing.T) {
 func TestCompareMarksWhetherTheTargetIsWritable(t *testing.T) {
 	rules := []permissions.Rule{{
 		Group:   "flags-admins",
-		Allow:   []string{"*"},
+		Teams:   []string{"*"},
 		Actions: []string{"view"},
 	}}
 
