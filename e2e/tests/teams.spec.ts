@@ -69,3 +69,19 @@ test('a flag with no team goes to the environment file', async ({ page }) => {
   expect(stored).toContain('shared-kill-switch:')
   expect(stored).not.toContain('team:')
 })
+
+test('the sidebar opens the Teams page, and a count links to that team in the flag list', async ({ page }) => {
+  await page.getByRole('navigation').getByRole('link', { name: 'Teams' }).click()
+
+  await expect(page.getByRole('heading', { name: 'Teams' })).toBeVisible()
+  const rows = page.getByRole('row')
+  await expect(rows).toHaveCount(4)
+  await expect(page.getByRole('row', { name: 'payments' })).toContainText('you edit')
+  await expect(page.getByRole('link', { name: '1 payments flags in staging' })).toBeVisible()
+  await expect(page.getByRole('link', { name: '0 billing flags in production' })).toBeVisible()
+
+  await page.getByRole('link', { name: '1 growth flags in production' }).click()
+  await expect(page.getByLabel('Search flags')).toHaveValue('growth')
+  await expect(flagRow(page, 'banner-test')).toBeVisible()
+  await expect(flagRow(page, 'new-checkout')).toBeHidden()
+})

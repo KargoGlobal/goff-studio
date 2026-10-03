@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
 import { Logo } from '@/components/Logo'
 import { useMe } from '@/hooks/useFlags'
@@ -10,6 +10,8 @@ import { ComparePage } from '@/pages/ComparePage'
 import { CreateFlagPage } from '@/pages/CreateFlagPage'
 import { NewEnvironmentDialog } from '@/components/NewEnvironmentDialog'
 import { Button, Card, Spinner } from '@/components/ui/primitives'
+
+const TeamsPage = lazy(() => import('@/pages/TeamsPage').then((m) => ({ default: m.TeamsPage })))
 
 function SignIn() {
   return (
@@ -75,6 +77,7 @@ function Shell() {
       user={me}
       environments={me.environments}
       canCreateEnvironments={me.canCreateEnvironments}
+      hasTeams={me.hasTeams}
       currentEnv={env}
     >
       <Routes>
@@ -82,6 +85,16 @@ function Shell() {
         <Route path="flags/new" element={<CreateFlagPage environments={me.environments} />} />
         <Route path="flags/:key" element={<FlagDetailPage environments={me.environments} />} />
         <Route path="flags/:key/compare" element={<ComparePage environments={me.environments} />} />
+        {me.hasTeams && (
+          <Route
+            path="teams"
+            element={
+              <Suspense fallback={<Spinner />}>
+                <TeamsPage />
+              </Suspense>
+            }
+          />
+        )}
       </Routes>
     </AppShell>
   )

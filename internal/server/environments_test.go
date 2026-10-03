@@ -13,6 +13,7 @@ import (
 type meBody struct {
 	Environments          []Environment `json:"environments"`
 	CanCreateEnvironments bool          `json:"canCreateEnvironments"`
+	HasTeams              bool          `json:"hasTeams"`
 }
 
 func me(t *testing.T, srv *Server, sealer *auth.Sealer, sess *auth.Session) meBody {
