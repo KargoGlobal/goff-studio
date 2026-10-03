@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -1178,104 +1179,87 @@ func TestCreateWritesTheTeamToMetadataAndDerivesTheFile(t *testing.T) {
 	}
 }
 
-func TestCreateRejectsAMissingTeam(t *testing.T) {
-	srv, sealer := testServer(t, newRepo(), adminRules())
-	sha := shaOf(t, srv, sealer, "banner-test")
+func TestCreateWithNoTeamLandsInTheEnvironmentFile(t *testing.T) {
+	repo := newRepo()
+	srv, sealer := testServer(t, repo, adminRules())
 
 	body := `{"key":"plain-flag","type":"boolean","enabled":true,` +
-		`"variations":[{"name":"on","value":"true"}],"default":"on","fileSha":"` + sha + `"}`
-
+		`"variations":[{"name":"on","value":"true"}],"default":"on"}`
 	rec := request(t, srv, sealer, admin(), http.MethodPost, "/api/environments/production/flags", body)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status %d: %s", rec.Code, rec.Body)
-	}
-	if !strings.Contains(rec.Body.String(), "team is required") {
-		t.Errorf("the error should say a team is required, got %s", rec.Body)
-	}
-}
-
-func TestCreateRejectsATeamThatHasNoFileYet(t *testing.T) {
-	repo := newRepo()
-	srv, sealer := testServer(t, repo, adminRules())
-	sha := shaOf(t, srv, sealer, "banner-test")
-
-	body := `{"key":"billing-flag","team":"billing","type":"boolean","enabled":true,` +
-		`"variations":[{"name":"on","value":"true"}],"default":"on","fileSha":"` + sha + `"}`
-
-	rec := request(t, srv, sealer, admin(), http.MethodPost, "/api/environments/production/flags", body)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status %d: %s", rec.Code, rec.Body)
-	}
-	if _, ok := repo.files["production/billing.goff.yaml"]; ok {
-		t.Error("a create must never invent a file; that is what CreateTeam is for")
-	}
-}
-
-func TestCreateTeamAddsAFileYouCanThenCreateFlagsIn(t *testing.T) {
-	repo := newRepo()
-	srv, sealer := testServer(t, repo, adminRules())
-
-	rec := request(t, srv, sealer, admin(), http.MethodPost, "/api/environments/production/teams", `{"name":"billing"}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body)
 	}
 
-	seeded, ok := repo.files["production/billing.goff.yaml"]
-	if !ok {
-		t.Fatal("a new team must create its file")
+	stored := repo.files["production/flags.goff.yaml"]
+	if !strings.Contains(stored, "plain-flag:") || strings.Contains(stored, "team:") {
+		t.Errorf("a no-team flag belongs in flags.goff.yaml with no team label:\n%s", stored)
 	}
-	if !strings.HasPrefix(seeded, "#") {
-		t.Errorf("the seed should be a comment so the file is valid but empty:\n%s", seeded)
-	}
+}
 
-	rec = request(t, srv, sealer, admin(), http.MethodGet, "/api/environments/production/flags", "")
-	var list ListResult
-	decode(t, rec, &list)
-	found := false
-	for _, team := range list.Teams {
-		if team.Name == "billing" && team.File == "production/billing.goff.yaml" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("the new team must appear as a destination, got %+v", list.Teams)
-	}
+func TestCreateForADeclaredTeamCreatesItsFileOnTheFirstFlag(t *testing.T) {
+	repo := newRepo()
+	srv, sealer := testServer(t, repo, adminRules())
 
 	body := `{"key":"billing-flag","team":"billing","type":"boolean","enabled":true,` +
 		`"variations":[{"name":"on","value":"true"}],"default":"on"}`
-	if rec := request(t, srv, sealer, admin(), http.MethodPost, "/api/environments/production/flags", body); rec.Code != http.StatusCreated {
+	rec := request(t, srv, sealer, admin(), http.MethodPost, "/api/environments/production/flags", body)
+	if rec.Code != http.StatusCreated {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body)
 	}
-	if !strings.Contains(repo.files["production/billing.goff.yaml"], "team: billing") {
-		t.Error("the flag should land in the new team file with its label")
+
+	stored, ok := repo.files["production/billing.goff.yaml"]
+	if !ok {
+		t.Fatal("the first flag for a declared team must create the team's file")
+	}
+	if !strings.HasPrefix(stored, "# Feature flags owned by billing") || !strings.Contains(stored, "team: billing") {
+		t.Errorf("want the seed comment and the flag with its label:\n%s", stored)
+	}
+	if _, _, err := goff.New().Parse("production/billing.goff.yaml", []byte(stored)); err != nil {
+		t.Errorf("the created file must parse: %v", err)
+	}
+
+	rec = request(t, srv, sealer, admin(), http.MethodPost, "/api/environments/production/flags",
+		strings.Replace(body, "billing-flag", "billing-two", 1))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("second create status %d: %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(repo.files["production/billing.goff.yaml"], "billing-flag:") {
+		t.Error("the second flag must append, not replace the file")
 	}
 }
 
-func TestCreateTeamRejectsDuplicatesAndBadNames(t *testing.T) {
-	srv, sealer := testServer(t, newRepo(), adminRules())
+func TestCreateRejectsAnUndeclaredTeam(t *testing.T) {
+	for _, team := range []string{"nope", "with space", "sub/dir", ".hidden", "a\nbackdoor:\n#"} {
+		repo := newRepo()
+		srv, sealer := testServer(t, repo, adminRules())
+		before := len(repo.files)
 
-	for _, name := range []string{"growth", "", "  ", "with space", "sub/dir", ".hidden"} {
-		body := `{"name":"` + name + `"}`
-		rec := request(t, srv, sealer, admin(), http.MethodPost, "/api/environments/production/teams", body)
+		body, _ := json.Marshal(map[string]any{
+			"key": "x-flag", "team": team, "type": "boolean", "enabled": true,
+			"variations": []map[string]string{{"name": "on", "value": "true"}}, "default": "on",
+		})
+		rec := request(t, srv, sealer, admin(), http.MethodPost, "/api/environments/production/flags", string(body))
 		if rec.Code != http.StatusBadRequest {
-			t.Errorf("name %q: status %d, want 400: %s", name, rec.Code, rec.Body)
+			t.Errorf("team %q: status %d, want 400: %s", team, rec.Code, rec.Body)
+		}
+		if len(repo.files) != before {
+			t.Errorf("team %q: a rejected create must not write a file", team)
 		}
 	}
 }
 
-func TestCreateTeamNeedsCreatePermissionOnTheDerivedFile(t *testing.T) {
-	rules := []permissions.Rule{{
-		Group:        "flags-admins",
-		Teams:        []string{"growth"},
-		Environments: []string{"production"},
-	}}
-
+func TestCreateNeedsCreatePermissionOnTheTeam(t *testing.T) {
+	rules := []permissions.Rule{{Group: "flags-admins", Teams: []string{"growth"}, Environments: []string{"production"}}}
 	repo := newRepo()
 	srv, sealer := testServer(t, repo, rules)
 
-	rec := request(t, srv, sealer, admin(), http.MethodPost, "/api/environments/production/teams", `{"name":"billing"}`)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("status %d, want 403: %s", rec.Code, rec.Body)
+	for _, team := range []string{"billing", ""} {
+		body := `{"key":"x-flag","team":"` + team + `","type":"boolean","enabled":true,` +
+			`"variations":[{"name":"on","value":"true"}],"default":"on"}`
+		rec := request(t, srv, sealer, admin(), http.MethodPost, "/api/environments/production/flags", body)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("team %q: status %d, want 403: %s", team, rec.Code, rec.Body)
+		}
 	}
 	if _, ok := repo.files["production/billing.goff.yaml"]; ok {
 		t.Error("a forbidden create must not write anything")

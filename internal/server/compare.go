@@ -71,10 +71,10 @@ func (s *Service) Compare(ctx context.Context, sess auth.Session, key, from, to 
 
 	if !target.Present && source.Present {
 		target.Team = source.Team
-		target.Writable = s.perms.Allowed(permissions.Request{
+		target.Writable = s.validTeam(source.Team) == nil && s.perms.Allowed(permissions.Request{
 			Groups:      sess.Groups,
 			Environment: target.Environment,
-			File:        teamFile(target.Environment, source.Team),
+			Team:        s.access(source.Team),
 			Action:      permissions.Create,
 		})
 	}

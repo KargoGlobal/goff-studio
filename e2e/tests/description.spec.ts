@@ -78,6 +78,5 @@ test('a new flag can be created with a description', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'dark-mode' })).toBeVisible()
   await expect(page.getByText('Dark theme for the dashboard.')).toBeVisible()
   await waitForCommits(1)
-  const files = (await dump()).files
-  expect(files[GROWTH] + files[PAYMENTS]).toContain('description: Dark theme for the dashboard.')
+  expect((await dump()).files[GROWTH]).toContain('description: Dark theme for the dashboard.')
 })

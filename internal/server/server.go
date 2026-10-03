@@ -67,7 +67,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/flags/{key}/promote", s.withSession(s.handlePromote))
 	mux.HandleFunc("POST /api/flags/{key}/promote/diff", s.withSession(s.handlePromoteDiff))
 	mux.HandleFunc("POST /api/environments", s.withSession(s.handleCreateEnvironment))
-	mux.HandleFunc("POST /api/environments/{env}/teams", s.withSession(s.handleCreateTeam))
+	mux.HandleFunc("GET /api/teams", s.withSession(s.handleTeams))
 
 	if s.assets != nil {
 		mux.Handle("/", s.spa())
@@ -480,9 +480,6 @@ func (s *Server) createRequest(env string, body createBody) (CreateRequest, erro
 	if err != nil {
 		return CreateRequest{}, err
 	}
-	if strings.TrimSpace(body.Team) == "" {
-		return CreateRequest{}, fmt.Errorf("a team is required so we know where to put the flag")
-	}
 	variations, err := coerceVariations(body.Variations, t)
 	if err != nil {
 		return CreateRequest{}, err
@@ -641,7 +638,6 @@ func writeVariationsRequestError(w http.ResponseWriter, err error) {
 
 type environmentBody struct {
 	Name string `json:"name"`
-	File string `json:"file"`
 }
 
 func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request, sess auth.Session) {
@@ -651,29 +647,20 @@ func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	if err := s.svc.CreateEnvironment(r.Context(), sess, body.Name, body.File); err != nil {
+	if err := s.svc.CreateEnvironment(r.Context(), sess, body.Name); err != nil {
 		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]string{"name": body.Name})
 }
 
-type teamBody struct {
-	Name string `json:"name"`
-}
-
-func (s *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request, sess auth.Session) {
-	var body teamBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "could not read the request")
-		return
-	}
-
-	if err := s.svc.CreateTeam(r.Context(), sess, r.PathValue("env"), body.Name); err != nil {
+func (s *Server) handleTeams(w http.ResponseWriter, r *http.Request, sess auth.Session) {
+	teams, err := s.svc.Teams(r.Context(), sess)
+	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]string{"name": strings.TrimSpace(body.Name)})
+	writeJSON(w, http.StatusOK, teams)
 }
 
 func (s *Server) handleAttributes(w http.ResponseWriter, r *http.Request, sess auth.Session) {

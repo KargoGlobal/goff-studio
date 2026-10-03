@@ -1,7 +1,6 @@
 package permissions
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -21,10 +20,10 @@ func testSet(t *testing.T) *Set {
 func TestDefaultDenyWithNoMatchingRule(t *testing.T) {
 	set := testSet(t)
 
-	if set.Allowed(Request{Groups: []string{"nobody"}, Environment: "dev", File: "payments.goff.yaml", Action: Toggle}) {
+	if set.Allowed(Request{Groups: []string{"nobody"}, Environment: "dev", Team: "payments", Action: Toggle}) {
 		t.Error("an unknown group must be denied")
 	}
-	if set.Allowed(Request{Groups: nil, Environment: "dev", File: "payments.goff.yaml", Action: View}) {
+	if set.Allowed(Request{Groups: nil, Environment: "dev", Team: "payments", Action: View}) {
 		t.Error("no groups must be denied")
 	}
 }
@@ -35,7 +34,7 @@ func TestEmptyRuleSetDeniesEverything(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, a := range AllActions {
-		if set.Allowed(Request{Groups: []string{"anyone"}, Environment: "dev", File: "x.yaml", Action: a}) {
+		if set.Allowed(Request{Groups: []string{"anyone"}, Environment: "dev", Team: "x", Action: a}) {
 			t.Errorf("empty config allowed %s", a)
 		}
 	}
@@ -44,7 +43,7 @@ func TestEmptyRuleSetDeniesEverything(t *testing.T) {
 func TestWildcardGrantsEveryAction(t *testing.T) {
 	set := testSet(t)
 	for _, a := range AllActions {
-		if !set.Allowed(Request{Groups: []string{"flags-admins"}, Environment: "production", File: "anything.goff.yaml", Action: a}) {
+		if !set.Allowed(Request{Groups: []string{"flags-admins"}, Environment: "production", Team: "anything", Action: a}) {
 			t.Errorf("admins should be allowed %s", a)
 		}
 	}
@@ -53,10 +52,10 @@ func TestWildcardGrantsEveryAction(t *testing.T) {
 func TestFileScopingIsEnforced(t *testing.T) {
 	set := testSet(t)
 
-	if !set.Allowed(Request{Groups: []string{"payments-team"}, Environment: "dev", File: "payments.goff.yaml", Action: EditRules}) {
+	if !set.Allowed(Request{Groups: []string{"payments-team"}, Environment: "dev", Team: "payments", Action: EditRules}) {
 		t.Error("payments team should edit their own file")
 	}
-	if set.Allowed(Request{Groups: []string{"payments-team"}, Environment: "dev", File: "growth.goff.yaml", Action: EditRules}) {
+	if set.Allowed(Request{Groups: []string{"payments-team"}, Environment: "dev", Team: "growth", Action: EditRules}) {
 		t.Error("payments team must not edit another team's file")
 	}
 }
@@ -64,17 +63,17 @@ func TestFileScopingIsEnforced(t *testing.T) {
 func TestEnvironmentScopingIsEnforced(t *testing.T) {
 	set := testSet(t)
 
-	if !set.Allowed(Request{Groups: []string{"marketing"}, Environment: "production", File: "growth.goff.yaml", Action: Toggle}) {
+	if !set.Allowed(Request{Groups: []string{"marketing"}, Environment: "production", Team: "growth", Action: Toggle}) {
 		t.Error("marketing should toggle in production")
 	}
-	if set.Allowed(Request{Groups: []string{"marketing"}, Environment: "dev", File: "growth.goff.yaml", Action: Toggle}) {
+	if set.Allowed(Request{Groups: []string{"marketing"}, Environment: "dev", Team: "growth", Action: Toggle}) {
 		t.Error("marketing has no dev access")
 	}
 }
 
 func TestActionScopingIsEnforced(t *testing.T) {
 	set := testSet(t)
-	base := Request{Groups: []string{"marketing"}, Environment: "production", File: "growth.goff.yaml"}
+	base := Request{Groups: []string{"marketing"}, Environment: "production", Team: "growth"}
 
 	for _, allowed := range []Action{Toggle, Rollout, View} {
 		r := base
@@ -96,7 +95,7 @@ func TestActionScopingIsEnforced(t *testing.T) {
 func TestOmittingActionsGrantsAll(t *testing.T) {
 	set := testSet(t)
 	for _, a := range AllActions {
-		if !set.Allowed(Request{Groups: []string{"payments-team"}, Environment: "staging", File: "payments.goff.yaml", Action: a}) {
+		if !set.Allowed(Request{Groups: []string{"payments-team"}, Environment: "staging", Team: "payments", Action: a}) {
 			t.Errorf("payments team omitted actions, so %s should be granted", a)
 		}
 	}
@@ -107,43 +106,33 @@ func TestViewIsImpliedByAnyOtherAction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !set.Allowed(Request{Groups: []string{"toggler"}, Environment: "dev", File: "x.goff.yaml", Action: View}) {
+	if !set.Allowed(Request{Groups: []string{"toggler"}, Environment: "dev", Team: "x", Action: View}) {
 		t.Error("being able to toggle implies being able to view")
 	}
 }
 
-func TestGlobPatterns(t *testing.T) {
-	set, err := New([]Rule{{Group: "team", Teams: []string{"pay*"}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if !set.Allowed(Request{Groups: []string{"team"}, Environment: "dev", File: "payments.goff.yaml", Action: View}) {
-		t.Error("pay* should match payments")
-	}
-	if set.Allowed(Request{Groups: []string{"team"}, Environment: "dev", File: "growth.goff.yaml", Action: View}) {
-		t.Error("pay* must not match growth")
+func TestTeamsMatchByNameOnly(t *testing.T) {
+	for _, pattern := range []string{"pay*", "production/payments", "pay?", "[p]ayments"} {
+		if _, err := New([]Rule{{Group: "team", Teams: []string{pattern}}}); err == nil {
+			t.Errorf("%q must be rejected; teams are names, not patterns", pattern)
+		}
 	}
 }
 
-func TestPathPatterns(t *testing.T) {
-	set, err := New([]Rule{{Group: "team", Teams: []string{"production/payments*"}}})
-	if err != nil {
-		t.Fatal(err)
+func TestAFlagWithNoTeamIsReachedOnlyByTheWildcard(t *testing.T) {
+	set := testSet(t)
+	if !set.Allowed(Request{Groups: []string{"flags-admins"}, Environment: "dev", Team: "", Action: Delete}) {
+		t.Error(`a "*" rule must cover flags with no team`)
 	}
-
-	if !set.Allowed(Request{Groups: []string{"team"}, Environment: "production", File: "production/payments.goff.yaml", Action: View}) {
-		t.Error("full path pattern should match")
-	}
-	if set.Allowed(Request{Groups: []string{"team"}, Environment: "dev", File: "dev/payments.goff.yaml", Action: View}) {
-		t.Error("pattern scoped to production must not match dev path")
+	if set.Allowed(Request{Groups: []string{"payments-team"}, Environment: "dev", Team: "", Action: View}) {
+		t.Error("a named-team rule must not reach flags with no team")
 	}
 }
 
 func TestActionsForReportsExactlyWhatIsGranted(t *testing.T) {
 	set := testSet(t)
 
-	got := set.ActionsFor([]string{"marketing"}, "production", "growth.goff.yaml")
+	got := set.ActionsFor([]string{"marketing"}, "production", "growth")
 	want := map[Action]bool{View: true, Toggle: true, Rollout: true}
 	if len(got) != len(want) {
 		t.Fatalf("ActionsFor = %v, want %v", got, want)
@@ -174,13 +163,13 @@ func TestMultipleGroupsUnion(t *testing.T) {
 	set := testSet(t)
 	groups := []string{"marketing", "payments-team"}
 
-	if !set.Allowed(Request{Groups: groups, Environment: "dev", File: "payments.goff.yaml", Action: Delete}) {
+	if !set.Allowed(Request{Groups: groups, Environment: "dev", Team: "payments", Action: Delete}) {
 		t.Error("payments membership should grant delete on payments")
 	}
-	if !set.Allowed(Request{Groups: groups, Environment: "production", File: "growth.goff.yaml", Action: Toggle}) {
+	if !set.Allowed(Request{Groups: groups, Environment: "production", Team: "growth", Action: Toggle}) {
 		t.Error("marketing membership should grant toggle on growth")
 	}
-	if set.Allowed(Request{Groups: groups, Environment: "production", File: "growth.goff.yaml", Action: Delete}) {
+	if set.Allowed(Request{Groups: groups, Environment: "production", Team: "growth", Action: Delete}) {
 		t.Error("neither group grants delete on growth")
 	}
 }
@@ -199,7 +188,7 @@ func TestInvalidConfigIsRejected(t *testing.T) {
 
 func TestEmptyActionIsDenied(t *testing.T) {
 	set := testSet(t)
-	if set.Allowed(Request{Groups: []string{"flags-admins"}, Environment: "dev", File: "x.yaml"}) {
+	if set.Allowed(Request{Groups: []string{"flags-admins"}, Environment: "dev", Team: "x"}) {
 		t.Error("a request with no action must be denied")
 	}
 }
@@ -248,17 +237,5 @@ func TestCanCreateEnvironmentsHonoursTheWildcardGroup(t *testing.T) {
 	}
 	if !set.CanCreateEnvironments([]string{"anyone"}) {
 		t.Error(`group "*" matches every signed-in user`)
-	}
-}
-
-func TestOldAllowKeyFailsWithTheNewName(t *testing.T) {
-	_, err := New([]Rule{{Group: "payments-team", LegacyAllow: []string{"payments", "billing"}}})
-	if err == nil {
-		t.Fatal("the old allow key must not be silently ignored, or a rule would grant nothing")
-	}
-	for _, want := range []string{"allow", "teams: [payments, billing]", "payments-team"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error should mention %q, got: %v", want, err)
-		}
 	}
 }

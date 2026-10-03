@@ -4,84 +4,18 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-
-	"github.com/go-feature-flag/studio/internal/goff"
 )
 
-func TestValidTeamRejectsYAMLInjection(t *testing.T) {
-	// A newline in a team name lands in the seed file and becomes a real top-level key,
-	// bypassing validKey entirely. Verified against goff.Parse before this check existed.
-	payloads := []string{
-		"a\nbackdoor:\n#",
-		"a\nb",
-		"a\rb",
-		"a\x00b",
-		"a\vb",
-		"a\u2028b",
-	}
-
-	for _, name := range payloads {
-		t.Run(strings.ReplaceAll(name, "\n", "\\n"), func(t *testing.T) {
-			if err := validTeam(name); err == nil {
-				t.Fatalf("validTeam accepted %q, which can inject YAML", name)
-			}
-		})
-	}
-}
-
-func TestInjectedTeamNameWouldHaveCreatedAFlag(t *testing.T) {
-	seed := "# Feature flags owned by " + "a\nbackdoor:\n#" + " in production.\n"
-	flags, _, err := goff.New().Parse("x.yaml", []byte(seed))
-	if err != nil {
-		t.Skipf("payload no longer parses: %v", err)
-	}
-	if len(flags) == 0 {
-		t.Skip("payload no longer yields a flag")
-	}
-	if err := validTeam("a\nbackdoor:\n#"); err == nil {
-		t.Errorf("this payload parses to flag %q, so it must be rejected", flags[0].Key)
-	}
-}
-
-func TestSeedFileNameRefusesTraversalAndNesting(t *testing.T) {
-	for _, bad := range []string{
-		"../production/payments",
-		"../../etc/passwd.yaml",
-		"sub/dir/flags",
-		"..",
-		".",
-		".hidden",
-		`back\slash`,
-		"with space",
-		"line\nbreak",
-		strings.Repeat("a", MaxNameLength+1),
-	} {
-		t.Run(bad, func(t *testing.T) {
-			if _, err := seedFileName(bad); err == nil {
-				t.Errorf("seedFileName accepted %q", bad)
-			}
-		})
-	}
-}
-
-func TestSeedFileNameNormalisesToOneExtension(t *testing.T) {
-	cases := map[string]string{
-		"":                  "flags.goff.yaml",
-		"payments":          "payments.goff.yaml",
-		"payments.yaml":     "payments.goff.yaml",
-		"payments.yml":      "payments.goff.yaml",
-		"payments.goff.yml": "payments.goff.yaml",
-		"  payments  ":      "payments.goff.yaml",
-	}
-
-	for in, want := range cases {
-		got, err := seedFileName(in)
-		if err != nil {
-			t.Errorf("seedFileName(%q) errored: %v", in, err)
-			continue
+func TestOnlyDeclaredTeamsAreAccepted(t *testing.T) {
+	srv, _ := testServer(t, newRepo(), adminRules())
+	for _, name := range []string{"a\nbackdoor:\n#", "a\u2028b", "../production/payments", "nope", "flags"} {
+		if err := srv.svc.validTeam(name); err == nil {
+			t.Errorf("validTeam accepted undeclared team %q", name)
 		}
-		if got != want {
-			t.Errorf("seedFileName(%q) = %q, want %q", in, got, want)
+	}
+	for _, name := range []string{"", "payments", " growth "} {
+		if err := srv.svc.validTeam(name); err != nil {
+			t.Errorf("validTeam rejected %q: %v", name, err)
 		}
 	}
 }
@@ -163,39 +97,21 @@ func TestValidNameBoundsLength(t *testing.T) {
 	}
 }
 
-func TestCreateEnvironmentRefusesATraversingSeedFile(t *testing.T) {
+func TestCreateEnvironmentIgnoresAClientSuppliedSeedFile(t *testing.T) {
 	repo := newRepo()
 	srv, sealer := testServer(t, repo, adminRules())
 	before := repo.files["production/payments.goff.yaml"]
 
 	rec := request(t, srv, sealer, admin(), http.MethodPost, "/api/environments",
 		`{"name":"tmp","file":"../production/payments"}`)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status %d, want 400: %s", rec.Code, rec.Body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	if _, ok := repo.files["tmp/flags.goff.yaml"]; !ok {
+		t.Errorf("want tmp/flags.goff.yaml, files are %v", keysOfMap(repo.files))
 	}
 	if repo.files["production/payments.goff.yaml"] != before {
-		t.Error("a traversing seed file must not touch another environment")
-	}
-	for path := range repo.files {
-		if strings.Contains(path, "..") {
-			t.Errorf("a path with .. was written: %s", path)
-		}
-	}
-}
-
-func TestCreateTeamRefusesAnInjectingName(t *testing.T) {
-	repo := newRepo()
-	srv, sealer := testServer(t, repo, adminRules())
-
-	rec := request(t, srv, sealer, admin(), http.MethodPost,
-		"/api/environments/production/teams", "{\"name\":\"a\\nbackdoor:\\n#\"}")
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status %d, want 400: %s", rec.Code, rec.Body)
-	}
-	for _, content := range repo.files {
-		if strings.Contains(content, "backdoor") {
-			t.Errorf("an injected key reached a file:\n%s", content)
-		}
+		t.Error("a supplied seed file must not touch another environment")
 	}
 }
 

@@ -2,7 +2,6 @@ package permissions
 
 import (
 	"fmt"
-	"path"
 	"strings"
 )
 
@@ -33,7 +32,6 @@ func ParseAction(raw string) (Action, error) {
 type Rule struct {
 	Group        string   `yaml:"group"`
 	Teams        []string `yaml:"teams"`
-	LegacyAllow  []string `yaml:"allow"`
 	Environments []string `yaml:"environments"`
 	Actions      []string `yaml:"actions"`
 }
@@ -47,12 +45,13 @@ func New(rules []Rule) (*Set, error) {
 		if strings.TrimSpace(r.Group) == "" {
 			return nil, fmt.Errorf("permission rule %d has no group", i)
 		}
-		if len(r.LegacyAllow) > 0 {
-			return nil, fmt.Errorf("permission rule for group %q uses allow, which is now called teams; rename it to teams: [%s]",
-				r.Group, strings.Join(r.LegacyAllow, ", "))
-		}
 		if len(r.Teams) == 0 {
 			return nil, fmt.Errorf("permission rule for group %q has no teams; list the teams it covers, or [\"*\"] for all", r.Group)
+		}
+		for _, t := range r.Teams {
+			if t = strings.TrimSpace(t); t != "*" && strings.ContainsAny(t, "*?[]/\\") {
+				return nil, fmt.Errorf("permission rule for group %q lists %q; name a team or use \"*\" for all teams", r.Group, t)
+			}
 		}
 		for _, a := range r.Actions {
 			if _, err := ParseAction(a); err != nil {
@@ -66,7 +65,7 @@ func New(rules []Rule) (*Set, error) {
 type Request struct {
 	Groups      []string
 	Environment string
-	File        string
+	Team        string
 	Action      Action
 }
 
@@ -88,7 +87,7 @@ func (s *Set) Allowed(req Request) bool {
 		if !actionMatches(rule, req.Action) {
 			continue
 		}
-		if !fileMatches(rule.Teams, req.File) {
+		if !teamMatches(rule.Teams, req.Team) {
 			continue
 		}
 		return true
@@ -96,10 +95,10 @@ func (s *Set) Allowed(req Request) bool {
 	return false
 }
 
-func (s *Set) ActionsFor(groups []string, environment, file string) []Action {
+func (s *Set) ActionsFor(groups []string, environment, team string) []Action {
 	var out []Action
 	for _, a := range AllActions {
-		if s.Allowed(Request{Groups: groups, Environment: environment, File: file, Action: a}) {
+		if s.Allowed(Request{Groups: groups, Environment: environment, Team: team, Action: a}) {
 			out = append(out, a)
 		}
 	}
@@ -128,6 +127,53 @@ func (s *Set) AllowedAnywhere(groups []string, environment string, action Action
 			continue
 		}
 		return true
+	}
+	return false
+}
+
+type Grant struct {
+	Group    string
+	AllTeams bool
+	Writes   bool
+}
+
+func (s *Set) GrantsFor(environment, team string) []Grant {
+	if s == nil {
+		return nil
+	}
+	var out []Grant
+	index := map[string]int{}
+	for _, rule := range s.rules {
+		if !environmentMatches(rule, environment) || !teamMatches(rule.Teams, team) {
+			continue
+		}
+		grant := Grant{Group: rule.Group, AllTeams: coversAllTeams(rule.Teams), Writes: grantsWrites(rule)}
+		at, seen := index[rule.Group]
+		if !seen {
+			index[rule.Group] = len(out)
+			out = append(out, grant)
+			continue
+		}
+		out[at].AllTeams = out[at].AllTeams || grant.AllTeams
+		out[at].Writes = out[at].Writes || grant.Writes
+	}
+	return out
+}
+
+func coversAllTeams(patterns []string) bool {
+	for _, p := range patterns {
+		if strings.TrimSpace(p) == "*" {
+			return true
+		}
+	}
+	return false
+}
+
+func grantsWrites(rule Rule) bool {
+	for _, a := range AllActions {
+		if a != View && actionMatches(rule, a) {
+			return true
+		}
 	}
 	return false
 }
@@ -187,32 +233,32 @@ func actionMatches(rule Rule, action Action) bool {
 	return false
 }
 
-func fileMatches(patterns []string, file string) bool {
-	base := strings.TrimSuffix(basename(file), ".goff.yaml")
-	base = strings.TrimSuffix(base, ".yaml")
-	base = strings.TrimSuffix(base, ".yml")
-
+// A flag with no team is matched only by "*".
+func teamMatches(patterns []string, team string) bool {
 	for _, pattern := range patterns {
 		pattern = strings.TrimSpace(pattern)
-		if pattern == "*" || pattern == "**" {
-			return true
-		}
-		if pattern == file || pattern == base {
-			return true
-		}
-		if ok, _ := path.Match(pattern, file); ok {
-			return true
-		}
-		if ok, _ := path.Match(pattern, base); ok {
+		if pattern == "*" || (team != "" && pattern == team) {
 			return true
 		}
 	}
 	return false
 }
 
-func basename(file string) string {
-	if idx := strings.LastIndex(file, "/"); idx >= 0 {
-		return file[idx+1:]
+func NewUnchecked(rules []Rule) *Set {
+	return &Set{rules: rules}
+}
+
+func (s *Set) NamedTeams() []string {
+	if s == nil {
+		return nil
 	}
-	return file
+	var out []string
+	for _, rule := range s.rules {
+		for _, t := range rule.Teams {
+			if t = strings.TrimSpace(t); t != "*" {
+				out = append(out, t)
+			}
+		}
+	}
+	return out
 }

@@ -73,19 +73,21 @@ expectedPollSeconds: 30
 # Environments are found from storage folders; these ones force a diff plus typed confirmation before saving.
 protectedEnvironments: [production]
 
-# Default deny: no matching rule means no access. Actions and patterns documented in README.md.
+# The only teams Studio offers; flags can also have no team. Omit this to run without teams.
+# Each editor group gets the listed environments and actions on that team's flags (all, if omitted).
+teams:
+  - name: payments
+    editors: [payments-team]
+    environments: [dev, staging, production]
+
+  # Business users who may flip and ramp, but not change targeting or variations.
+  - name: growth
+    editors: [marketing]
+    environments: [production]
+    actions: [toggle, rollout]
+
+# Default deny: no matching rule means no access. "*" covers every team and flags with no team.
 permissions:
   # Full access everywhere.
   - group: flags-admins
     teams: ["*"]
-
-  # A team owning one file across all environments; omitting "actions" grants all of them.
-  - group: payments-team
-    teams: ["payments"]
-    environments: [dev, staging, production]
-
-  # Business users who may flip and ramp, but not change targeting or variations.
-  - group: marketing
-    teams: ["growth"]
-    environments: [production]
-    actions: [toggle, rollout]

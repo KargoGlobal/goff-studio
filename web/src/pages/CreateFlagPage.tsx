@@ -5,7 +5,7 @@ import { ApiError, type Environment, type NewVariation } from '@/lib/api'
 import { useCreateFlag, useFlags, useMe } from '@/hooks/useFlags'
 import { Button, Card, Input, Spinner } from '@/components/ui/primitives'
 import { Select } from '@/components/ui/Select'
-import { NewTeamDialog } from '@/components/NewTeamDialog'
+import { defaultTeam, teamChoices, teamLabel } from '@/lib/teams'
 import { useToast } from '@/components/ui/Toast'
 import { identifierInputProps } from '@/lib/inputProps'
 import { MAX_DESCRIPTION } from '@/lib/description'
@@ -43,8 +43,7 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
   const toast = useToast()
 
   const [key, setKey] = useState('')
-  const [team, setTeam] = useState('')
-  const [teamDialogOpen, setTeamDialogOpen] = useState(false)
+  const [team, setTeam] = useState<string | null>(null)
   const [type, setType] = useState<string>('boolean')
   const [variations, setVariations] = useState<NewVariation[]>(DEFAULTS.boolean)
   const [defaultName, setDefaultName] = useState('off')
@@ -53,14 +52,10 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
   const [fieldError, setFieldError] = useState<{ field: string; message: string } | null>(null)
 
   const singleFile = me?.layout === 'single-file'
-  const [draftTeam, setDraftTeam] = useState('')
-  const listed = data?.teams ?? []
-  const teams =
-    draftTeam && !listed.some((t) => t.name === draftTeam)
-      ? [...listed, { name: draftTeam, file: `${env}/flags.goff.yaml` }]
-      : listed
-  const chosenTeam = team || teams[0]?.name || ''
+  const teams = data?.teams ?? []
+  const chosenTeam = team ?? defaultTeam(teams)
   const chosenFile = teams.find((t) => t.name === chosenTeam)?.file ?? ''
+  const noTeamOnly = teams.length === 1 && teams[0].name === ''
 
   function changeType(next: string) {
     setType(next)
@@ -73,7 +68,7 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
   function validate(): string | null {
     if (key.trim() === '') return 'Give the flag a key.'
     if (/\s/.test(key.trim())) return 'A flag key cannot contain spaces.'
-    if (!chosenTeam) return 'Pick a team for this flag.'
+    if (chosenTeam === undefined) return 'You cannot create flags in any team here.'
 
     const named = variations.filter((v) => v.name.trim() !== '')
     if (named.length === 0) return 'Add at least one variation.'
@@ -116,7 +111,7 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
     try {
       const result = await create.mutateAsync({
         key: key.trim(),
-        team: chosenTeam,
+        team: chosenTeam ?? '',
         type,
         variations: variations.filter((v) => v.name.trim() !== ''),
         default: defaultName,
@@ -193,45 +188,42 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
           />
         </div>
 
-        <div>
-          <div className="mb-1.5 flex items-baseline justify-between gap-3">
-            <label htmlFor="flag-team" className="text-sm font-medium text-ink-soft">
+        {!noTeamOnly && (
+          <div>
+            <label htmlFor="flag-team" className="mb-1.5 block text-sm font-medium text-ink-soft">
               Team
             </label>
-            <button
-              type="button"
-              onClick={() => setTeamDialogOpen(true)}
-              className="text-sm font-medium text-brand hover:underline max-md:-my-3 max-md:min-h-11"
-            >
-              New team
-            </button>
+            <Select
+              id="flag-team"
+              value={chosenTeam ?? ''}
+              onChange={(v) => setTeam(v)}
+              options={teamChoices(teams)}
+              placeholder={teams.length === 0 ? 'No teams you can create in' : 'Pick a team'}
+              ariaLabel="Team"
+            />
+            <p className="mt-1.5 text-[13px] text-ink-muted">
+              {chosenTeam ? (
+                <>
+                  Written to <span className="font-mono">metadata.team</span>
+                  {!singleFile && (
+                    <>
+                      {' '}
+                      and stored in <span className="font-mono max-md:wrap-anywhere">{chosenFile}</span>
+                    </>
+                  )}
+                  , which decides who may edit it
+                  {!singleFile && me?.capabilities?.review !== false && ' and who reviews changes via CODEOWNERS'}.
+                </>
+              ) : (
+                <>
+                  {teamLabel('')}: stored in <span className="font-mono max-md:wrap-anywhere">{chosenFile}</span> and
+                  only editable by groups with access to every team.
+                </>
+              )}{' '}
+              Teams are set in Studio's config.
+            </p>
           </div>
-          <Select
-            id="flag-team"
-            value={chosenTeam}
-            onChange={(v) => setTeam(v)}
-            options={teams.map((t) => ({
-              value: t.name,
-              label: t.name === draftTeam && !listed.some((l) => l.name === draftTeam) ? `${t.name} (new)` : t.name,
-            }))}
-            placeholder={teams.length === 0 ? 'No teams yet' : 'Pick a team'}
-            ariaLabel="Team"
-          />
-          {singleFile ? (
-            <p className="mt-1.5 text-[13px] text-ink-muted">
-              Written to <span className="font-mono">metadata.team</span>, which decides who may edit it.
-              {chosenTeam === draftTeam && !listed.some((l) => l.name === draftTeam) &&
-                ` ${draftTeam} is new and is only saved once you create this flag.`}
-            </p>
-          ) : (
-            <p className="mt-1.5 text-[13px] text-ink-muted">
-              Written to <span className="font-mono">metadata.team</span> and stored in{' '}
-              <span className="font-mono max-md:wrap-anywhere">{chosenFile || `${env}/<team>.goff.yaml`}</span>, which
-              decides who may edit it
-              {me?.capabilities?.review !== false && ' and who reviews changes via CODEOWNERS'}.
-            </p>
-          )}
-        </div>
+        )}
 
         <div>
           <span className="mb-2 block text-sm font-medium text-ink-soft">What does it return?</span>
@@ -394,16 +386,6 @@ export function CreateFlagPage({ environments }: { environments: Environment[] }
         </Button>
       </div>
 
-      <NewTeamDialog
-        env={env}
-        open={teamDialogOpen}
-        onClose={() => setTeamDialogOpen(false)}
-        onCreated={(name) => {
-          if (singleFile) setDraftTeam(name)
-          setTeam(name)
-        }}
-        singleFile={singleFile}
-      />
     </div>
   )
 }

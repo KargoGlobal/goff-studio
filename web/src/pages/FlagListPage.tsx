@@ -133,7 +133,7 @@ export function FlagListPage({ environments: _environments }: { environments: En
           />
         </div>
         <div className="ml-auto max-md:ml-0 max-md:w-full">
-          {(data?.canCreate || (data?.teams ?? []).length > 0) && (
+          {(data?.teams ?? []).length > 0 && (
             <Link to={`/env/${env}/flags/new`} className="max-md:block">
               <Button size="sm" className="max-md:w-full max-md:text-sm">
                 <Plus className="h-3.5 w-3.5" />
@@ -227,7 +227,14 @@ export function FlagListPage({ environments: _environments }: { environments: En
                     )}
                   </td>
                   <td className="px-4 py-3 align-top max-md:px-2 max-md:py-3.5 max-md:break-words">
-                    {flag.team ? (
+                    {flag.unknownTeam ? (
+                      <span
+                        className="text-sm text-ink-muted"
+                        title={`${flag.team} is not a team in Studio's config, so only admins can edit this flag`}
+                      >
+                        {flag.team} <span className="text-[12px]">(unknown team)</span>
+                      </span>
+                    ) : flag.team ? (
                       <span className="text-sm text-ink" title={flag.file}>
                         {flag.team}
                       </span>

@@ -161,14 +161,6 @@ export function useCreateFlag(env: string) {
   })
 }
 
-export function useCreateTeam(env: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (name: string) => api.createTeam(env, name),
-    onSettled: () => invalidateFlag(qc, env),
-  })
-}
-
 export function useDeleteFlag(env: string) {
   const qc = useQueryClient()
   return useMutation({
@@ -329,8 +321,7 @@ export function useEditRule(env: string) {
 export function useCreateEnvironment() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ name, file }: { name: string; file?: string }) =>
-      api.createEnvironment(name, file),
+    mutationFn: (name: string) => api.createEnvironment(name),
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ['me'] })
     },

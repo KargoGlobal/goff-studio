@@ -116,6 +116,7 @@ export interface Flag {
   bucketingKey?: string
   metadata?: Record<string, unknown>
   team: string
+  unknownTeam?: boolean
   preserved?: string[]
   actions: Action[]
   summary: string
@@ -128,6 +129,7 @@ export interface Broken {
   reason: string
 }
 
+// An empty name is "No team".
 export interface TeamOption {
   name: string
   file: string
@@ -299,12 +301,6 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
-  createTeam: (env: string, name: string) =>
-    request<{ name: string }>(`/api/environments/${env}/teams`, {
-      method: 'POST',
-      body: JSON.stringify({ name }),
-    }),
-
   deleteFlag: (env: string, key: string, fileSha: string) =>
     request<SaveResult>(
       `/api/environments/${env}/flags/${encodeURIComponent(key)}?fileSha=${encodeURIComponent(fileSha)}`,
@@ -425,10 +421,10 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  createEnvironment: (name: string, file?: string) =>
+  createEnvironment: (name: string) =>
     request<{ name: string }>('/api/environments', {
       method: 'POST',
-      body: JSON.stringify({ name, file }),
+      body: JSON.stringify({ name }),
     }),
 
   logout: () => request<void>('/auth/logout', { method: 'POST' }),

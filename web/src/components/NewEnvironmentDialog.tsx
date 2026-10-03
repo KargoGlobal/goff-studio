@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Button, Input, Spinner } from '@/components/ui/primitives'
 import { Dialog } from '@/components/ui/Dialog'
-import { useCreateEnvironment, useMe } from '@/hooks/useFlags'
+import { useCreateEnvironment } from '@/hooks/useFlags'
 import { useToast } from '@/components/ui/Toast'
 import { identifierInputProps } from '@/lib/inputProps'
 
@@ -15,11 +15,8 @@ export function NewEnvironmentDialog({
   onCreated?: (name: string) => void
 }) {
   const create = useCreateEnvironment()
-  const { data: me } = useMe()
-  const singleFile = me?.layout === 'single-file'
   const toast = useToast()
   const [name, setName] = useState('')
-  const [file, setFile] = useState('flags')
   const [error, setError] = useState<string | null>(null)
 
   async function submit() {
@@ -34,7 +31,7 @@ export function NewEnvironmentDialog({
     }
 
     try {
-      await create.mutateAsync({ name: trimmed, file: singleFile ? undefined : file.trim() || undefined })
+      await create.mutateAsync(trimmed)
       toast(`Created ${trimmed}.`)
       onClose()
       setName('')
@@ -88,34 +85,9 @@ export function NewEnvironmentDialog({
           />
         </div>
 
-        {singleFile ? (
-          <p className="text-[13px] text-ink-muted">
-            Creates <code className="font-mono text-ink">{name.trim() || 'staging'}/flags.goff.yaml</code>,
-            which holds every team's flags.
-          </p>
-        ) : (
-          <div>
-            <label htmlFor="env-file" className="mb-1.5 block text-sm font-medium text-ink-soft">
-              First team
-            </label>
-            <Input
-              {...identifierInputProps}
-              id="env-file"
-              value={file}
-              onChange={(e) => setFile(e.target.value)}
-              placeholder="flags"
-              className="h-11 font-mono text-base"
-            />
-            <p className="mt-1.5 text-[13px] text-ink-muted">
-              One file per team. Creates{' '}
-              <code className="font-mono text-ink">
-                {(name.trim() || 'staging')}/{(file.trim() || 'flags').replace(/\.(goff\.)?ya?ml$/, '')}
-                .goff.yaml
-              </code>
-              .
-            </p>
-          </div>
-        )}
+        <p className="text-[13px] text-ink-muted">
+          Creates <code className="font-mono text-ink">{name.trim() || 'staging'}/flags.goff.yaml</code>.
+        </p>
 
         {error && (
           <p role="alert" className="rounded-md border border-danger bg-danger-soft px-3 py-2 text-sm text-ink">

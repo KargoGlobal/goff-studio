@@ -39,6 +39,7 @@ const (
 	envPollSeconds    = "GOFF_STUDIO_EXPECTED_POLL_SECONDS"
 	envProtectedEnvs  = "GOFF_STUDIO_PROTECTED_ENVIRONMENTS"
 	envPermissions    = "GOFF_STUDIO_PERMISSIONS"
+	envTeams          = "GOFF_STUDIO_TEAMS"
 	envLayout         = "GOFF_STUDIO_LAYOUT"
 
 	legacyEnvEnvironments = "GOFF_STUDIO_ENVIRONMENTS"
@@ -81,12 +82,23 @@ type GitHub struct {
 	DevToken       string `yaml:"devToken"`
 }
 
+type Team struct {
+	Name         string   `yaml:"name"`
+	Editors      []string `yaml:"editors"`
+	Environments []string `yaml:"environments"`
+	Actions      []string `yaml:"actions"`
+}
+
+// NoTeamFile holds the flags that belong to no team, so no team may take its name.
+const NoTeamFile = "flags"
+
 type Config struct {
 	Server                Server             `yaml:"server"`
 	OIDC                  OIDC               `yaml:"oidc"`
 	GitHub                GitHub             `yaml:"github"`
 	Storage               Storage            `yaml:"storage"`
 	ProtectedEnvironments []string           `yaml:"protectedEnvironments"`
+	Teams                 []Team             `yaml:"teams"`
 	Permissions           []permissions.Rule `yaml:"permissions"`
 	PollSeconds           int                `yaml:"expectedPollSeconds"`
 	Layout                string             `yaml:"layout"`
@@ -205,6 +217,7 @@ func (c *Config) applyEnv() error {
 		}
 	}
 	yamlList(envPermissions, &c.Permissions)
+	yamlList(envTeams, &c.Teams)
 	str(envLayout, &c.Layout)
 
 	str(envOIDCIssuerURL, &c.OIDC.IssuerURL)
@@ -248,6 +261,9 @@ func (c *Config) validate() error {
 		return err
 	}
 	if err := c.validateLayout(); err != nil {
+		return err
+	}
+	if err := c.validateTeams(); err != nil {
 		return err
 	}
 	return c.validatePermissions()
@@ -571,15 +587,82 @@ func splitList(v string) []string {
 	return out
 }
 
+func (c *Config) validateTeams() error {
+	seen := map[string]bool{}
+	for i, t := range c.Teams {
+		key := fmt.Sprintf("teams[%d]", i)
+		name := strings.TrimSpace(t.Name)
+		if !environmentName.MatchString(name) {
+			return fieldErr(key+".name", envTeams,
+				fmt.Sprintf("%q is not a usable team name; use letters, digits, dots, dashes and underscores", t.Name))
+		}
+		if name == NoTeamFile {
+			return fieldErr(key+".name", envTeams,
+				fmt.Sprintf("%q is reserved for flags with no team; pick another name", name))
+		}
+		if seen[name] {
+			return fieldErr(key+".name", envTeams, fmt.Sprintf("repeats %q; declare each team once", name))
+		}
+		seen[name] = true
+		c.Teams[i].Name = name
+		for j, g := range t.Editors {
+			if strings.TrimSpace(g) == "" {
+				return fieldErr(fmt.Sprintf("%s.editors[%d]", key, j), envTeams, "is empty; name an OIDC group")
+			}
+		}
+		for j, a := range t.Actions {
+			if _, err := permissions.ParseAction(a); err != nil {
+				return fieldErr(fmt.Sprintf("%s.actions[%d]", key, j), envTeams, err.Error())
+			}
+		}
+	}
+	return nil
+}
+
 func (c *Config) validatePermissions() error {
-	if _, err := permissions.New(c.Permissions); err != nil {
+	if _, err := permissions.New(c.Rules()); err != nil {
 		return fmt.Errorf("permissions: %w", err)
 	}
 
-	if len(c.Permissions) == 0 {
+	for _, name := range permissions.NewUnchecked(c.Permissions).NamedTeams() {
+		if !c.DeclaresTeam(name) {
+			c.warnf("permissions names team %q, which is not declared under teams, so that part of the rule matches nothing", name)
+		}
+	}
+	if len(c.Rules()) == 0 {
 		c.warnf("permissions is empty, so Studio will deny every request; add at least one rule granting a group access")
 	}
 	return nil
+}
+
+// Rules is permissions plus one rule per editor group of each declared team.
+func (c *Config) Rules() []permissions.Rule {
+	out := append([]permissions.Rule{}, c.Permissions...)
+	for _, t := range c.Teams {
+		for _, g := range t.Editors {
+			out = append(out, permissions.Rule{
+				Group: strings.TrimSpace(g), Teams: []string{t.Name}, Environments: t.Environments, Actions: t.Actions,
+			})
+		}
+	}
+	return out
+}
+
+func (c *Config) DeclaresTeam(name string) bool {
+	for _, t := range c.Teams {
+		if t.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Config) TeamNames() []string {
+	out := make([]string, 0, len(c.Teams))
+	for _, t := range c.Teams {
+		out = append(out, t.Name)
+	}
+	return out
 }
 
 func (c *Config) warnf(format string, args ...any) {

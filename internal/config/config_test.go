@@ -27,13 +27,15 @@ github:
 
 protectedEnvironments: [production, staging]
 
+teams:
+  - name: growth
+    editors: [marketing]
+    environments: [production]
+    actions: [toggle, rollout]
+
 permissions:
   - group: flags-admins
     teams: ["*"]
-  - group: marketing
-    teams: ["growth"]
-    environments: [production]
-    actions: [toggle, rollout]
 `
 
 func write(t *testing.T, body string) string {
@@ -482,13 +484,13 @@ func TestProtectedEnvironmentNameMustBeUsableAsPathSegment(t *testing.T) {
 }
 
 func TestPermissionsErrorIsPrefixed(t *testing.T) {
-	msg := loadErr(t, replace(t, "actions: [toggle, rollout]", "actions: [toggle, launch_missiles]"))
+	msg := loadErr(t, base(t)+"\n  - group: g\n    teams: [\"*\"]\n    actions: [launch_missiles]\n")
 	assertMentions(t, msg, "permissions", "launch_missiles")
 }
 
 func TestEmptyPermissionsWarns(t *testing.T) {
 	full := base(t)
-	body := full[:strings.Index(full, "permissions:")]
+	body := full[:strings.Index(full, "teams:")]
 	cfg, err := Load(write(t, body))
 	if err != nil {
 		t.Fatal(err)

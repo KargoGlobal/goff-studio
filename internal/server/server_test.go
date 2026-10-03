@@ -214,6 +214,7 @@ func testServer(t *testing.T, repo *repoState, rules []permissions.Rule) (*Serve
 		GitHub:                config.GitHub{Owner: "acme", Repo: "flags", Branch: "main"},
 		ProtectedEnvironments: []string{"production"},
 		PollSeconds:           30,
+		Teams:                 testTeams(),
 	}
 
 	perms, err := permissions.New(rules)
@@ -233,6 +234,10 @@ func testServer(t *testing.T, repo *repoState, rules []permissions.Rule) (*Serve
 	svc := NewService(cfg, storage.NewGitHubBackend(client), perms)
 	svc.now = func() time.Time { return testNow }
 	return New(cfg, svc, nil, sealer, emptyFS{}), sealer
+}
+
+func testTeams() []config.Team {
+	return []config.Team{{Name: "billing"}, {Name: "growth"}, {Name: "payments"}, {Name: "platform"}}
 }
 
 var testNow = time.Date(2030, 6, 15, 12, 0, 0, 0, time.UTC)
@@ -823,7 +828,7 @@ func TestMeAdvertisesCapabilities(t *testing.T) {
 	}
 }
 
-func TestListReportsTeamsAsFilesWithoutExtraFetches(t *testing.T) {
+func TestListOffersDeclaredTeamsAndNoTeam(t *testing.T) {
 	repo := newRepo()
 	repo.files["production/payments.goff.yaml"] = strings.Replace(paymentsFile,
 		"  version: \"3.1.0\"",
@@ -840,11 +845,14 @@ func TestListReportsTeamsAsFilesWithoutExtraFetches(t *testing.T) {
 	decode(t, rec, &out)
 
 	want := []TeamOption{
+		{Name: "billing", File: "production/billing.goff.yaml"},
 		{Name: "growth", File: "production/growth.goff.yaml"},
 		{Name: "payments", File: "production/payments.goff.yaml"},
+		{Name: "platform", File: "production/platform.goff.yaml"},
+		{Name: "", File: "production/flags.goff.yaml"},
 	}
 	if len(out.Teams) != len(want) {
-		t.Fatalf("teams = %v, want one per file, sorted", out.Teams)
+		t.Fatalf("teams = %v, want every declared team in config order, then no team", out.Teams)
 	}
 	for i, w := range want {
 		if out.Teams[i] != w {
@@ -852,13 +860,12 @@ func TestListReportsTeamsAsFilesWithoutExtraFetches(t *testing.T) {
 		}
 	}
 
-	// The destination list comes from filenames; the label still comes from metadata alone.
 	for _, f := range out.Flags {
-		if f.Key == "new-checkout" && f.Team != "billing" {
-			t.Errorf("a declared team must be reported, got %q", f.Team)
+		if f.Key == "new-checkout" && f.Team != "payments" {
+			t.Errorf("in the team-files layout the file decides the team, got %q", f.Team)
 		}
-		if f.Key == "banner-test" && f.Team != "" {
-			t.Errorf("growth.goff.yaml must not imply a growth team, got %q", f.Team)
+		if f.Key == "banner-test" && f.Team != "growth" {
+			t.Errorf("growth.goff.yaml holds growth's flags, got %q", f.Team)
 		}
 	}
 }

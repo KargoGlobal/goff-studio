@@ -25,7 +25,7 @@ func (g *GitHubBackend) Capabilities() Capabilities {
 func (g *GitHubBackend) ReadFile(ctx context.Context, path string) (*File, error) {
 	f, err := g.client.ReadFile(ctx, path)
 	if err != nil {
-		return nil, err
+		return nil, notFound(err)
 	}
 	return &File{Path: f.Path, Content: f.Content, Version: f.SHA}, nil
 }
