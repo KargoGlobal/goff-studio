@@ -9,8 +9,6 @@ import (
 const sampleTeams = `teams:
   - name: growth
     editors: [marketing]
-    environments: [production]
-    actions: [toggle, rollout]
 `
 
 func withTeams(t *testing.T, block string) string {
@@ -41,11 +39,8 @@ func TestTeamsExpandIntoOneRulePerEditor(t *testing.T) {
 	if set.Allowed(permissions.Request{Groups: []string{"payments-oncall"}, Environment: "dev", Team: "growth", Action: permissions.View}) {
 		t.Error("an editor of one team must not reach another")
 	}
-	if set.Allowed(permissions.Request{Groups: []string{"marketing"}, Environment: "dev", Team: "growth", Action: permissions.Toggle}) {
-		t.Error("a team's environments limit its editors")
-	}
-	if set.Allowed(permissions.Request{Groups: []string{"marketing"}, Environment: "production", Team: "growth", Action: permissions.Delete}) {
-		t.Error("a team's actions limit its editors")
+	if !set.Allowed(permissions.Request{Groups: []string{"marketing"}, Environment: "production", Team: "growth", Action: permissions.Delete}) {
+		t.Error("a team's editors get every action in every environment")
 	}
 }
 
@@ -89,13 +84,14 @@ func TestARuleNamingAnUndeclaredTeamWarns(t *testing.T) {
 
 func TestBadTeamsAreRejected(t *testing.T) {
 	cases := map[string][]string{
-		"\nteams:\n  - name: growth\n  - name: growth\n":  {"teams[1].name", "repeats", "GOFF_STUDIO_TEAMS"},
-		"\nteams:\n  - name: \"\"\n":                      {"teams[0].name"},
-		"\nteams:\n  - name: has space\n":                 {"teams[0].name", "has space"},
-		"\nteams:\n  - name: ../up\n":                     {"teams[0].name"},
-		"\nteams:\n  - name: flags\n":                     {"teams[0].name", "reserved"},
-		"\nteams:\n  - name: ok\n    editors: [\"\"]\n":   {"teams[0].editors[0]"},
-		"\nteams:\n  - name: ok\n    actions: [launch]\n": {"teams[0].actions[0]", "launch"},
+		"\nteams:\n  - name: growth\n  - name: growth\n":    {"teams[1].name", "repeats", "GOFF_STUDIO_TEAMS"},
+		"\nteams:\n  - name: \"\"\n":                        {"teams[0].name"},
+		"\nteams:\n  - name: has space\n":                   {"teams[0].name", "has space"},
+		"\nteams:\n  - name: ../up\n":                       {"teams[0].name"},
+		"\nteams:\n  - name: flags\n":                       {"teams[0].name", "reserved"},
+		"\nteams:\n  - name: ok\n    editors: [\"\"]\n":     {"teams[0].editors[0]"},
+		"\nteams:\n  - name: ok\n    actions: [view]\n":     {"actions", "permissions rule"},
+		"\nteams:\n  - name: ok\n    environments: [dev]\n": {"environments", "permissions rule"},
 	}
 	for body, want := range cases {
 		assertMentions(t, loadErr(t, withTeams(t, body)), want...)

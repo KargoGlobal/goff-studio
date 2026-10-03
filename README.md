@@ -305,17 +305,15 @@ between environments, and Compare does not count them as drift.
 ## Teams
 
 Teams are declared in `studio.yaml` and nowhere else; the UI cannot add one. Each
-team names the OIDC groups that edit its flags, optionally limited to some
-environments and actions:
+team names the OIDC groups that edit its flags. Environments are global, so editors
+get full access to their team's flags in every environment:
 
 ```yaml
 teams:
   - name: payments
     editors: [payments-team]
   - name: growth
-    editors: [marketing]
-    environments: [production]
-    actions: [toggle, rollout]
+    editors: [growth-engineers]
 ```
 
 - The team dropdown offers the declared teams you may create in, plus "No team"
@@ -332,12 +330,17 @@ teams:
 ## Permission model
 
 Each team's `editors` become rules internally. `permissions` holds the rest:
-admins, read-only access, and anything spanning teams.
+admins, read-only access, anything spanning teams, and narrower grants such as
+toggle-only access in one environment.
 
 ```yaml
 permissions:
   - group: flags-admins
     teams: ["*"]
+  - group: marketing
+    teams: [growth]
+    environments: [production]
+    actions: [toggle, rollout]
   - group: "*"
     teams: ["*"]
     actions: [view]

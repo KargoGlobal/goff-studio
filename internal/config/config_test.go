@@ -30,12 +30,14 @@ protectedEnvironments: [production, staging]
 teams:
   - name: growth
     editors: [marketing]
-    environments: [production]
-    actions: [toggle, rollout]
 
 permissions:
   - group: flags-admins
     teams: ["*"]
+  - group: growth-ops
+    teams: [growth]
+    environments: [production]
+    actions: [toggle, rollout]
 `
 
 func write(t *testing.T, body string) string {

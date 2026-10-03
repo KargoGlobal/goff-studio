@@ -83,10 +83,20 @@ type GitHub struct {
 }
 
 type Team struct {
-	Name         string   `yaml:"name"`
-	Editors      []string `yaml:"editors"`
-	Environments []string `yaml:"environments"`
-	Actions      []string `yaml:"actions"`
+	Name    string   `yaml:"name"`
+	Editors []string `yaml:"editors"`
+}
+
+func (t *Team) UnmarshalYAML(n *yaml.Node) error {
+	if n.Kind == yaml.MappingNode {
+		for i := 0; i < len(n.Content); i += 2 {
+			if k := n.Content[i].Value; k != "name" && k != "editors" {
+				return fmt.Errorf("line %d: teams take only name and editors, not %q; narrow access with a permissions rule", n.Content[i].Line, k)
+			}
+		}
+	}
+	type plain Team
+	return n.Decode((*plain)(t))
 }
 
 // NoTeamFile holds the flags that belong to no team, so no team may take its name.
@@ -610,11 +620,6 @@ func (c *Config) validateTeams() error {
 				return fieldErr(fmt.Sprintf("%s.editors[%d]", key, j), envTeams, "is empty; name an OIDC group")
 			}
 		}
-		for j, a := range t.Actions {
-			if _, err := permissions.ParseAction(a); err != nil {
-				return fieldErr(fmt.Sprintf("%s.actions[%d]", key, j), envTeams, err.Error())
-			}
-		}
 	}
 	return nil
 }
@@ -641,7 +646,7 @@ func (c *Config) Rules() []permissions.Rule {
 	for _, t := range c.Teams {
 		for _, g := range t.Editors {
 			out = append(out, permissions.Rule{
-				Group: strings.TrimSpace(g), Teams: []string{t.Name}, Environments: t.Environments, Actions: t.Actions,
+				Group: strings.TrimSpace(g), Teams: []string{t.Name},
 			})
 		}
 	}

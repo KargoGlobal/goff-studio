@@ -74,20 +74,21 @@ expectedPollSeconds: 30
 protectedEnvironments: [production]
 
 # The only teams Studio offers; flags can also have no team. Omit this to run without teams.
-# Each editor group gets the listed environments and actions on that team's flags (all, if omitted).
+# Editors get full access to their team's flags in every environment.
 teams:
   - name: payments
     editors: [payments-team]
-    environments: [dev, staging, production]
-
-  # Business users who may flip and ramp, but not change targeting or variations.
   - name: growth
-    editors: [marketing]
-    environments: [production]
-    actions: [toggle, rollout]
+    editors: [growth-engineers]
 
 # Default deny: no matching rule means no access. "*" covers every team and flags with no team.
 permissions:
   # Full access everywhere.
   - group: flags-admins
     teams: ["*"]
+
+  # Business users who may flip and ramp growth flags in production, but not change targeting.
+  - group: marketing
+    teams: [growth]
+    environments: [production]
+    actions: [toggle, rollout]
