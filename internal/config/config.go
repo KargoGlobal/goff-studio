@@ -40,6 +40,9 @@ const (
 	envProtectedEnvs  = "GOFF_STUDIO_PROTECTED_ENVIRONMENTS"
 	envPermissions    = "GOFF_STUDIO_PERMISSIONS"
 	envLayout         = "GOFF_STUDIO_LAYOUT"
+	envAPITokens      = "GOFF_STUDIO_API_TOKENS"
+	envNotifications  = "GOFF_STUDIO_NOTIFICATIONS"
+	envMCPEnabled     = "GOFF_STUDIO_MCP_ENABLED"
 
 	legacyEnvEnvironments = "GOFF_STUDIO_ENVIRONMENTS"
 	legacyEnvDiscoverEnvs = "GOFF_STUDIO_DISCOVER_ENVIRONMENTS"
@@ -81,6 +84,30 @@ type GitHub struct {
 	DevToken       string `yaml:"devToken"`
 }
 
+// APIToken is a machine identity; only the SHA-256 of the token is configured, never the token.
+type APIToken struct {
+	Name   string   `yaml:"name"`
+	SHA256 string   `yaml:"sha256"`
+	Groups []string `yaml:"groups"`
+	Email  string   `yaml:"email"`
+}
+
+type Notification struct {
+	URL          string   `yaml:"url"`
+	Format       string   `yaml:"format"`
+	Environments []string `yaml:"environments"`
+	Secret       string   `yaml:"secret"`
+}
+
+type MCP struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+const (
+	NotifyJSON  = "json"
+	NotifySlack = "slack"
+)
+
 type Config struct {
 	Server                Server             `yaml:"server"`
 	OIDC                  OIDC               `yaml:"oidc"`
@@ -90,6 +117,9 @@ type Config struct {
 	Permissions           []permissions.Rule `yaml:"permissions"`
 	PollSeconds           int                `yaml:"expectedPollSeconds"`
 	Layout                string             `yaml:"layout"`
+	APITokens             []APIToken         `yaml:"apiTokens"`
+	Notifications         []Notification     `yaml:"notifications"`
+	MCP                   MCP                `yaml:"mcp"`
 
 	warnings []string
 }
@@ -206,6 +236,15 @@ func (c *Config) applyEnv() error {
 	}
 	yamlList(envPermissions, &c.Permissions)
 	str(envLayout, &c.Layout)
+	if os.Getenv(envAPITokens) != "" {
+		c.APITokens = nil
+		yamlList(envAPITokens, &c.APITokens)
+	}
+	if os.Getenv(envNotifications) != "" {
+		c.Notifications = nil
+		yamlList(envNotifications, &c.Notifications)
+	}
+	boolean(envMCPEnabled, &c.MCP.Enabled)
 
 	str(envOIDCIssuerURL, &c.OIDC.IssuerURL)
 	str(envOIDCClientID, &c.OIDC.ClientID)
@@ -250,7 +289,118 @@ func (c *Config) validate() error {
 	if err := c.validateLayout(); err != nil {
 		return err
 	}
+	if err := c.validateAPITokens(); err != nil {
+		return err
+	}
+	if err := c.validateNotifications(); err != nil {
+		return err
+	}
 	return c.validatePermissions()
+}
+
+var tokenName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
+
+func (c *Config) validateAPITokens() error {
+	seenNames, seenHashes := map[string]bool{}, map[string]bool{}
+	for i := range c.APITokens {
+		t := &c.APITokens[i]
+		key := fmt.Sprintf("apiTokens[%d]", i)
+		t.Name = strings.TrimSpace(t.Name)
+		if !tokenName.MatchString(t.Name) || len(t.Name) > 64 {
+			return fieldErr(key+".name", envAPITokens,
+				fmt.Sprintf("%q must be 1 to 64 letters, digits, dots, dashes or underscores; it names the token in history and notifications", t.Name))
+		}
+		if seenNames[t.Name] {
+			return fieldErr(key+".name", envAPITokens, fmt.Sprintf("repeats %q; give each token its own name", t.Name))
+		}
+		seenNames[t.Name] = true
+
+		t.SHA256 = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(t.SHA256), "sha256:"))
+		if !isSHA256Hex(t.SHA256) {
+			return fieldErr(key+".sha256", envAPITokens,
+				"must be the 64-character hex SHA-256 of the token, never the token itself; generate a token with openssl rand -hex 32 and hash it with sha256sum")
+		}
+		if seenHashes[t.SHA256] {
+			return fieldErr(key+".sha256", envAPITokens, fmt.Sprintf("is shared with another token; %q needs a token of its own", t.Name))
+		}
+		seenHashes[t.SHA256] = true
+
+		if len(t.Groups) == 0 {
+			return fieldErr(key+".groups", envAPITokens,
+				fmt.Sprintf("is empty for %q; list the permission groups the token acts as, otherwise it can do nothing", t.Name))
+		}
+		for _, g := range t.Groups {
+			if strings.TrimSpace(g) == "" || g == "*" {
+				return fieldErr(key+".groups", envAPITokens, fmt.Sprintf("for %q must name real groups, not %q", t.Name, g))
+			}
+		}
+		if t.Email != "" && (hasLineBreak(t.Email) || !strings.Contains(t.Email, "@")) {
+			return fieldErr(key+".email", envAPITokens, fmt.Sprintf("for %q must be a single email address, got %q", t.Name, t.Email))
+		}
+	}
+	if c.MCP.Enabled && len(c.APITokens) == 0 {
+		c.warnf("mcp.enabled is true but no apiTokens are configured; MCP clients sign in with an API token, so none can connect (%s)", envAPITokens)
+	}
+	return nil
+}
+
+func (c *Config) validateNotifications() error {
+	for i := range c.Notifications {
+		n := &c.Notifications[i]
+		key := fmt.Sprintf("notifications[%d]", i)
+		if strings.TrimSpace(n.URL) == "" {
+			return fieldErr(key+".url", envNotifications, "is required; it is where Studio posts each flag change")
+		}
+		target, err := absoluteURL(key+".url", envNotifications, n.URL)
+		if err != nil {
+			return err
+		}
+		if target.Scheme != "https" && !isLoopbackHost(target.Hostname()) {
+			c.warnf("%s.url is not https, so flag changes are sent in plaintext (%s)", key, envNotifications)
+		}
+		n.Format = strings.ToLower(strings.TrimSpace(n.Format))
+		if n.Format == "" {
+			n.Format = NotifyJSON
+		}
+		if n.Format != NotifyJSON && n.Format != NotifySlack {
+			return fieldErr(key+".format", envNotifications, fmt.Sprintf("must be %q or %q, got %q", NotifyJSON, NotifySlack, n.Format))
+		}
+		for _, env := range n.Environments {
+			if env != "*" && !environmentName.MatchString(env) {
+				return fieldErr(key+".environments", envNotifications, fmt.Sprintf("%q is not usable as a folder name", env))
+			}
+		}
+	}
+	return nil
+}
+
+func isSHA256Hex(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func hasLineBreak(s string) bool {
+	return strings.ContainsAny(s, "\r\n")
+}
+
+// NotifiesFor reports whether a notification hook covers the environment; no list means all of them.
+func (n Notification) NotifiesFor(environment string) bool {
+	if len(n.Environments) == 0 {
+		return true
+	}
+	for _, e := range n.Environments {
+		if e == "*" || e == environment {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Config) validateServer() error {

@@ -22,6 +22,7 @@ type Service struct {
 	repo    storage.Backend
 	adapter *goff.Adapter
 	perms   *permissions.Set
+	notify  *notifier
 
 	cacheMu sync.Mutex
 	cache   map[string]cachedFile
@@ -93,7 +94,11 @@ func (s *Service) knownSHA(file, sha string) bool {
 }
 
 func NewService(cfg *config.Config, repo storage.Backend, perms *permissions.Set) *Service {
-	return &Service{cfg: cfg, repo: repo, adapter: goff.New(), perms: perms, envTTL: environmentCacheTTL, now: time.Now}
+	notify := newNotifier(cfg)
+	if notify != nil {
+		repo = notifyingBackend{Backend: repo, notify: notify}
+	}
+	return &Service{cfg: cfg, repo: repo, adapter: goff.New(), perms: perms, notify: notify, envTTL: environmentCacheTTL, now: time.Now}
 }
 
 type FlagView struct {
@@ -284,12 +289,14 @@ type SaveRequest struct {
 	Action      permissions.Action
 	Mutate      func(*goff.Flag)
 	Summary     string
+	Note        ChangeNote
 }
 
 type SaveResult struct {
-	Commit  string `json:"commit"`
-	Retried bool   `json:"retried"`
-	Message string `json:"message"`
+	Commit    string `json:"commit"`
+	Retried   bool   `json:"retried"`
+	Message   string `json:"message"`
+	Unchanged bool   `json:"unchanged,omitempty"`
 }
 
 func (s *Service) Snapshot(file, sha, key string) (goff.Flag, bool) {
@@ -305,6 +312,11 @@ func (s *Service) Save(ctx context.Context, sess auth.Session, req SaveRequest) 
 		Groups: sess.Groups, Environment: req.Environment, File: req.File, Action: req.Action,
 	}) {
 		return nil, ErrForbidden
+	}
+
+	req.Note = req.Note.trimmed()
+	if err := req.Note.validate(); err != nil {
+		return nil, err
 	}
 
 	loadedFlag := req.LoadedFlag
@@ -348,11 +360,11 @@ func (s *Service) Save(ctx context.Context, sess auth.Session, req SaveRequest) 
 		return next, nil
 	}
 
-	result, err := s.repo.Write(ctx, storage.ChangeOp{
+	result, err := s.repo.Write(withNote(ctx, req.Note), storage.ChangeOp{
 		Path:        req.File,
 		Key:         req.Key,
 		BaseVersion: req.FileSHA,
-		Message:     s.commitMessage(req),
+		Message:     req.Note.appendTo(s.commitMessage(req)),
 		Apply:       apply,
 		Changed:     s.flagChanged(req.File, req.Key, loadedFlag),
 	}, identityOf(sess))

@@ -68,8 +68,22 @@ func Run(dist embed.FS) {
 		log.Fatalf("assets: %v", err)
 	}
 
+	tokens, err := apiTokens(cfg)
+	if err != nil {
+		log.Fatalf("api tokens: %v", err)
+	}
+
 	svc := server.NewService(cfg, repo, perms)
-	srv := server.New(cfg, svc, oidcClient, sealer, assets)
+	srv := server.New(cfg, svc, oidcClient, sealer, tokens, assets)
+	if tokens.Enabled() {
+		log.Printf("%d API token(s) configured", len(cfg.APITokens))
+	}
+	if cfg.MCP.Enabled {
+		log.Printf("read-only MCP endpoint enabled at %s/mcp", cfg.Server.BaseURL)
+	}
+	if n := len(cfg.Notifications); n > 0 {
+		log.Printf("%d change notification hook(s) configured", n)
+	}
 
 	if cfg.UsesGitHub() {
 		log.Printf("GO Feature Flag Studio listening on %s, %s backend: %s/%s on %s",
@@ -87,6 +101,14 @@ func Run(dist embed.FS) {
 	if err := httpServer.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func apiTokens(cfg *config.Config) (*auth.Tokens, error) {
+	configured := make([]auth.APIToken, 0, len(cfg.APITokens))
+	for _, t := range cfg.APITokens {
+		configured = append(configured, auth.APIToken{Name: t.Name, SHA256: t.SHA256, Groups: t.Groups, Email: t.Email})
+	}
+	return auth.NewTokens(configured)
 }
 
 func discoverOIDC(cfg *config.Config, budget time.Duration) (*auth.OIDC, error) {

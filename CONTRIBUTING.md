@@ -123,6 +123,8 @@ importing `internal/server`, something has gone wrong.
 | New query operator | `internal/goff/build.go`, then `web/src/lib/query.ts` |
 | New API endpoint | `internal/server/server.go` route + `service.go` logic |
 | New permission action | `internal/permissions/permissions.go` + `web/src/lib/api.ts` |
+| New MCP tool (read-only only) | `internal/server/mcp.go`, `mcpTools` |
+| New notification format | `internal/server/notify.go` + `internal/config/config.go` |
 | New config key | `internal/config/config.go` (struct, `applyEnv`, `validate`) + `studio.example.yaml` |
 
 Adding a config key means adding all three of the YAML tag, the `GOFF_STUDIO_*`

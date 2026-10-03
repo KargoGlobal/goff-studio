@@ -89,3 +89,23 @@ permissions:
     allow: ["growth"]
     environments: [production]
     actions: [toggle, rollout]
+
+# Machine identities for workflow tools and assistants. Only the SHA-256 of each token is stored:
+#   token=$(openssl rand -hex 32); printf %s "$token" | sha256sum
+# A token acts as its groups, so grant those groups the narrowest actions that work.
+# apiTokens:
+#   - name: incident-automation
+#     sha256: 0000000000000000000000000000000000000000000000000000000000000000
+#     groups: [incident-responders]
+
+# Posted after every saved change. Pass real URLs through GOFF_STUDIO_NOTIFICATIONS, since they usually embed a credential.
+# notifications:
+#   - url: https://hooks.example.com/flag-changes
+#     secret: from-env           # optional; adds X-Studio-Signature: sha256=<HMAC of the body>
+#   - url: https://chat.example.com/incoming/abc123
+#     format: slack              # json (default) or slack
+#     environments: [production]
+
+# Read-only Model Context Protocol endpoint at <baseURL>/mcp; clients sign in with an API token.
+mcp:
+  enabled: false

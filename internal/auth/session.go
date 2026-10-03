@@ -26,6 +26,8 @@ type Session struct {
 	Email   string    `json:"email"`
 	Groups  []string  `json:"groups"`
 	Expiry  time.Time `json:"expiry"`
+	// Token names the API token behind a request; never sealed into a cookie.
+	Token string `json:"-"`
 }
 
 func (s Session) Expired() bool {

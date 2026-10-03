@@ -207,6 +207,12 @@ func (r *repoState) server(t *testing.T) *httptest.Server {
 
 func testServer(t *testing.T, repo *repoState, rules []permissions.Rule) (*Server, *auth.Sealer) {
 	t.Helper()
+	srv, sealer, _ := testServerWith(t, repo, rules, nil)
+	return srv, sealer
+}
+
+func testServerWith(t *testing.T, repo *repoState, rules []permissions.Rule, configure func(*config.Config)) (*Server, *auth.Sealer, *Service) {
+	t.Helper()
 
 	gh := repo.server(t)
 	cfg := &config.Config{
@@ -214,6 +220,9 @@ func testServer(t *testing.T, repo *repoState, rules []permissions.Rule) (*Serve
 		GitHub:                config.GitHub{Owner: "acme", Repo: "flags", Branch: "main"},
 		ProtectedEnvironments: []string{"production"},
 		PollSeconds:           30,
+	}
+	if configure != nil {
+		configure(cfg)
 	}
 
 	perms, err := permissions.New(rules)
@@ -230,9 +239,18 @@ func testServer(t *testing.T, repo *repoState, rules []permissions.Rule) (*Serve
 		t.Fatal(err)
 	}
 
+	var configured []auth.APIToken
+	for _, tok := range cfg.APITokens {
+		configured = append(configured, auth.APIToken{Name: tok.Name, SHA256: tok.SHA256, Groups: tok.Groups, Email: tok.Email})
+	}
+	tokens, err := auth.NewTokens(configured)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	svc := NewService(cfg, storage.NewGitHubBackend(client), perms)
 	svc.now = func() time.Time { return testNow }
-	return New(cfg, svc, nil, sealer, emptyFS{}), sealer
+	return New(cfg, svc, nil, sealer, tokens, emptyFS{}), sealer, svc
 }
 
 var testNow = time.Date(2030, 6, 15, 12, 0, 0, 0, time.UTC)
