@@ -349,9 +349,10 @@ func (c *Config) validateNotifications() error {
 		if strings.TrimSpace(n.URL) == "" {
 			return fieldErr(key+".url", envNotifications, "is required; it is where Studio posts each flag change")
 		}
-		target, err := absoluteURL(key+".url", envNotifications, n.URL)
-		if err != nil {
-			return err
+		// Webhook URLs usually embed their credential, so the value never goes into an error or a log.
+		target, err := url.Parse(n.URL)
+		if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" {
+			return fieldErr(key+".url", envNotifications, "must be an absolute http(s) URL; the value is not shown because it may hold a credential")
 		}
 		if target.Scheme != "https" && !isLoopbackHost(target.Hostname()) {
 			c.warnf("%s.url is not https, so flag changes are sent in plaintext (%s)", key, envNotifications)

@@ -520,6 +520,8 @@ curl -sS -X POST https://studio.example.com/api/environments/production/flags/ne
   the file as it is now, which is what a kill switch wants.
 - Everything is permission-checked exactly as for a person, so a token for this
   should usually get `toggle` only, in the environments it may act on.
+- The typed confirmation for protected environments is part of the UI. An API
+  call with `toggle` permission in `production` changes production directly.
 
 ### API tokens
 
@@ -555,7 +557,9 @@ permissions:
 Send the token as `Authorization: Bearer <token>`. It works on every `/api`
 route. A request with a Bearer token is judged on that token alone: a wrong
 token is a `401` even if the same request also carries a valid session cookie.
-Other `Authorization` schemes, such as a proxy's `Basic`, are ignored. A token's
+Other `Authorization` schemes, such as a proxy's `Basic`, are ignored, and so is
+any Bearer header while no `apiTokens` are configured, so a proxy that forwards
+its own token does not lock people out. A token's
 groups must be named explicitly; `"*"` is refused. Changes made with a token are
 attributed to `<name> (API token)` with the subject `token:<name>`.
 
@@ -624,7 +628,10 @@ Streamable HTTP transport: one JSON reply per `POST`, no session and no stream.
 
 It is **read-only**. None of its tools can change a flag, and every tool is
 marked `readOnlyHint`. It only accepts API tokens, never a browser cookie, and it
-rejects requests whose `Origin` is not `server.baseURL`. What a token can see
+rejects requests whose `Origin` is not `server.baseURL`. Each token may make 60
+MCP calls a minute (a batch counts each message); beyond that Studio answers `429`
+with `Retry-After`, so a looping assistant cannot use up the storage API quota
+that turning a flag off depends on. What a token can see
 is decided by its groups, as everywhere else, so give an assistant a token whose
 groups only have `view`.
 

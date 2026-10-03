@@ -11,6 +11,7 @@ import (
 	"github.com/go-feature-flag/studio/internal/auth"
 	"github.com/go-feature-flag/studio/internal/goff"
 	"github.com/go-feature-flag/studio/internal/permissions"
+	"github.com/go-feature-flag/studio/internal/storage"
 )
 
 const (
@@ -106,6 +107,10 @@ func (s *Service) FindFlags(ctx context.Context, sess auth.Session, query, envir
 		list, err := s.List(ctx, sess, env)
 		if errors.Is(err, ErrForbidden) && environment == "" {
 			continue
+		}
+		// Hidden and missing look the same, so a search cannot probe for environment names.
+		if environment != "" && (errors.Is(err, ErrForbidden) || errors.Is(err, storage.ErrNotFound)) {
+			return nil, ErrNoSuchEnvironment
 		}
 		if err != nil {
 			return nil, err

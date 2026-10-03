@@ -16,6 +16,7 @@ import (
 	"github.com/go-feature-flag/studio/internal/config"
 	"github.com/go-feature-flag/studio/internal/goff"
 	"github.com/go-feature-flag/studio/internal/permissions"
+	"github.com/go-feature-flag/studio/internal/storage"
 )
 
 type Server struct {
@@ -25,10 +26,12 @@ type Server struct {
 	sealer *auth.Sealer
 	tokens *auth.Tokens
 	assets fs.FS
+
+	mcpBudget *callBudget
 }
 
 func New(cfg *config.Config, svc *Service, oidcClient *auth.OIDC, sealer *auth.Sealer, tokens *auth.Tokens, assets fs.FS) *Server {
-	return &Server{cfg: cfg, svc: svc, oidc: oidcClient, sealer: sealer, tokens: tokens, assets: assets}
+	return &Server{cfg: cfg, svc: svc, oidc: oidcClient, sealer: sealer, tokens: tokens, assets: assets, mcpBudget: newCallBudget()}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -72,10 +75,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/flags", s.withSession(s.handleSearch))
 	mux.HandleFunc("GET /api/flags/{key}/status", s.withSession(s.handleStatus))
 
+	// MCP clients probe OAuth discovery after a 401; the app page there would read as a broken JSON document.
+	mux.HandleFunc("/.well-known/", func(w http.ResponseWriter, _ *http.Request) {
+		writeError(w, http.StatusNotFound, "not found")
+	})
 	if s.cfg.MCP.Enabled {
 		mux.HandleFunc("POST /mcp", s.handleMCP)
 		mux.HandleFunc("GET /mcp", s.handleMCPNoStream)
 		mux.HandleFunc("DELETE /mcp", s.handleMCPNoStream)
+	} else {
+		mux.HandleFunc("/mcp", func(w http.ResponseWriter, _ *http.Request) {
+			writeError(w, http.StatusNotFound, "the MCP endpoint is turned off; set mcp.enabled to use it")
+		})
 	}
 
 	if s.assets != nil {
@@ -120,7 +131,8 @@ func (s *Server) withSession(next handlerWithSession) http.HandlerFunc {
 
 // A request with a Bearer token is judged on that token alone, never on a cookie it also carries.
 func (s *Server) authenticate(r *http.Request) (auth.Session, error) {
-	if auth.HasBearer(r) {
+	// With no tokens configured, a Bearer header can only be a proxy's own, so the cookie still decides.
+	if auth.HasBearer(r) && s.tokens.Enabled() {
 		return s.tokens.Authenticate(r)
 	}
 	return s.sealer.Read(r)
@@ -278,6 +290,12 @@ func (s *Server) handleToggle(w http.ResponseWriter, r *http.Request, sess auth.
 		verb = "disabled"
 	}
 
+	note := ChangeNote{Reason: body.Reason, Reference: body.Reference}.trimmed()
+	if err := note.validate(); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
 	// Automation retries; turning off a flag that is already off must not write or notify again.
 	if view.Enabled == body.Enabled && allows(view.Actions, permissions.Toggle) {
 		writeJSON(w, http.StatusOK, SaveResult{Unchanged: true, Message: "Already " + verb + "; nothing changed."})
@@ -291,7 +309,7 @@ func (s *Server) handleToggle(w http.ResponseWriter, r *http.Request, sess auth.
 		FileSHA:     body.FileSHA,
 		Action:      permissions.Toggle,
 		Summary:     verb,
-		Note:        ChangeNote{Reason: body.Reason, Reference: body.Reference},
+		Note:        note,
 		LoadedFlag:  loaded,
 		Mutate:      func(f *goff.Flag) { f.Enabled = body.Enabled },
 	})
@@ -1541,6 +1559,10 @@ func serviceErrorMessage(err error) (int, string) {
 		return http.StatusForbidden, "you do not have permission to change this flag"
 	case errors.Is(err, ErrNotFound):
 		return http.StatusNotFound, "that flag no longer exists"
+	case errors.Is(err, ErrNoSuchEnvironment):
+		return http.StatusNotFound, "there is no environment by that name that you can see"
+	case errors.Is(err, storage.ErrNotFound):
+		return http.StatusNotFound, "that environment or flag does not exist"
 	case errors.Is(err, ErrInvalid):
 		return http.StatusBadRequest, strings.TrimPrefix(err.Error(), "invalid request: ")
 	case errors.Is(err, ErrStaleView):

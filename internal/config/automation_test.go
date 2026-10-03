@@ -137,3 +137,10 @@ func TestMCPWithoutTokensWarns(t *testing.T) {
 		t.Errorf("expected a warning about missing tokens, got %v", cfg.Warnings())
 	}
 }
+
+func TestBadNotificationURLIsNotEchoed(t *testing.T) {
+	msg := loadErr(t, withAutomation(t, "\nnotifications:\n  - {url: \"hooks.example.com/services/T0/B0/s3cr3t\"}\n"))
+	if strings.Contains(msg, "s3cr3t") {
+		t.Errorf("a webhook credential reached the error: %s", msg)
+	}
+}

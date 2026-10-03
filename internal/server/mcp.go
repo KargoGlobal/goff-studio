@@ -9,9 +9,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/go-feature-flag/studio/internal/auth"
+	"github.com/go-feature-flag/studio/internal/storage"
 )
 
 // The MCP endpoint is stateless Streamable HTTP: every POST gets one JSON reply and no SSE stream.
@@ -28,6 +32,8 @@ const (
 	// Each call may read every flag file, so one POST cannot fan out without limit.
 	maxMCPBatch = 20
 
+	mcpCallsPerMinute = 60
+
 	mcpInstructions = "Read-only access to GO Feature Flag Studio. Use search_flags or get_flag_status to find a flag " +
 		"and the environments it is in, get_flag for its full configuration, get_flag_history for who changed it and why, " +
 		"and evaluate_flag to see what a given user would receive. Nothing here changes a flag."
@@ -38,6 +44,41 @@ type rpcRequest struct {
 	ID      json.RawMessage `json:"id,omitempty"`
 	Method  string          `json:"method"`
 	Params  json.RawMessage `json:"params,omitempty"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   json.RawMessage `json:"error,omitempty"`
+}
+
+// callBudget is a fixed one-minute window per token: each call can read every flag file, and a looping
+// assistant must not use up the storage API quota that turning a flag off depends on.
+type callBudget struct {
+	mu      sync.Mutex
+	windows map[string]budgetWindow
+	now     func() time.Time
+}
+
+type budgetWindow struct {
+	start time.Time
+	used  int
+}
+
+func newCallBudget() *callBudget {
+	return &callBudget{windows: map[string]budgetWindow{}, now: time.Now}
+}
+
+func (b *callBudget) take(token string, calls int) (time.Duration, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	now := b.now()
+	w := b.windows[token]
+	if now.Sub(w.start) >= time.Minute {
+		w = budgetWindow{start: now}
+	}
+	if w.used+calls > mcpCallsPerMinute {
+		return w.start.Add(time.Minute).Sub(now), false
+	}
+	w.used += calls
+	b.windows[token] = w
+	return 0, true
 }
 
 type rpcError struct {
@@ -245,6 +286,19 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	trimmed := bytes.TrimSpace(raw)
+	calls := 1
+	if len(trimmed) > 0 && trimmed[0] == '[' {
+		var batch []json.RawMessage
+		if json.Unmarshal(trimmed, &batch) == nil {
+			calls = max(len(batch), 1)
+		}
+	}
+	if wait, ok := s.mcpBudget.take(sess.Token, calls); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+		writeError(w, http.StatusTooManyRequests, fmt.Sprintf("this token may make %d MCP calls a minute; try again shortly", mcpCallsPerMinute))
+		return
+	}
+
 	if len(trimmed) > 0 && trimmed[0] == '[' {
 		var batch []json.RawMessage
 		if err := json.Unmarshal(trimmed, &batch); err != nil || len(batch) == 0 {
@@ -302,9 +356,19 @@ func rpcFailure(id json.RawMessage, code int, message string) *rpcResponse {
 }
 
 func (s *Server) mcpDispatch(ctx context.Context, sess auth.Session, raw json.RawMessage) *rpcResponse {
+	if trimmed := bytes.TrimSpace(raw); len(trimmed) > 0 && trimmed[0] != '{' {
+		if !json.Valid(trimmed) {
+			return rpcFailure(nil, rpcParseError, "could not parse the JSON-RPC message")
+		}
+		return rpcFailure(nil, rpcInvalidRequest, "a JSON-RPC message must be an object")
+	}
 	var req rpcRequest
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return rpcFailure(nil, rpcParseError, "could not parse the JSON-RPC message")
+	}
+	// This server never sends requests, but a client's response to one is acknowledged, not refused.
+	if req.Method == "" && (len(req.Result) > 0 || len(req.Error) > 0) {
+		return nil
 	}
 	notification := len(req.ID) == 0 || string(req.ID) == "null"
 	if req.JSONRPC != "2.0" || req.Method == "" {
@@ -386,12 +450,14 @@ func (s *Server) callTool(ctx context.Context, sess auth.Session, tool mcpTool, 
 }
 
 func toolError(err error) map[string]any {
-	_, message := serviceErrorMessage(err)
+	status, message := serviceErrorMessage(err)
 	switch {
 	case errors.Is(err, ErrForbidden):
 		message = "this API token is not allowed to see that"
-	case errors.Is(err, ErrNotFound):
+	case errors.Is(err, ErrNotFound), errors.Is(err, ErrNoSuchEnvironment), errors.Is(err, storage.ErrNotFound):
 		message = "there is no such flag or environment, or this API token cannot see it"
+	case status >= http.StatusInternalServerError:
+		message = "Studio could not read the flag store; the details are in its log"
 	}
 	return map[string]any{"content": []map[string]any{{"type": "text", "text": message}}, "isError": true}
 }

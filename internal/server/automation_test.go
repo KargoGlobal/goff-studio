@@ -436,6 +436,9 @@ func TestSearchFindsByKeyTeamAndDescription(t *testing.T) {
 func TestSearchIsLimitedToWhatTheCallerCanSee(t *testing.T) {
 	srv, sealer, _ := testServerWith(t, newRepo(), adminRules(), nil)
 	rec := request(t, srv, sealer, marketer(), http.MethodGet, "/api/flags?q=checkout", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
 	var out SearchResult
 	decode(t, rec, &out)
 	if len(out.Hits) != 0 {

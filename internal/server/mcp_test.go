@@ -249,7 +249,7 @@ func TestMCPNeedsAToken(t *testing.T) {
 
 func TestMCPIsOffUnlessEnabled(t *testing.T) {
 	srv, _, _ := testServerWith(t, newRepo(), automationRules(), withTokens)
-	if rec := mcpPost(t, srv, readerToken, `{"jsonrpc":"2.0","id":1,"method":"ping"}`); rec.Code == http.StatusOK {
+	if rec := mcpPost(t, srv, readerToken, `{"jsonrpc":"2.0","id":1,"method":"ping"}`); rec.Code != http.StatusNotFound {
 		t.Errorf("MCP answered while disabled: %d %s", rec.Code, rec.Body)
 	}
 }

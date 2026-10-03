@@ -155,7 +155,8 @@ func (b notifyingBackend) Write(ctx context.Context, op storage.ChangeOp, who st
 	}
 
 	result, err := b.Backend.Write(ctx, op, who)
-	if err == nil && result != nil && result.Version != "" {
+	// Object-store backends report the current version for a write that changed nothing; that is not a change.
+	if err == nil && result != nil && result.Version != "" && !bytes.Equal(before, after) {
 		b.notify.send(b.notify.event(op, who, result.Version, noteFrom(ctx), before, after))
 	}
 	return result, err
