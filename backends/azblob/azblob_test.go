@@ -162,9 +162,9 @@ func body(f *fakeAzure, name string) string {
 	return v.body
 }
 
-func TestRegisteredUnderAzblob(t *testing.T) {
-	if !storage.Registered("azblob") {
-		t.Fatal("importing this package must register the azblob backend")
+func TestRegisteredUnderAzureBlobStorage(t *testing.T) {
+	if !storage.Registered(storage.KindAzureBlobStorage) || storage.Canonical("azblob") != storage.KindAzureBlobStorage {
+		t.Fatal("importing this package must register the azureBlobStorage kind, with azblob as its alias")
 	}
 }
 

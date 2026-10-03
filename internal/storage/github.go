@@ -16,7 +16,7 @@ func NewGitHubBackend(client *githubapp.Client) *GitHubBackend {
 	return &GitHubBackend{client: client}
 }
 
-func (g *GitHubBackend) Name() string { return "github" }
+func (g *GitHubBackend) Name() string { return KindGitHub }
 
 func (g *GitHubBackend) Capabilities() Capabilities {
 	return Capabilities{History: true, Attribution: true, Review: true}

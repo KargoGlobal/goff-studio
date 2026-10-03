@@ -228,9 +228,9 @@ func liveBody(f *fakeGCS, name string) string {
 	return g.body
 }
 
-func TestRegisteredUnderGCS(t *testing.T) {
-	if !storage.Registered("gcs") {
-		t.Fatal("importing this package must register the gcs backend")
+func TestRegisteredUnderGoogleStorage(t *testing.T) {
+	if !storage.Registered(storage.KindGoogleStorage) || storage.Canonical("gcs") != storage.KindGoogleStorage {
+		t.Fatal("importing this package must register the googleStorage kind, with gcs as its alias")
 	}
 }
 

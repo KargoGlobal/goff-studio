@@ -11,10 +11,6 @@ web/dist
 # Built frontend: the node stage regenerates this so the image never ships a
 # stale bundle baked in from a developer's working tree.
 cmd/goff-studio/dist
-backends/s3/cmd/goff-studio-s3/dist
-backends/gcs/cmd/goff-studio-gcs/dist
-backends/azblob/cmd/goff-studio-azblob/dist
-backends/configmap/cmd/goff-studio-configmap/dist
 
 # Locally built binaries
 /goff-studio

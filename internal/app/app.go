@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/go-feature-flag/studio/internal/auth"
@@ -127,19 +126,19 @@ func checkStorage(cfg *config.Config, repo storage.Backend, budget time.Duration
 	case cfg.UsesGitHub():
 		target = fmt.Sprintf("%s/%s on %s", cfg.GitHub.Owner, cfg.GitHub.Repo, cfg.GitHub.Branch)
 		hint = "check the credentials, that the repository exists, and that the GitHub App is installed on it"
-	case cfg.Storage.Bucket != "" && strings.EqualFold(cfg.Storage.Backend, "gcs"):
+	case cfg.Storage.Kind == storage.KindGoogleStorage:
 		target = fmt.Sprintf("gs://%s/%s", cfg.Storage.Bucket, cfg.Storage.Prefix)
 		hint = "check the bucket name and that this pod's Google credentials can list and write it"
-	case strings.EqualFold(cfg.Storage.Backend, "configmap"):
+	case cfg.Storage.Kind == storage.KindConfigMap:
 		target = fmt.Sprintf("ConfigMaps named %s<environment>", cfg.Storage.Prefix)
 		if ns := cfg.Storage.Options["namespace"]; ns != "" {
 			target += " in namespace " + ns
 		}
 		hint = "check the namespace, and that the service account may get, list, create and update configmaps there"
-	case cfg.Storage.Bucket != "" && strings.EqualFold(cfg.Storage.Backend, "azblob"):
+	case cfg.Storage.Kind == storage.KindAzureBlobStorage:
 		target = fmt.Sprintf("azure container %s/%s", cfg.Storage.Bucket, cfg.Storage.Prefix)
 		hint = "check the container name, the account URL or connection string, and that this pod's Azure identity can list and write it"
-	case cfg.Storage.Bucket != "":
+	case cfg.Storage.Kind == storage.KindS3:
 		target = fmt.Sprintf("s3://%s/%s", cfg.Storage.Bucket, cfg.Storage.Prefix)
 		hint = "check the bucket name, the region, and that this pod's credentials can list and write it"
 	}
@@ -169,7 +168,7 @@ func checkStorage(cfg *config.Config, repo storage.Backend, budget time.Duration
 func openStorage(cfg *config.Config) (storage.Backend, error) {
 	if !cfg.UsesGitHub() {
 		return storage.Open(storage.Settings{
-			Backend: cfg.Storage.Backend,
+			Kind:    cfg.Storage.Kind,
 			Path:    cfg.Storage.Path,
 			Bucket:  cfg.Storage.Bucket,
 			Region:  cfg.Storage.Region,

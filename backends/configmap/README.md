@@ -12,18 +12,13 @@ ConfigMap), so each relay proxy or SDK points at the ConfigMap and key for its
 environment and team.
 
 It talks to the Kubernetes API with the standard library rather than
-client-go, so it adds no dependencies. It is still its own module and binary,
-like the other non-Git backends.
+client-go, so it adds no dependencies. Built into the standard `goff-studio` binary and image; leave it out with `-tags no_configmap`.
 
 ## Using it
 
-```sh
-go build -o goff-studio-configmap ./cmd/goff-studio-configmap
-```
-
 ```yaml
 storage:
-  backend: configmap
+  kind: configmap
   prefix: goff-          # environment "production" is ConfigMap "goff-production"
   options:
     namespace: flags     # optional; defaults to Studio's own namespace
@@ -74,7 +69,7 @@ For local development, run `kubectl proxy` and point Studio at it. Requests to
 
 ```yaml
 storage:
-  backend: configmap
+  kind: configmap
   prefix: goff-
   options:
     apiServer: http://127.0.0.1:8001

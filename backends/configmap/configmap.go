@@ -31,7 +31,7 @@ import (
 )
 
 func init() {
-	storage.Register("configmap", func(s storage.Settings) (storage.Backend, error) {
+	storage.Register(storage.KindConfigMap, func(s storage.Settings) (storage.Backend, error) {
 		return New(Config{
 			Namespace: s.Options["namespace"],
 			Prefix:    s.Prefix,
@@ -132,7 +132,7 @@ func NewWithClient(client *http.Client, server, namespace, prefix string, token 
 	}
 }
 
-func (b *Backend) Name() string { return "configmap" }
+func (b *Backend) Name() string { return storage.KindConfigMap }
 
 // Capabilities are all false: a ConfigMap keeps no history, so there is
 // nothing to attribute and no review step.

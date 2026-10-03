@@ -1,18 +1,12 @@
 # S3 storage backend
 
-Writes flags straight to an S3 object. A separate Go module so the AWS SDK
-only lands in images that actually use it — the core binary is 18MB, this one
-is 28MB.
+Writes flags straight to an S3 object. Built into the standard `goff-studio` binary and image; leave it out with `-tags no_s3`.
 
 ## Using it
 
-```sh
-go build -o goff-studio-s3 ./cmd/goff-studio-s3
-```
-
 ```yaml
 storage:
-  backend: s3
+  kind: s3
   bucket: my-flags-bucket
   region: us-east-1
   prefix: flags        # optional, invisible to the UI

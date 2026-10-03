@@ -62,6 +62,7 @@ type OIDC struct {
 }
 
 type Storage struct {
+	Kind    string            `yaml:"kind"`
 	Backend string            `yaml:"backend"`
 	Path    string            `yaml:"path"`
 	Bucket  string            `yaml:"bucket"`
@@ -186,7 +187,9 @@ func (c *Config) applyEnv() error {
 	str(envBaseURL, &c.Server.BaseURL)
 	str(envSessionSecret, &c.Server.SessionSecret)
 	boolean(envSecureCookies, &c.Server.SecureCookies)
-	str(envStorage, &c.Storage.Backend)
+	if v := os.Getenv(envStorage); v != "" {
+		c.Storage.Kind, c.Storage.Backend = v, ""
+	}
 	str(envStoragePath, &c.Storage.Path)
 	str(envStorageBucket, &c.Storage.Bucket)
 	str(envStorageRegion, &c.Storage.Region)
@@ -323,18 +326,18 @@ func (c *Config) validateOIDC() error {
 }
 
 func (c *Config) validateStorage() error {
-	backend := strings.ToLower(strings.TrimSpace(c.Storage.Backend))
-	if backend == "" {
-		backend = "github"
+	kind, err := c.resolveKind()
+	if err != nil {
+		return err
 	}
-	c.Storage.Backend = backend
+	c.Storage.Kind, c.Storage.Backend = kind, ""
 
-	switch backend {
-	case "github":
+	switch kind {
+	case storage.KindGitHub:
 		return c.validateGitHub()
-	case "file":
+	case storage.KindFile:
 		if strings.TrimSpace(c.Storage.Path) == "" {
-			return fieldErr("storage.path", envStoragePath, "is required when storage.backend is file; it is the directory holding your environment directories")
+			return fieldErr("storage.path", envStoragePath, "is required when storage.kind is file; it is the directory holding your environment directories")
 		}
 		info, err := os.Stat(c.Storage.Path)
 		if err != nil {
@@ -343,52 +346,72 @@ func (c *Config) validateStorage() error {
 		if !info.IsDir() {
 			return fieldErr("storage.path", envStoragePath, fmt.Sprintf("%q is not a directory", c.Storage.Path))
 		}
-		c.warnf("storage.backend is file, so Studio writes flags straight to disk with no history, attribution or review; use the github backend for anything shared")
+		c.warnf("storage.kind is file, so Studio writes flags straight to disk with no history, attribution or review; use the github kind for anything shared")
 		return nil
-	case "s3":
-		if strings.TrimSpace(c.Storage.Bucket) == "" {
-			return fieldErr("storage.bucket", envStorageBucket, "is required when storage.backend is s3")
+	case storage.KindS3:
+		return c.validateObjectStore(kind, "", "bucket versioning")
+	case storage.KindGoogleStorage:
+		return c.validateObjectStore(kind, "", "object versioning")
+	case storage.KindAzureBlobStorage:
+		return c.validateObjectStore(kind, "; it is the container name", "blob versioning")
+	case storage.KindConfigMap:
+		if err := c.requireCompiledIn(kind); err != nil {
+			return err
 		}
-		if !storage.Registered("s3") {
-			return fieldErr("storage.backend", envStorage, "s3 is not compiled into this binary; use an image built with the s3 backend, or pick one of: "+strings.Join(storage.Available(), ", "))
-		}
-		c.warnf("storage.backend is s3, so changes have no review; Studio's permission config is the only control over who may change a flag, and history and attribution need bucket versioning")
-		return nil
-	case "gcs":
-		if strings.TrimSpace(c.Storage.Bucket) == "" {
-			return fieldErr("storage.bucket", envStorageBucket, "is required when storage.backend is gcs")
-		}
-		if !storage.Registered("gcs") {
-			return fieldErr("storage.backend", envStorage, "gcs is not compiled into this binary; use an image built with the gcs backend, or pick one of: "+strings.Join(storage.Available(), ", "))
-		}
-		c.warnf("storage.backend is gcs, so changes have no review; Studio's permission config is the only control over who may change a flag, and history and attribution need object versioning")
-		return nil
-	case "azblob":
-		if strings.TrimSpace(c.Storage.Bucket) == "" {
-			return fieldErr("storage.bucket", envStorageBucket, "is required when storage.backend is azblob; it is the container name")
-		}
-		if !storage.Registered("azblob") {
-			return fieldErr("storage.backend", envStorage, "azblob is not compiled into this binary; use an image built with the azblob backend, or pick one of: "+strings.Join(storage.Available(), ", "))
-		}
-		c.warnf("storage.backend is azblob, so changes have no review; Studio's permission config is the only control over who may change a flag, and history and attribution need blob versioning")
-		return nil
-	case "configmap":
-		if !storage.Registered("configmap") {
-			return fieldErr("storage.backend", envStorage, "configmap is not compiled into this binary; use an image built with the configmap backend, or pick one of: "+strings.Join(storage.Available(), ", "))
-		}
-		c.warnf("storage.backend is configmap, so changes have no history, attribution or review; Studio's permission config is the only control over who may change a flag")
+		c.warnf("storage.kind is configmap, so changes have no history, attribution or review; Studio's permission config is the only control over who may change a flag")
 		return nil
 	default:
-		if storage.Registered(backend) {
+		if storage.Registered(kind) {
 			return nil
 		}
-		return fieldErr("storage.backend", envStorage, fmt.Sprintf("%q is not compiled into this binary; available: %s", c.Storage.Backend, strings.Join(storage.Available(), ", ")))
+		return fieldErr("storage.kind", envStorage, fmt.Sprintf("%q is not compiled into this binary; available: %s", kind, strings.Join(storage.Available(), ", ")))
 	}
 }
 
+func (c *Config) resolveKind() (string, error) {
+	kind := strings.TrimSpace(c.Storage.Kind)
+	if legacy := strings.TrimSpace(c.Storage.Backend); legacy != "" {
+		if kind != "" && storage.Canonical(kind) != storage.Canonical(legacy) {
+			return "", fmt.Errorf("storage.kind is %q but storage.backend is %q; storage.backend is the old name for storage.kind, so remove it", kind, legacy)
+		}
+		c.warnf("storage.backend is deprecated; rename it to storage.kind")
+		if kind == "" {
+			kind = legacy
+		}
+	}
+	if kind == "" {
+		return storage.KindGitHub, nil
+	}
+	if renamed, ok := storage.LegacyKind(kind); ok {
+		c.warnf("storage kind %q is deprecated; use %q, the name GO Feature Flag's retriever uses", kind, renamed)
+	}
+	return storage.Canonical(kind), nil
+}
+
+func (c *Config) validateObjectStore(kind, bucketHint, versioning string) error {
+	if strings.TrimSpace(c.Storage.Bucket) == "" {
+		return fieldErr("storage.bucket", envStorageBucket, "is required when storage.kind is "+kind+bucketHint)
+	}
+	if err := c.requireCompiledIn(kind); err != nil {
+		return err
+	}
+	c.warnf("storage.kind is %s, so changes have no review; Studio's permission config is the only control over who may change a flag, and history and attribution need %s", kind, versioning)
+	return nil
+}
+
+func (c *Config) requireCompiledIn(kind string) error {
+	if storage.Registered(kind) {
+		return nil
+	}
+	return fieldErr("storage.kind", envStorage, fmt.Sprintf("%s is not compiled into this binary, which was built without it; use the standard image, or pick one of: %s", kind, strings.Join(storage.Available(), ", ")))
+}
+
 func (c *Config) UsesGitHub() bool {
-	backend := strings.ToLower(strings.TrimSpace(c.Storage.Backend))
-	return backend == "" || backend == "github"
+	kind := strings.TrimSpace(c.Storage.Kind)
+	if kind == "" {
+		kind = strings.TrimSpace(c.Storage.Backend)
+	}
+	return kind == "" || storage.Canonical(kind) == storage.KindGitHub
 }
 
 func (c *Config) validateGitHub() error {

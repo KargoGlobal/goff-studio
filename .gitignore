@@ -1,14 +1,6 @@
 /goff-studio
 /cmd/goff-studio/dist/*
 !/cmd/goff-studio/dist/.gitkeep
-/backends/s3/cmd/goff-studio-s3/dist/*
-!/backends/s3/cmd/goff-studio-s3/dist/.gitkeep
-/backends/gcs/cmd/goff-studio-gcs/dist/*
-!/backends/gcs/cmd/goff-studio-gcs/dist/.gitkeep
-/backends/azblob/cmd/goff-studio-azblob/dist/*
-!/backends/azblob/cmd/goff-studio-azblob/dist/.gitkeep
-/backends/configmap/cmd/goff-studio-configmap/dist/*
-!/backends/configmap/cmd/goff-studio-configmap/dist/.gitkeep
 node_modules/
 *.pem
 studio.yaml

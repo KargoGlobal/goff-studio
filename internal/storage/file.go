@@ -14,7 +14,7 @@ import (
 )
 
 func init() {
-	Register("file", func(s Settings) (Backend, error) { return NewFileBackend(s.Path) })
+	Register(KindFile, func(s Settings) (Backend, error) { return NewFileBackend(s.Path) })
 }
 
 type FileBackend struct {
@@ -39,7 +39,7 @@ func NewFileBackend(root string) (*FileBackend, error) {
 	return &FileBackend{root: abs}, nil
 }
 
-func (f *FileBackend) Name() string { return "file" }
+func (f *FileBackend) Name() string { return KindFile }
 
 func (f *FileBackend) Capabilities() Capabilities {
 	return Capabilities{History: false, Attribution: false, Review: false}

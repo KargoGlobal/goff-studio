@@ -20,7 +20,7 @@ import (
 )
 
 func init() {
-	storage.Register("s3", func(s storage.Settings) (storage.Backend, error) {
+	storage.Register(storage.KindS3, func(s storage.Settings) (storage.Backend, error) {
 		return New(context.Background(), Config{
 			Bucket:   s.Bucket,
 			Region:   s.Region,
@@ -82,7 +82,7 @@ func NewWithAPI(api API, bucket, prefix string) *Backend {
 	return &Backend{api: api, bucket: bucket, prefix: strings.Trim(prefix, "/")}
 }
 
-func (b *Backend) Name() string { return "s3" }
+func (b *Backend) Name() string { return storage.KindS3 }
 
 // Capabilities reports history and attribution only when bucket versioning is
 // on: every version carries its author in object metadata, but without

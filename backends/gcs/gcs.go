@@ -28,7 +28,7 @@ import (
 )
 
 func init() {
-	storage.Register("gcs", func(s storage.Settings) (storage.Backend, error) {
+	storage.Register(storage.KindGoogleStorage, func(s storage.Settings) (storage.Backend, error) {
 		return New(context.Background(), Config{
 			Bucket:   s.Bucket,
 			Prefix:   s.Prefix,
@@ -93,7 +93,7 @@ func NewWithClient(client *http.Client, endpoint, bucket, prefix string) *Backen
 	}
 }
 
-func (b *Backend) Name() string { return "gcs" }
+func (b *Backend) Name() string { return storage.KindGoogleStorage }
 
 // Capabilities reports history and attribution only when object versioning is
 // on: every generation carries its author in custom metadata, but without

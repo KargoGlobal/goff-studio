@@ -1,18 +1,14 @@
 # Google Cloud Storage backend
 
-Writes flags straight to a GCS object, the same layout GO Feature Flag's `gcs`
-retriever reads. It is a separate Go module so Google's auth libraries only end
-up in builds that use them.
+Writes flags straight to a GCS object, the same layout GO Feature Flag's
+`googleStorage` retriever reads. Built into the standard `goff-studio` binary and image; leave it out with `-tags no_googlestorage`.
+The old kind name `gcs` still works, with a warning.
 
 ## Using it
 
-```sh
-go build -o goff-studio-gcs ./cmd/goff-studio-gcs
-```
-
 ```yaml
 storage:
-  backend: gcs
+  kind: googleStorage
   bucket: my-flags-bucket
   prefix: flags        # optional, invisible to the UI
   options:
@@ -22,7 +18,7 @@ storage:
 Or with no config file at all:
 
 ```sh
-GOFF_STUDIO_STORAGE=gcs GOFF_STUDIO_STORAGE_BUCKET=my-flags-bucket ./goff-studio-gcs
+GOFF_STUDIO_STORAGE=googleStorage GOFF_STUDIO_STORAGE_BUCKET=my-flags-bucket ./goff-studio
 ```
 
 Credentials come from Google Application Default Credentials, so Workload
@@ -34,7 +30,7 @@ sent **without** credentials; that is meant for local emulators only.
 
 ## What you give up
 
-| | github | gcs |
+| | github | googleStorage |
 |---|---|---|
 | History | commits | object generations, only if object versioning is on |
 | Attribution | commit author and trailers | custom metadata, only if object versioning is on |

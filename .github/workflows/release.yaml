@@ -18,15 +18,8 @@ env:
 
 jobs:
   image:
-    name: Build and push ${{ matrix.backend || 'core' }} image
+    name: Build and push image
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # backend: ["", s3, gcs, azblob, configmap]
-        backend: [s3]
-    env:
-      SUFFIX: ${{ matrix.backend != '' && format('-{0}', matrix.backend) || '' }}
     permissions:
       contents: read
       packages: write
@@ -48,7 +41,10 @@ jobs:
       - id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}${{ env.SUFFIX }}
+          # The -s3 name is the old S3-only image; it now gets the same all-backends build.
+          images: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-s3
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -61,19 +57,24 @@ jobs:
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          build-args: BACKEND=${{ matrix.backend }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
           provenance: mode=max
           sbom: true
-          cache-from: type=gha,scope=${{ matrix.backend || 'core' }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.backend || 'core' }}
+          cache-from: type=gha,scope=studio
+          cache-to: type=gha,mode=max,scope=studio
 
       - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}${{ env.SUFFIX }}
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-s3
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
