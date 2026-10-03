@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Moon, Sun, LogOut, Plus, ShieldAlert, Flag, Layers, Menu, X } from 'lucide-react'
+import { Moon, Sun, LogOut, Plus, ShieldAlert, Flag, Layers, Menu, Users, X } from 'lucide-react'
 import { Logo } from '@/components/Logo'
 import { cn } from '@/lib/cn'
 import { api, type Environment } from '@/lib/api'
@@ -24,12 +24,14 @@ export function AppShell({
   user,
   environments,
   canCreateEnvironments,
+  hasTeams = false,
   currentEnv,
   children,
 }: {
   user: { name: string; email: string }
   environments: Environment[]
   canCreateEnvironments: boolean
+  hasTeams?: boolean
   currentEnv?: string
   children: ReactNode
 }) {
@@ -37,6 +39,7 @@ export function AppShell({
   const [newEnv, setNewEnv] = useState(false)
   const location = useLocation()
   const active = environments.find((e) => e.name === currentEnv)
+  const onTeams = Boolean(currentEnv) && location.pathname === `/env/${currentEnv}/teams`
   const isMobile = useMediaQuery(MOBILE_QUERY)
   const [navOpenAt, setNavOpenAt] = useState<string | null>(null)
   const navOpen = navOpenAt === location.pathname
@@ -131,7 +134,7 @@ export function AppShell({
             Environments
           </p>
           {environments.map((env) => {
-            const isActive = env.name === currentEnv
+            const isActive = env.name === currentEnv && !onTeams
             return (
               <Link
                 key={env.name}
@@ -179,6 +182,23 @@ export function AppShell({
               <Plus className="h-3.5 w-3.5" />
               New environment
             </button>
+          )}
+
+          {hasTeams && currentEnv && (
+            <Link
+              to={`/env/${currentEnv}/teams`}
+              onClick={closeNav}
+              aria-current={onTeams ? 'page' : undefined}
+              className={cn(
+                'mt-4 flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors max-md:min-h-11 max-md:text-[15px]',
+                onTeams
+                  ? 'bg-[color:var(--color-sidebar-active)] text-[color:var(--color-sidebar-active-ink)] font-medium shadow-sm'
+                  : 'text-[color:var(--color-sidebar-ink)] hover:bg-[color:var(--color-sidebar-hover)]',
+              )}
+            >
+              <Users className="h-3.5 w-3.5 shrink-0" />
+              Teams
+            </Link>
           )}
         </nav>
 

@@ -13,6 +13,10 @@ export function useMe() {
   return useQuery({ queryKey: ['me'], queryFn: api.me, retry: false })
 }
 
+export function useTeams() {
+  return useQuery({ queryKey: ['teams'], queryFn: api.teams })
+}
+
 export function useFlags(env: string | undefined) {
   return useQuery({
     queryKey: ['flags', env],
@@ -123,6 +127,7 @@ function invalidateFlag(qc: ReturnType<typeof useQueryClient>, env: string) {
   void qc.invalidateQueries({ queryKey: ['flag', env] })
   void qc.invalidateQueries({ queryKey: ['attributes', env] })
   void qc.invalidateQueries({ queryKey: ['history', env] })
+  void qc.invalidateQueries({ queryKey: ['teams'] })
 }
 
 export function useCompare(key: string, from: string, to: string) {

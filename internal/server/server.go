@@ -200,6 +200,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, sess auth.Sess
 		"groups":                sess.Groups,
 		"environments":          environments,
 		"canCreateEnvironments": s.svc.CanCreateEnvironments(sess),
+		"hasTeams":              len(s.cfg.TeamNames()) > 0,
 		"layout":                s.cfg.Layout,
 		"pollSeconds":           s.cfg.PollSeconds,
 		"capabilities":          s.svc.Capabilities(),

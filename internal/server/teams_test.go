@@ -270,3 +270,14 @@ func TestTeamsFlagCountFollowsASave(t *testing.T) {
 		t.Errorf("flags = %d after a delete, want %d: a write must drop the cached counts", after, before-1)
 	}
 }
+
+func TestMeSaysWhetherTeamsAreDeclared(t *testing.T) {
+	srv, sealer := testServer(t, newRepo(), adminRules())
+	if !me(t, srv, sealer, admin()).HasTeams {
+		t.Error("declared teams must show the Teams link")
+	}
+	srv.cfg.Teams = nil
+	if me(t, srv, sealer, admin()).HasTeams {
+		t.Error("no declared teams must hide the Teams link")
+	}
+}

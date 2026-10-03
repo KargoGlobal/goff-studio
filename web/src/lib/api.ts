@@ -24,6 +24,7 @@ export interface Me {
   groups: string[]
   environments: Environment[]
   canCreateEnvironments: boolean
+  hasTeams: boolean
   layout?: 'team-files' | 'single-file'
   pollSeconds: number
   capabilities: Capabilities
@@ -135,6 +136,26 @@ export interface TeamOption {
   file: string
 }
 
+export interface TeamEnvironment {
+  name: string
+  file: string
+  flags: number
+  canEdit: boolean
+}
+
+export interface TeamGroup {
+  name: string
+  edits: boolean
+  allTeams: boolean
+}
+
+export interface TeamSummary {
+  name: string
+  environments: TeamEnvironment[]
+  groups: TeamGroup[]
+  canEdit: boolean
+}
+
 export interface FlagList {
   flags: Flag[]
   broken: Broken[] | null
@@ -219,6 +240,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   me: () => request<Me>('/api/me'),
+
+  teams: () => request<{ teams: TeamSummary[] }>('/api/teams'),
 
   flags: (env: string) => request<FlagList>(`/api/environments/${env}/flags`),
 

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, ChevronDown, ChevronsUpDown, ChevronUp, ExternalLink, Plus, Search } from 'lucide-react'
 import { type Environment, type Flag } from '@/lib/api'
 import { useFlags } from '@/hooks/useFlags'
@@ -43,7 +43,8 @@ export function FlagListPage({ environments: _environments }: { environments: En
   const navigate = useNavigate()
   const { data, isLoading, error } = useFlags(env)
 
-  const [search, setSearch] = useState('')
+  const [params] = useSearchParams()
+  const [search, setSearch] = useState(() => params.get('q') ?? '')
   const [sort, setSort] = useState<{
     col: 'key' | 'team' | 'enabled' | 'created' | 'updated'
     dir: 'asc' | 'desc'
