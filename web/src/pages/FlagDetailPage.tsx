@@ -58,6 +58,7 @@ import { BucketingEditor } from '@/components/BucketingEditor'
 import { groupFromCondition, queryFromGroup } from '@/lib/query'
 import { tokensFromCondition } from '@/lib/tokens'
 import { ConditionView } from '@/components/ConditionView'
+import { JsonValue } from '@/components/JsonValue'
 import { ScheduleBadge } from '@/components/ScheduleBadge'
 import { describeEffectiveState, effectiveState } from '@/lib/schedule'
 import { identifierInputProps } from '@/lib/inputProps'
@@ -569,15 +570,20 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                     <div
                       key={v.name}
                       style={{ backgroundColor: variationColor(i) }}
-                      className="flex items-center justify-between rounded-md px-3 py-2 max-md:flex-wrap max-md:gap-x-3 max-md:gap-y-1"
+                      className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md px-3 py-2"
                     >
-                      <span className="flex items-center gap-2">
+                      <span className="flex shrink-0 items-center gap-2">
                         <Code className="bg-transparent px-0 font-semibold text-white">{v.name}</Code>
                         {flag.default?.variation === v.name && (
                           <Badge className="bg-white/25 text-white">default</Badge>
                         )}
                       </span>
-                      <Code className="dark:bg-line dark:text-white max-md:max-w-full max-md:wrap-anywhere">{JSON.stringify(v.value)}</Code>
+                      <JsonValue
+                        value={v.value}
+                        label={`value of ${v.name}`}
+                        className="flex-1 justify-end text-white"
+                        codeClassName="dark:bg-line dark:text-white"
+                      />
                     </div>
                   ))}
                 </div>
@@ -993,9 +999,15 @@ export function FlagDetailPage({ environments }: { environments: Environment[] }
                   <p className="text-sm text-danger">{preview.error}</p>
                 ) : (
                   <>
-                    <p className="text-base max-md:wrap-anywhere">
-                      Gets <strong className="font-mono">{JSON.stringify(preview.value)}</strong>
-                    </p>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-base">
+                      <span>Gets</span>
+                      <JsonValue
+                        value={preview.value}
+                        label="result"
+                        className="flex-1"
+                        codeClassName="bg-transparent px-0 text-base font-semibold text-ink"
+                      />
+                    </div>
                     <p className="mt-1 text-[13px] text-ink-muted">
                       {preview.variation && <>variation {preview.variation} · </>}
                       {preview.reason}
