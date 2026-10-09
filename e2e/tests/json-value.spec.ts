@@ -43,3 +43,14 @@ test('the preview result uses the same collapsed view', async ({ page }) => {
   await expect(page.locator('pre').filter({ hasText: '"ImpPodIDs"' })).toBeVisible()
   for (const px of await horizontalOverflow(page)) expect(px).toBeLessThanOrEqual(0)
 })
+
+test('a blocked clipboard reports that the value was not copied', async ({ page }) => {
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: () => Promise.reject(new Error('denied')) },
+    })
+  })
+  await page.getByRole('button', { name: 'Show the full value of strict' }).click()
+  await page.getByRole('button', { name: 'Copy the value of strict' }).click()
+  await expect(page.getByText('Could not copy the value of strict')).toBeVisible()
+})

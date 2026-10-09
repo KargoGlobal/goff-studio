@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Check, ChevronDown, ChevronRight, Copy } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { prettyJson, summarizeJson } from '@/lib/jsonValue'
+import { useToast } from '@/components/ui/Toast'
 
 // Renders as siblings so a flex-wrap parent can put the expanded block on its own full-width line.
 export function JsonValue({
@@ -17,6 +18,7 @@ export function JsonValue({
 }) {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  const toast = useToast()
   const { inline, expandable, size } = summarizeJson(value)
 
   const summary = (
@@ -47,7 +49,12 @@ export function JsonValue({
   if (!expandable || !open) return summary
 
   const copy = async () => {
-    await navigator.clipboard.writeText(prettyJson(value))
+    try {
+      await navigator.clipboard.writeText(prettyJson(value))
+    } catch {
+      toast(`Could not copy the ${label}`, 'error')
+      return
+    }
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
