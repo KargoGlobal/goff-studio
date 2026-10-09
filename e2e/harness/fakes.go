@@ -96,6 +96,16 @@ const rampFixture = `ramped:
     variation: "off"
   metadata:
     team: platform
+request-filter:
+  variations:
+    strict:
+      exclude: [IFAType, MaxAdDuration, CountryCode, RegionCode, IABCategories, ContentDescription, ContentTitle, ContentChannelName, BidFloor, NumRequestImps, ImpSlots, ImpMaxBitrates, ImpPlacements, DealBidFloors, ImpPodIDs]
+    loose:
+      exclude: []
+  defaultRule:
+    variation: strict
+  metadata:
+    team: platform
 `
 
 type commit struct {

@@ -27,7 +27,7 @@ test('the flag list shows every flag in the repo', async ({ page }) => {
   await page.goto(listPath())
 
   await expect(page.getByRole('heading', { name: 'Feature flags' })).toBeVisible()
-  await expect(page.getByText('3 of 3 items')).toBeVisible()
+  await expect(page.getByText('4 of 4 items')).toBeVisible()
 
   // The list is read-only now: each row opens the flag, and the Serving column
   // (fifth column) shows whether it is on. Toggling moved to the detail page.
